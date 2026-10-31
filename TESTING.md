@@ -35,6 +35,31 @@ directory unless stated otherwise.
 
 ## 2. Running the app
 
+### Fastest path — one command (Docker only)
+
+If all you want is to run and test the product, you do **not** need Go or Node.
+One command builds the backend + UI into a single image and runs it with
+Postgres:
+
+```bash
+make up          # == docker compose up --build
+```
+
+Open <http://localhost:8080> — the canvas loads with the seeded "Preview
+Environments" workflow, backed by Postgres (data persists across restarts).
+
+```bash
+make logs        # tail logs
+make down        # stop (keep data)
+make down-v      # stop and wipe the database volume
+```
+
+Everything from §6 (UI walkthrough) through §10 (persistence) works against this
+single stack. The sections below on building from source are only needed if you
+want to develop without Docker.
+
+### From source (requires Go 1.24+ and Node 20.9+)
+
 The Go binary embeds the UI from `web/out`, which is **not** committed (only a
 placeholder is). Build the UI once before running from source:
 
@@ -42,9 +67,6 @@ placeholder is). Build the UI once before running from source:
 make ui        # cd web && npm install && npm run build  -> web/out
 make run       # go run .   (serves embedded UI + API on :8080)
 ```
-
-Open <http://localhost:8080>. You should see the canvas with the seeded
-"Preview Environments" workflow.
 
 Build a standalone single binary:
 
@@ -345,19 +367,23 @@ The schema is created automatically on first connect (tables `workflows` and
 
 ## 11. Docker
 
-Single container (in-memory):
+Full stack with Postgres (the recommended way to run and test):
+
+```bash
+make up          # docker compose up --build  — app + UI + Postgres
+make logs        # tail logs
+make down        # stop (keep data)
+make down-v      # stop and drop the database volume
+```
+
+The app container has a built-in healthcheck (`conduitd healthcheck`), so
+`docker compose ps` shows it as `healthy` once it is serving.
+
+Single container, no database (in-memory, resets on exit):
 
 ```bash
 docker build -t conduit .
 docker run --rm -p 8080:8080 conduit
-```
-
-Full stack with Postgres (persistent volume):
-
-```bash
-docker compose up --build
-# open http://localhost:8080 ; state persists in the pgdata volume
-docker compose down          # add -v to also drop the volume
 ```
 
 ---

@@ -1,7 +1,26 @@
 BINARY := conduitd
 ADDR   ?= :8080
 
-.PHONY: run run-dev ui build vet fmt test test-race test-pg clean
+.PHONY: up down logs rebuild run run-dev ui build vet fmt test test-race test-pg clean
+
+## -------- Docker: one command to build & run everything (app + DB) --------
+
+up:         ## Build and run the whole stack (backend + UI + Postgres). Ctrl-C to stop.
+	docker compose up --build
+
+down:       ## Stop the stack (keep data). Use `make down-v` wording below to drop data.
+	docker compose down
+
+down-v:     ## Stop the stack AND delete the Postgres volume (fresh state)
+	docker compose down -v
+
+logs:       ## Tail logs from the running stack
+	docker compose logs -f
+
+rebuild:    ## Rebuild images from scratch and run (no cache)
+	docker compose build --no-cache && docker compose up
+
+## -------- Local (requires Go 1.24+ and Node 20.9+) --------
 
 ui:         ## Build the Next.js UI into web/out (embedded by the Go binary)
 	cd web && npm install && npm run build

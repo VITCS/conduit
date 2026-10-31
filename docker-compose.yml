@@ -30,6 +30,13 @@ services:
       CONDUIT_DATABASE_URL: "postgres://conduit:conduit@db:5432/conduit?sslmode=disable"
     ports:
       - "8080:8080"
+    healthcheck:
+      # The binary self-checks over HTTP (the image has no shell/curl).
+      test: ["CMD", "/conduitd", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     restart: unless-stopped
 
 volumes:

@@ -35,26 +35,41 @@ The store is an interface (`internal/store`) with two implementations:
 `Mem` (in-memory, the default) and `Pg` (Postgres). The engine and API depend on
 the interface, so swapping persistence is a one-line change in `main.go`.
 
-## Build & run
+## Quickstart — one command (recommended)
 
-Requires Go 1.24+ and Node 20.9+ (for building the UI only; Next.js 16).
+The only prerequisite is **Docker**. This builds the backend **and** the UI into
+a single image and runs it together with Postgres — nothing else to install, no
+Go, no Node, no separate frontend to start:
 
 ```bash
-make ui          # cd web && npm install && npm run build  -> web/out
-make build       # go build -> ./conduitd  (UI embedded, single binary)
+make up          # == docker compose up --build
+```
+
+Then open <http://localhost:8080>. Press **Run** and watch the pipeline execute;
+it pauses at **Require Approval** — click that node and **Approve** (or **Reject**
+to see the failure branch). Data persists in a Postgres volume across restarts.
+
+```bash
+make logs        # tail logs
+make down        # stop (keep data)
+make down-v      # stop and wipe the database volume (fresh start)
+```
+
+That's the whole testing loop: **build once, run everything at once.** The full
+testing guide is in [TESTING.md](TESTING.md).
+
+## Build & run from source (without Docker)
+
+Requires Go 1.24+ and Node 20.9+ (Node is only needed to build the UI). The Go
+binary embeds the UI, so there is no Node runtime at run time.
+
+```bash
+make build       # make ui (next build) + go build -> ./conduitd (single binary)
 ./conduitd       # open http://localhost:8080
 ```
 
-Or in one step for development:
-
-```bash
-make ui          # once, whenever the UI changes
-make run         # go run . (serves the embedded export + API)
-```
-
-Press **Run** and watch the pipeline execute. It pauses at **Require Approval** —
-select that node and click **Approve** (or **Reject** to exercise the failure
-branch). Set `CONDUIT_ADDR` to change the listen address.
+For development with UI hot-reload, see below. Set `CONDUIT_ADDR` to change the
+listen address, and `CONDUIT_DATABASE_URL` to use Postgres (otherwise in-memory).
 
 ### UI development (hot reload)
 
