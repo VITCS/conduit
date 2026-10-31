@@ -15,6 +15,7 @@ export const CATALOG: CatalogItem[] = [
   { type: "schedule", name: "Schedule", icon: "clock", kind: "trigger", desc: "Cron schedule" },
   { type: "http", name: "HTTP", icon: "globe", kind: "step", desc: "Call an API" },
   { type: "graphql", name: "GraphQL", icon: "globe", kind: "step", desc: "Query a GraphQL API" },
+  { type: "slack", name: "Slack", icon: "webhook", kind: "step", desc: "Post to a Slack webhook" },
   { type: "ssh", name: "SSH", icon: "terminal", kind: "step", desc: "Run commands on a host" },
   { type: "if", name: "If", icon: "branch", kind: "step", desc: "Branch on a condition" },
   { type: "filter", name: "Filter", icon: "branch", kind: "step", desc: "Stop a branch unless condition holds" },

@@ -11,23 +11,51 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"conduit/internal/model"
 )
 
-// liveHTTPClient performs real outbound requests for http nodes with live:true.
+// liveHTTPClient performs real outbound requests for http/slack nodes.
 var liveHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+// ResolveSecret, when set by the host, resolves ${secret:NAME} references found
+// in a node's config values. Nil means no secrets are available.
+var ResolveSecret func(name string) (string, bool)
+
+var secretRefRe = regexp.MustCompile(`\$\{secret:([A-Za-z0-9_.\-]+)\}`)
+
+// secretExpand replaces ${secret:NAME} tokens using ResolveSecret. Unknown
+// references are left verbatim so failures are visible rather than silent.
+func secretExpand(s string) string {
+	if ResolveSecret == nil || !strings.Contains(s, "${secret:") {
+		return s
+	}
+	return secretRefRe.ReplaceAllStringFunc(s, func(tok string) string {
+		name := secretRefRe.FindStringSubmatch(tok)[1]
+		if v, ok := ResolveSecret(name); ok {
+			return v
+		}
+		return tok
+	})
+}
 
 // Result is what an executor returns to the engine.
 type Result struct {
-	Outcome model.Status   // success | failed | created | triggered
+	Outcome model.Status   // success | failed | created | triggered | skipped
 	Output  map[string]any // structured payload, shown in the inspector
 	Logs    []string
+	// MemoryWrites are applied to the run's shared memory by the engine AFTER the
+	// executor returns. Executors return writes here instead of mutating the run
+	// directly, so they never run while the store lock is held (a connector doing
+	// network I/O must not block the store).
+	MemoryWrites map[string]any
 }
 
-// Executor runs one node. run carries shared run-scoped state (e.g. memory).
+// Executor runs one node. run is a read-only snapshot (for Input/Memory reads);
+// to persist state, return MemoryWrites rather than mutating run.
 type Executor func(n model.Node, run *model.Run) Result
 
 var registry = map[string]Executor{
@@ -38,6 +66,7 @@ var registry = map[string]Executor{
 	"timegate": execTimegate,
 	"http":     execHTTP,
 	"graphql":  execGraphQL,
+	"slack":    execSlack,
 	"ssh":      execSSH,
 	"if":       execIf,
 	"filter":   execFilter,
@@ -154,11 +183,13 @@ func execHTTP(n model.Node, _ *model.Run) Result {
 }
 
 // liveHTTP performs a real HTTP request. Method defaults to GET; a body sends as
-// the request body. The outcome is success for 2xx, failed otherwise or on error.
+// the request body. Config values may reference ${secret:NAME}. The outcome is
+// success for 2xx, failed otherwise or on error.
 func liveHTTP(n model.Node, url string) Result {
+	url = secretExpand(url)
 	method := strings.ToUpper(firstNonEmpty(n.Field("method"), "GET"))
 	var body io.Reader
-	if b := n.Field("body"); b != "" {
+	if b := secretExpand(n.Field("body")); b != "" {
 		body = strings.NewReader(b)
 	}
 	if url == "" {
@@ -170,6 +201,9 @@ func liveHTTP(n model.Node, url string) Result {
 	}
 	if ct := n.Field("content_type"); ct != "" {
 		req.Header.Set("Content-Type", ct)
+	}
+	if auth := secretExpand(n.Field("authorization")); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 	start := time.Now()
 	resp, err := liveHTTPClient.Do(req)
@@ -261,6 +295,37 @@ func execGraphQL(n model.Node, _ *model.Run) Result {
 	}
 }
 
+// execSlack posts a message to a Slack-style incoming webhook. The webhook URL is
+// typically a secret reference (webhook: "${secret:slack_url}").
+func execSlack(n model.Node, _ *model.Run) Result {
+	webhook := secretExpand(firstNonEmpty(n.Field("webhook"), n.Field("url")))
+	text := secretExpand(firstNonEmpty(n.Field("text"), n.Field("message")))
+	if webhook == "" {
+		return Result{Outcome: model.StatusFailed, Output: map[string]any{"error": "no webhook"}, Logs: []string{"no slack webhook configured"}}
+	}
+	payload := fmt.Sprintf(`{"text":%q}`, text)
+	req, err := http.NewRequest(http.MethodPost, webhook, strings.NewReader(payload))
+	if err != nil {
+		return Result{Outcome: model.StatusFailed, Output: map[string]any{"error": err.Error()}, Logs: []string{err.Error()}}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := liveHTTPClient.Do(req)
+	if err != nil {
+		return Result{Outcome: model.StatusFailed, Output: map[string]any{"error": err.Error()}, Logs: []string{fmt.Sprintf("slack post failed: %v", err)}}
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	outcome := model.StatusSuccess
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		outcome = model.StatusFailed
+	}
+	return Result{
+		Outcome: outcome,
+		Output:  map[string]any{"status_code": resp.StatusCode, "text": text},
+		Logs:    []string{fmt.Sprintf("slack notify -> %d", resp.StatusCode)},
+	}
+}
+
 func execWait(n model.Node, _ *model.Run) Result {
 	return Result{
 		Outcome: model.StatusSuccess,
@@ -269,7 +334,7 @@ func execWait(n model.Node, _ *model.Run) Result {
 	}
 }
 
-func execMemory(n model.Node, run *model.Run) Result {
+func execMemory(n model.Node, _ *model.Run) Result {
 	store := firstNonEmpty(n.Field("store"), "default")
 	key := firstNonEmpty(n.Field("key"), "pr_number")
 	value := map[string]any{
@@ -277,14 +342,12 @@ func execMemory(n model.Node, run *model.Run) Result {
 		"url":        "pr-154.preview.storejs.dev",
 		"sha":        "f62f1a9",
 	}
-	if run.Memory == nil {
-		run.Memory = map[string]any{}
-	}
-	run.Memory[fmt.Sprintf("%s/%s", store, "154")] = value
+	memKey := fmt.Sprintf("%s/%s", store, "154")
 	return Result{
-		Outcome: model.StatusSuccess,
-		Output:  map[string]any{"store": store, "key": key, "value": value},
-		Logs:    []string{fmt.Sprintf("wrote %s/%s", store, "154")},
+		Outcome:      model.StatusSuccess,
+		Output:       map[string]any{"store": store, "key": key, "value": value},
+		Logs:         []string{fmt.Sprintf("wrote %s", memKey)},
+		MemoryWrites: map[string]any{memKey: value},
 	}
 }
 

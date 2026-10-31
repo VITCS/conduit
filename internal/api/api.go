@@ -15,6 +15,7 @@ import (
 	"conduit/internal/engine"
 	"conduit/internal/model"
 	"conduit/internal/scheduler"
+	"conduit/internal/secrets"
 	"conduit/internal/store"
 	"conduit/internal/validate"
 )
@@ -24,6 +25,7 @@ type Server struct {
 	Store     store.Store
 	Engine    *engine.Engine
 	Scheduler *scheduler.Scheduler // optional; nil disables schedule endpoints/sync
+	Secrets   *secrets.Manager     // optional; nil disables secret endpoints
 	Web       fs.FS                // static assets (the UI)
 }
 
@@ -37,6 +39,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/workflows/{id}", s.getWorkflow)
 	mux.HandleFunc("PUT /api/workflows/{id}", s.putWorkflow)
 	mux.HandleFunc("GET /api/schedules", s.listSchedules)
+	mux.HandleFunc("GET /api/secrets", s.listSecrets)
+	mux.HandleFunc("PUT /api/secrets/{name}", s.putSecret)
+	mux.HandleFunc("DELETE /api/secrets/{name}", s.deleteSecret)
 	mux.HandleFunc("GET /api/runs", s.listRuns)
 	mux.HandleFunc("POST /api/runs", s.createRun)
 	mux.HandleFunc("GET /api/runs/{id}", s.getRun)
@@ -111,6 +116,54 @@ func (s *Server) putWorkflow(w http.ResponseWriter, r *http.Request) {
 		_ = s.Scheduler.Sync()
 	}
 	writeJSON(w, http.StatusOK, wf)
+}
+
+// listSecrets returns secret names only — never values.
+func (s *Server) listSecrets(w http.ResponseWriter, _ *http.Request) {
+	if s.Secrets == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	names, err := s.Secrets.List()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if names == nil {
+		names = []string{}
+	}
+	writeJSON(w, http.StatusOK, names)
+}
+
+func (s *Server) putSecret(w http.ResponseWriter, r *http.Request) {
+	if s.Secrets == nil {
+		writeErr(w, http.StatusServiceUnavailable, "secrets are not configured")
+		return
+	}
+	var body struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := s.Secrets.Set(r.PathValue("name"), body.Value); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": r.PathValue("name")})
+}
+
+func (s *Server) deleteSecret(w http.ResponseWriter, r *http.Request) {
+	if s.Secrets == nil {
+		writeErr(w, http.StatusServiceUnavailable, "secrets are not configured")
+		return
+	}
+	if err := s.Secrets.Delete(r.PathValue("name")); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) listSchedules(w http.ResponseWriter, _ *http.Request) {

@@ -66,13 +66,20 @@ Still deferred to later phases: bounded worker pool / run queue, per-node
 timeouts, true `foreach`/`loop` and join semantics for `merge`, run filtering &
 re-run in the UI.
 
-### Phase 3 — Integrations & secrets
+### Phase 3 — Integrations & secrets  ✅ (this release)
 
-- **Secret store**: encrypted-at-rest secrets (`internal/secrets`), referenced by
-  connectors; never returned in API responses.
-- **Connector interface**: setup + credential providers; first connectors
-  (GitHub, Slack, HTTP/webhook-out, Datadog) implementing real side effects.
-- **Integration catalog** endpoint + UI for connecting accounts.
+- **Secret store**: AES-256-GCM encrypted-at-rest secrets (`internal/secrets`)
+  over the store (Mem + Postgres); values are write-only and never returned.
+  Key from `CONDUIT_SECRET_KEY` (ephemeral in dev).
+- **Secret resolution**: components expand `${secret:NAME}` in their config, so
+  credentials never live in the workflow graph.
+- **Connectors**: a real `slack` component (posts to a webhook) and a
+  secret-aware **live HTTP** executor (auth header, body) performing real side
+  effects. Executors now run OFF the store lock so network I/O can't block it.
+- **API + UI**: `GET/PUT/DELETE /api/secrets`, plus a Secrets management panel.
+
+Deferred: a broader connector framework with per-provider setup/OAuth and more
+integrations (GitHub API, Datadog, …); SSRF guards on outbound requests (Phase 7).
 
 ### Phase 4 — Multi-tenancy & auth
 

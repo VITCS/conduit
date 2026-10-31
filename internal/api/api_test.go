@@ -13,6 +13,7 @@ import (
 	"conduit/internal/api"
 	"conduit/internal/engine"
 	"conduit/internal/model"
+	"conduit/internal/secrets"
 	"conduit/internal/seed"
 	"conduit/internal/store"
 )
@@ -170,6 +171,48 @@ func getRunRaw(t *testing.T, url string) model.Run {
 	var r model.Run
 	getJSON(t, url, &r)
 	return r
+}
+
+func TestSecretsAPI(t *testing.T) {
+	st := store.NewMem()
+	if err := st.PutWorkflow(seed.Workflow()); err != nil {
+		t.Fatal(err)
+	}
+	mgr, _, err := secrets.NewManager(st, "test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &api.Server{Store: st, Engine: engine.New(st), Secrets: mgr, Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	// Set a secret.
+	if code := putJSON(t, ts.URL+"/api/secrets/slack_url", map[string]string{"value": "https://hooks.example/abc"}, nil); code != 200 {
+		t.Fatalf("put secret = %d, want 200", code)
+	}
+	// List returns names only — never the value.
+	var names []string
+	getJSON(t, ts.URL+"/api/secrets", &names)
+	if len(names) != 1 || names[0] != "slack_url" {
+		t.Fatalf("list secrets = %v, want [slack_url]", names)
+	}
+	// There is no GET-value endpoint; confirm the value isn't exposed via list.
+	for _, n := range names {
+		if n == "https://hooks.example/abc" {
+			t.Fatal("secret value leaked in list")
+		}
+	}
+	// Delete it.
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/secrets/slack_url", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("delete secret: err=%v code=%d", err, resp.StatusCode)
+	}
+	resp.Body.Close()
+	getJSON(t, ts.URL+"/api/secrets", &names)
+	if len(names) != 0 {
+		t.Errorf("after delete, secrets = %v, want empty", names)
+	}
 }
 
 func TestApproveNothingWaiting(t *testing.T) {

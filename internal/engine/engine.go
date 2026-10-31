@@ -250,9 +250,11 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 		if !sleepCtx(ctx, e.stepPacing(node)) {
 			return e.finishCanceled(runID, node)
 		}
-		e.store.MutateRun(runID, func(r *model.Run) {
-			res = components.For(node.Type)(node, r)
-		}) //nolint:errcheck // best-effort during execution
+		// Run the executor on a read-only snapshot WITHOUT holding the store lock,
+		// so a connector doing network I/O never blocks the store (or deadlocks by
+		// calling back into it). Memory changes come back via res.MemoryWrites.
+		snap, _, _ := e.store.GetRun(runID)
+		res = components.For(node.Type)(node, &snap)
 		logs = res.Logs
 		if res.Outcome != model.StatusFailed || attempt == attempts {
 			break
@@ -271,6 +273,16 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 		s.Output = res.Output
 		s.Logs = logs
 	})
+	if len(res.MemoryWrites) > 0 {
+		e.store.MutateRun(runID, func(r *model.Run) {
+			if r.Memory == nil {
+				r.Memory = map[string]any{}
+			}
+			for k, v := range res.MemoryWrites {
+				r.Memory[k] = v
+			}
+		}) //nolint:errcheck // best-effort during execution
+	}
 	for _, l := range logs {
 		e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID,
 			Level: levelFor(status), Message: fmt.Sprintf("%s · %s", node.Title, l)})

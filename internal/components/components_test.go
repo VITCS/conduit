@@ -1,6 +1,7 @@
 package components
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -41,16 +42,16 @@ func TestHTTPResourceShape(t *testing.T) {
 }
 
 func TestMemoryWritesRunMemory(t *testing.T) {
-	run := &model.Run{Memory: map[string]any{}}
 	res := For("memory")(node("memory",
 		model.Field{Key: "store", Value: "preview-envs"},
 		model.Field{Key: "key", Value: "pr_number"},
-	), run)
+	), &model.Run{})
 	if res.Outcome != model.StatusSuccess {
 		t.Fatalf("memory outcome = %s", res.Outcome)
 	}
-	if _, ok := run.Memory["preview-envs/154"]; !ok {
-		t.Errorf("run memory not written, keys = %v", run.Memory)
+	// Writes are returned for the engine to apply, not mutated in place.
+	if _, ok := res.MemoryWrites["preview-envs/154"]; !ok {
+		t.Errorf("memory writes missing key, got %v", res.MemoryWrites)
 	}
 }
 
@@ -96,6 +97,74 @@ func TestLiveHTTP(t *testing.T) {
 	), &model.Run{})
 	if bad.Outcome != model.StatusFailed {
 		t.Errorf("live 500 outcome = %s, want failed", bad.Outcome)
+	}
+}
+
+func TestSlackPostsToWebhook(t *testing.T) {
+	var gotBody string
+	var gotCT string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		gotCT = r.Header.Get("Content-Type")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	res := For("slack")(node("slack",
+		model.Field{Key: "webhook", Value: srv.URL},
+		model.Field{Key: "text", Value: "deploy done"},
+	), &model.Run{})
+	if res.Outcome != model.StatusSuccess {
+		t.Fatalf("slack outcome = %s, want success", res.Outcome)
+	}
+	if gotCT != "application/json" {
+		t.Errorf("content-type = %q, want application/json", gotCT)
+	}
+	if gotBody != `{"text":"deploy done"}` {
+		t.Errorf("body = %q", gotBody)
+	}
+
+	// no webhook -> failed
+	none := For("slack")(node("slack", model.Field{Key: "text", Value: "x"}), &model.Run{})
+	if none.Outcome != model.StatusFailed {
+		t.Errorf("slack with no webhook = %s, want failed", none.Outcome)
+	}
+}
+
+func TestSecretExpansionInSlackWebhook(t *testing.T) {
+	hit := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	// Install a resolver mapping a secret name to the test server URL.
+	prev := ResolveSecret
+	ResolveSecret = func(name string) (string, bool) {
+		if name == "slack_url" {
+			return srv.URL, true
+		}
+		return "", false
+	}
+	defer func() { ResolveSecret = prev }()
+
+	res := For("slack")(node("slack",
+		model.Field{Key: "webhook", Value: "${secret:slack_url}"},
+		model.Field{Key: "text", Value: "hi"},
+	), &model.Run{})
+	if res.Outcome != model.StatusSuccess || !hit {
+		t.Errorf("secret-resolved slack: outcome=%s hit=%v", res.Outcome, hit)
+	}
+}
+
+func TestSecretExpandNoResolverLeavesTokens(t *testing.T) {
+	prev := ResolveSecret
+	ResolveSecret = nil
+	defer func() { ResolveSecret = prev }()
+	if got := secretExpand("x=${secret:foo}"); got != "x=${secret:foo}" {
+		t.Errorf("expand with no resolver = %q, want unchanged", got)
 	}
 }
 

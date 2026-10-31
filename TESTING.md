@@ -430,6 +430,49 @@ runs; pick one to load its steps, outputs and memory. Over the API it's just
 `result` is `false`; `merge` is a pass-through join; `graphql` mirrors the
 simulated HTTP node. All selectable from the Edit palette.
 
+## 10d. Phase 3 features (secrets & connectors)
+
+Set `CONDUIT_SECRET_KEY` so secrets persist (otherwise an ephemeral key is used):
+
+```bash
+CONDUIT_SECRET_KEY=my-passphrase ./conduitd   # or set it in docker-compose.yml
+```
+
+**Manage secrets** (values are write-only — never returned):
+```bash
+curl -s -X PUT localhost:8080/api/secrets/slack_url \
+  -H 'Content-Type: application/json' -d '{"value":"https://hooks.slack.com/services/XXX"}'
+curl -s localhost:8080/api/secrets          # ["slack_url"]
+curl -s -X DELETE localhost:8080/api/secrets/slack_url
+```
+In the UI, click **Secrets** in the top bar to add/list/delete.
+
+**Use a secret in a node** — reference it as `${secret:NAME}` in any config value.
+A `slack` node posts to its `webhook` (typically `${secret:slack_url}`); a live
+`http` node (`live: true`) can send an `authorization` header from a secret. The
+executor expands the reference at run time; the secret value never appears in the
+workflow graph.
+
+**End-to-end check** (points a Slack node at the app's own webhook endpoint,
+which returns 201, to exercise real resolution + POST without an external
+service):
+```bash
+curl -s -X PUT localhost:8080/api/secrets/slack_url -H 'Content-Type: application/json' \
+  -d '{"value":"http://127.0.0.1:8080/api/hooks/wf_preview_envs"}'
+curl -s -X PUT localhost:8080/api/workflows/wf_slack -H 'Content-Type: application/json' -d '{
+  "id":"wf_slack","name":"Notify",
+  "nodes":[{"id":"t","type":"webhook","title":"Start","icon":"webhook","kind":"trigger","x":0,"y":0,"config":[]},
+           {"id":"n","type":"slack","title":"Notify","icon":"webhook","kind":"step","x":300,"y":0,"config":[{"key":"webhook","value":"${secret:slack_url}"},{"key":"text","value":"hi"}]}],
+  "edges":[{"from":"t","to":"n"}]}'
+RID=$(curl -s -X POST localhost:8080/api/runs -H 'Content-Type: application/json' -d '{"workflow_id":"wf_slack"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+sleep 2; curl -s localhost:8080/api/runs/$RID | python3 -c "import sys,json;r=json.load(sys.stdin);print(r['steps']['n']['status'], r['steps']['n']['output'].get('status_code'))"
+# -> success 201
+```
+
+These are covered by `go test ./...`: secrets manager (encrypt/decrypt, wrong
+key), the store secret contract (Mem + Postgres), the Slack executor and secret
+expansion (via `httptest`), and the `/api/secrets` endpoints.
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

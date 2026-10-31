@@ -27,6 +27,7 @@ import { Inspector } from "@/components/Inspector";
 import { Topbar } from "@/components/Topbar";
 import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
+import { SecretsPanel } from "@/components/SecretsPanel";
 import { EditorContext } from "@/lib/editorContext";
 import { api } from "@/lib/api";
 import { type CatalogItem } from "@/lib/catalog";
@@ -86,6 +87,7 @@ function FlowApp() {
   const [runMeta, setRunMeta] = useState("press Run to execute");
   const [railHidden, setRailHidden] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSecrets, setShowSecrets] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [toast, setToast] = useState("");
   const esRef = useRef<EventSource | null>(null);
@@ -458,6 +460,7 @@ function FlowApp() {
           dirty={dirty}
           onSave={save}
           onToggleRail={() => setRailHidden((v) => !v)}
+          onOpenSecrets={() => setShowSecrets(true)}
         />
         <div className="body">
           <RunRail
@@ -584,6 +587,7 @@ function FlowApp() {
 
           <Palette hidden={!editMode} onAdd={addComponent} />
         </div>
+        {showSecrets && <SecretsPanel onClose={() => setShowSecrets(false)} onToast={showToast} />}
         {toast && <div className="toast">{toast}</div>}
       </div>
     </EditorContext.Provider>

@@ -36,6 +36,11 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS runs_created_idx ON runs (created_at DESC);
+CREATE TABLE IF NOT EXISTS secrets (
+    name       text PRIMARY KEY,
+    ciphertext bytea NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
 `
 
 // NewPostgres opens a connection pool, verifies it, and applies the schema.
@@ -204,6 +209,48 @@ func (s *Pg) MutateRun(id string, fn func(*model.Run)) (model.Run, bool, error) 
 		return model.Run{}, false, err
 	}
 	return r, true, nil
+}
+
+func (s *Pg) PutSecret(name string, ciphertext []byte) error {
+	_, err := s.db.Exec(
+		`INSERT INTO secrets (name, ciphertext, created_at) VALUES ($1,$2,now())
+		 ON CONFLICT (name) DO UPDATE SET ciphertext=EXCLUDED.ciphertext, created_at=now()`,
+		name, ciphertext)
+	return err
+}
+
+func (s *Pg) GetSecret(name string) ([]byte, bool, error) {
+	var b []byte
+	err := s.db.QueryRow(`SELECT ciphertext FROM secrets WHERE name=$1`, name).Scan(&b)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return b, true, nil
+}
+
+func (s *Pg) ListSecretNames() ([]string, error) {
+	rows, err := s.db.Query(`SELECT name FROM secrets ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+func (s *Pg) DeleteSecret(name string) error {
+	_, err := s.db.Exec(`DELETE FROM secrets WHERE name=$1`, name)
+	return err
 }
 
 var _ Store = (*Pg)(nil)

@@ -118,6 +118,7 @@ final stage is a distroless, non-root static image containing only the binary.
 |----------|---------|---------|
 | `CONDUIT_ADDR` | `:8080` | listen address |
 | `CONDUIT_DATABASE_URL` | _(unset)_ | Postgres DSN; in-memory when unset |
+| `CONDUIT_SECRET_KEY` | _(unset)_ | passphrase for encrypting stored secrets; ephemeral (secrets reset on restart) when unset |
 
 ### Production notes
 
@@ -208,6 +209,9 @@ go test ./internal/store/ -run TestPostgresStoreContract -v
 | `POST` | `/api/runs/{id}/cancel` | cancel a running/waiting run (`409` if not active) |
 | `POST` | `/api/hooks/{workflowId}` | start a run from a webhook; JSON body becomes the trigger input |
 | `GET`  | `/api/schedules` | list active cron schedules |
+| `GET`  | `/api/secrets` | list secret names (never values) |
+| `PUT`  | `/api/secrets/{name}` | create/update a secret (`{value}`) |
+| `DELETE` | `/api/secrets/{name}` | delete a secret |
 | `GET`  | `/api/events` | SSE stream (optional `?run=<id>`) |
 
 ## Roadmap
@@ -236,9 +240,18 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
 - **New components** — `filter` (stops a branch without failing), `merge`,
   `graphql`, and `schedule`/`start` triggers.
 
-Still ahead (see the roadmap): secrets + real connectors, multi-tenancy,
-auth/RBAC, multi-instance event bus, bounded worker pool / per-node timeouts,
-true `foreach`/`loop`, and SSRF guards on the live HTTP executor.
+**Phase 3 (shipped):** integrations & secrets —
+
+- **Encrypted secret store** (AES-256-GCM; `CONDUIT_SECRET_KEY`), write-only via
+  the API (`/api/secrets`) and a Secrets panel in the UI.
+- **`${secret:NAME}` resolution** in node config, so credentials stay out of the
+  workflow graph.
+- **Real connectors**: a `slack` component and a secret-aware live HTTP node.
+  Executors now run off the store lock, so network I/O can't block the store.
+
+Still ahead (see the roadmap): multi-tenancy, auth/RBAC, multi-instance event
+bus, a broader connector/OAuth framework, bounded worker pool / per-node
+timeouts, true `foreach`/`loop`, and SSRF guards on outbound requests.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

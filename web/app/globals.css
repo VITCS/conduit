@@ -230,6 +230,18 @@ input, select { font-family: inherit; }
 .conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); }
 .conn.live .dot { background: var(--ok); }
 
+/* modal (secrets) */
+.modal-scrim { position: fixed; inset: 0; background: rgba(10, 14, 20, .45); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal { width: 100%; max-width: 560px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 80vh; }
+.modal-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--border); }
+.modal-head .modal-title { font-weight: 600; font-size: 15px; flex: 1 1 auto; }
+.modal-body { padding: 14px 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.secret-list { display: flex; flex-direction: column; gap: 7px; }
+.secret-row { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; color: var(--muted); }
+.secret-row .sname { font-family: var(--font-mono); font-size: 13px; color: var(--fg); flex: 1 1 auto; }
+.secret-row .sval { font-family: var(--font-mono); font-size: 13px; color: var(--faint); letter-spacing: 2px; }
+.modal code { font-family: var(--font-mono); background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+
 /* toast */
 .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow); z-index: 60; }
 

@@ -23,8 +23,10 @@ import (
 	"time"
 
 	"conduit/internal/api"
+	"conduit/internal/components"
 	"conduit/internal/engine"
 	"conduit/internal/scheduler"
+	"conduit/internal/secrets"
 	"conduit/internal/seed"
 	"conduit/internal/store"
 )
@@ -88,13 +90,24 @@ func run() error {
 
 	eng := engine.New(st)
 
+	// Secrets: encrypted credential store; wire the resolver so components can
+	// expand ${secret:NAME} references in their config.
+	secretMgr, persistentKey, err := secrets.NewManager(st, os.Getenv("CONDUIT_SECRET_KEY"))
+	if err != nil {
+		return err
+	}
+	if !persistentKey {
+		log.Printf("secrets: CONDUIT_SECRET_KEY not set — using an ephemeral key (secrets won't survive restart)")
+	}
+	components.ResolveSecret = secretMgr.Lookup
+
 	// Start the cron scheduler, tied to the process lifetime.
 	schedCtx, schedCancel := context.WithCancel(context.Background())
 	defer schedCancel()
 	sched := scheduler.New(st, eng)
 	sched.Start(schedCtx)
 
-	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Web: ui}
+	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Web: ui}
 
 	httpSrv := &http.Server{
 		Addr:    addr,

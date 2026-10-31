@@ -49,4 +49,13 @@ export const api = {
   cancelRun: (runId: string) =>
     req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
   eventsURL: (runId: string) => `${BASE}/api/events?run=${encodeURIComponent(runId)}`,
+  listSecrets: () => req<string[]>("/api/secrets"),
+  putSecret: (name: string, value: string) =>
+    req<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    }),
+  deleteSecret: (name: string) =>
+    req<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
 };

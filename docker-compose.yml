@@ -28,6 +28,9 @@ services:
     environment:
       CONDUIT_ADDR: ":8080"
       CONDUIT_DATABASE_URL: "postgres://conduit:conduit@db:5432/conduit?sslmode=disable"
+      # Encryption key for stored secrets. CHANGE THIS and keep it stable, or
+      # stored secrets become undecryptable. Prefer a Docker/compose secret in prod.
+      CONDUIT_SECRET_KEY: "change-me-in-production"
     ports:
       - "8080:8080"
     healthcheck:

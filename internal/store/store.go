@@ -9,6 +9,7 @@ package store
 
 import (
 	"encoding/json"
+	"sort"
 	"sync"
 
 	"conduit/internal/model"
@@ -31,6 +32,13 @@ type Store interface {
 	// MutateRun applies fn to the stored run atomically and returns a snapshot
 	// of the result. ok is false if the run does not exist.
 	MutateRun(id string, fn func(*model.Run)) (snap model.Run, ok bool, err error)
+
+	// Secrets are stored as opaque ciphertext; encryption happens above the
+	// store (internal/secrets), so the store never sees plaintext.
+	PutSecret(name string, ciphertext []byte) error
+	GetSecret(name string) (ciphertext []byte, ok bool, err error)
+	ListSecretNames() ([]string, error)
+	DeleteSecret(name string) error
 }
 
 // New returns the default (in-memory) store.
@@ -42,6 +50,7 @@ type Mem struct {
 	workflows map[string]model.Workflow
 	runs      map[string]*model.Run
 	order     []string // run IDs, oldest first
+	secrets   map[string][]byte
 	broker    *Broker
 }
 
@@ -50,8 +59,48 @@ func NewMem() *Mem {
 	return &Mem{
 		workflows: map[string]model.Workflow{},
 		runs:      map[string]*model.Run{},
+		secrets:   map[string][]byte{},
 		broker:    newBroker(),
 	}
+}
+
+func (s *Mem) PutSecret(name string, ciphertext []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]byte, len(ciphertext))
+	copy(cp, ciphertext)
+	s.secrets[name] = cp
+	return nil
+}
+
+func (s *Mem) GetSecret(name string) ([]byte, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	b, ok := s.secrets[name]
+	if !ok {
+		return nil, false, nil
+	}
+	cp := make([]byte, len(b))
+	copy(cp, b)
+	return cp, true, nil
+}
+
+func (s *Mem) ListSecretNames() ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0, len(s.secrets))
+	for k := range s.secrets {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (s *Mem) DeleteSecret(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.secrets, name)
+	return nil
 }
 
 func (s *Mem) Broker() *Broker { return s.broker }
