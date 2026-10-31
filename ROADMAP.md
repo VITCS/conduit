@@ -81,12 +81,23 @@ re-run in the UI.
 Deferred: a broader connector framework with per-provider setup/OAuth and more
 integrations (GitHub API, Datadog, …); SSRF guards on outbound requests (Phase 7).
 
-### Phase 4 — Multi-tenancy & auth
+### Phase 4a — Authentication & RBAC  ✅ (this release)
 
-- **Organizations → projects → workflows** data model and scoping on every query.
-- **AuthN**: OIDC login + API tokens; session middleware.
-- **RBAC**: roles (owner/admin/member/viewer) and permission checks in the API.
-- **Members & invitations**, per-project settings.
+- **AuthN**: password login (bcrypt) issuing stateless HS256 **JWTs**; a bootstrap
+  admin is created on first run (`CONDUIT_ADMIN_EMAIL`/`PASSWORD`).
+- **API tokens**: random, stored only as SHA-256 hashes; used for CI and to
+  authenticate **webhooks** (`?token=` or bearer).
+- **RBAC**: roles (owner/admin/member/viewer); write methods require a non-viewer
+  role; auth middleware protects every `/api` route (health, login and the static
+  UI stay public).
+- **UI**: a login screen, user chip, and sign-out.
+
+### Phase 4b — Multi-tenancy (next)
+
+- **Organizations → projects → workflows/runs/secrets** data model and scoping on
+  every query.
+- **Members & invitations**, per-project roles, project switcher in the UI.
+- OIDC / SSO login as an alternative to passwords.
 
 ### Phase 5 — Realtime, scale & ops
 

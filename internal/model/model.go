@@ -97,6 +97,40 @@ type Run struct {
 	Input map[string]any `json:"input,omitempty"`
 }
 
+// Role is a user's or token's permission level.
+type Role string
+
+const (
+	RoleOwner  Role = "owner"
+	RoleAdmin  Role = "admin"
+	RoleMember Role = "member"
+	RoleViewer Role = "viewer"
+)
+
+// CanWrite reports whether a role may perform mutating operations.
+func (r Role) CanWrite() bool { return r != RoleViewer && r != "" }
+
+// User is an account that can sign in.
+type User struct {
+	ID           string    `json:"id"`
+	Email        string    `json:"email"`
+	Name         string    `json:"name"`
+	Role         Role      `json:"role"`
+	PasswordHash string    `json:"-"` // never serialized
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// APIToken is a long-lived credential for programmatic access (CI, webhooks).
+// Only the SHA-256 hash is stored; the plaintext is shown once at creation.
+type APIToken struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Hash       string     `json:"-"`
+	Role       Role       `json:"role"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
 // Event is a message published to live subscribers (the SSE stream).
 type Event struct {
 	Type    string    `json:"type"` // run.started, step.updated, log, run.waiting, run.finished

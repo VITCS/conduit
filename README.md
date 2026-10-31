@@ -119,6 +119,9 @@ final stage is a distroless, non-root static image containing only the binary.
 | `CONDUIT_ADDR` | `:8080` | listen address |
 | `CONDUIT_DATABASE_URL` | _(unset)_ | Postgres DSN; in-memory when unset |
 | `CONDUIT_SECRET_KEY` | _(unset)_ | passphrase for encrypting stored secrets; ephemeral (secrets reset on restart) when unset |
+| `CONDUIT_JWT_SECRET` | _(unset)_ | secret for signing login JWTs; ephemeral (sessions reset on restart) when unset |
+| `CONDUIT_ADMIN_EMAIL` | `admin@conduit.local` | bootstrap admin email (created only if there are no users) |
+| `CONDUIT_ADMIN_PASSWORD` | `conduit` | bootstrap admin password — change it after first login |
 
 ### Production notes
 
@@ -195,9 +198,18 @@ go test ./internal/store/ -run TestPostgresStoreContract -v
 
 ## API
 
+All `/api` routes require authentication (a `Bearer` JWT from login, or an API
+token) except `GET /api/health`, `POST /api/auth/login`, and the static UI.
+Write methods (`POST`/`PUT`/`DELETE`) require a non-viewer role.
+
 | Method | Path | Purpose |
 |---|---|---|
-| `GET`  | `/api/health` | liveness |
+| `GET`  | `/api/health` | liveness (public) |
+| `POST` | `/api/auth/login` | email+password → `{token, user}` (public) |
+| `GET`  | `/api/auth/me` | current user |
+| `GET`  | `/api/tokens` | list API tokens |
+| `POST` | `/api/tokens` | create an API token (`{name, role}`) — plaintext shown once |
+| `DELETE` | `/api/tokens/{id}` | revoke an API token |
 | `GET`  | `/api/components` | registered component types |
 | `GET`  | `/api/workflows` | list workflows |
 | `GET`  | `/api/workflows/{id}` | one workflow |
@@ -249,9 +261,18 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
 - **Real connectors**: a `slack` component and a secret-aware live HTTP node.
   Executors now run off the store lock, so network I/O can't block the store.
 
-Still ahead (see the roadmap): multi-tenancy, auth/RBAC, multi-instance event
-bus, a broader connector/OAuth framework, bounded worker pool / per-node
-timeouts, true `foreach`/`loop`, and SSRF guards on outbound requests.
+**Phase 4a (shipped):** authentication & RBAC —
+
+- **Password login** (bcrypt) issuing stateless **JWTs**; a bootstrap admin is
+  created on first run. Sign-in screen + user chip in the UI.
+- **API tokens** (hashed at rest) for CI and to authenticate webhooks.
+- **RBAC**: owner/admin/member/viewer; auth middleware guards every `/api` route;
+  viewers are read-only.
+
+Still ahead (see the roadmap): **Phase 4b** multi-tenancy (orgs → projects
+scoping, members, project switcher, OIDC); then multi-instance event bus, a
+broader connector/OAuth framework, bounded worker pool / per-node timeouts, true
+`foreach`/`loop`, and SSRF guards on outbound requests.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

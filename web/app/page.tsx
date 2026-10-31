@@ -28,8 +28,9 @@ import { Topbar } from "@/components/Topbar";
 import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
 import { SecretsPanel } from "@/components/SecretsPanel";
+import { Login } from "@/components/Login";
 import { EditorContext } from "@/lib/editorContext";
-import { api } from "@/lib/api";
+import { api, getToken, setToken, setOnUnauthorized } from "@/lib/api";
 import { type CatalogItem } from "@/lib/catalog";
 import type { EdgeData, NodeData, Run, SSEvent, Status, Workflow, WFNode } from "@/lib/types";
 
@@ -61,9 +62,10 @@ function wfToEdges(wf: Workflow): Edge[] {
 type Tab = "canvas" | "console" | "memory" | "files";
 interface LogLine { t: string; level: string; msg: string; }
 
-function FlowApp() {
+function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const rf = useReactFlow();
 
+  const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
   const [wf, setWf] = useState<Workflow | null>(null);
   const [name, setName] = useState("Loading…");
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -98,6 +100,11 @@ function FlowApp() {
     window.setTimeout(() => setToast((cur) => (cur === m ? "" : cur)), 1900);
   }, []);
   const markDirty = useCallback(() => setDirty(true), []);
+
+  // --- load current user (for display) ---
+  useEffect(() => {
+    api.me().then(setUser).catch(() => {});
+  }, []);
 
   // --- load workflow ---
   useEffect(() => {
@@ -461,6 +468,8 @@ function FlowApp() {
           onSave={save}
           onToggleRail={() => setRailHidden((v) => !v)}
           onOpenSecrets={() => setShowSecrets(true)}
+          user={user}
+          onSignOut={onSignOut}
         />
         <div className="body">
           <RunRail
@@ -595,9 +604,24 @@ function FlowApp() {
 }
 
 export default function Page() {
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setOnUnauthorized(() => setSignedIn(false));
+    setSignedIn(getToken() !== "");
+  }, []);
+
+  if (signedIn === null) return <div className="login-wrap" />; // brief pre-auth frame
+  if (!signedIn) return <Login onSignedIn={() => setSignedIn(true)} />;
+
   return (
     <ReactFlowProvider>
-      <FlowApp />
+      <FlowApp
+        onSignOut={() => {
+          setToken("");
+          setSignedIn(false);
+        }}
+      />
     </ReactFlowProvider>
   );
 }

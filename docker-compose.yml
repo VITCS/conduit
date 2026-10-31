@@ -31,6 +31,12 @@ services:
       # Encryption key for stored secrets. CHANGE THIS and keep it stable, or
       # stored secrets become undecryptable. Prefer a Docker/compose secret in prod.
       CONDUIT_SECRET_KEY: "change-me-in-production"
+      # Signs login sessions (JWT). CHANGE THIS; keep it stable or sessions reset.
+      CONDUIT_JWT_SECRET: "change-me-too-in-production"
+      # Bootstrap admin, created only on first run (no users yet). Change the
+      # password after first login.
+      CONDUIT_ADMIN_EMAIL: "admin@conduit.local"
+      CONDUIT_ADMIN_PASSWORD: "conduit"
     ports:
       - "8080:8080"
     healthcheck:

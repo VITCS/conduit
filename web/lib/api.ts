@@ -4,8 +4,39 @@ import type { Run, Workflow } from "./types";
 // against a separately-running server, set NEXT_PUBLIC_API_BASE.
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
+const TOKEN_KEY = "conduit_token";
+
+export function getToken(): string {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+export function setToken(t: string) {
+  try {
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+// onUnauthorized is invoked when the API returns 401 so the app can show login.
+export let onUnauthorized: () => void = () => {};
+export function setOnUnauthorized(fn: () => void) {
+  onUnauthorized = fn;
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(BASE + path, init);
+  const headers = new Headers(init?.headers);
+  const tok = getToken();
+  if (tok) headers.set("Authorization", "Bearer " + tok);
+  const r = await fetch(BASE + path, { ...init, headers });
+  if (r.status === 401) {
+    setToken("");
+    onUnauthorized();
+  }
   if (!r.ok) {
     let msg = r.statusText;
     try {
@@ -24,6 +55,13 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: (email: string, password: string) =>
+    req<{ token: string; user: { email: string; name: string; role: string } }>("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+  me: () => req<{ email: string; name: string; role: string }>("/api/auth/me"),
   listWorkflows: () => req<Workflow[]>("/api/workflows"),
   getWorkflow: (id: string) => req<Workflow>(`/api/workflows/${encodeURIComponent(id)}`),
   putWorkflow: (wf: Workflow) =>

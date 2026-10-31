@@ -39,6 +39,18 @@ type Store interface {
 	GetSecret(name string) (ciphertext []byte, ok bool, err error)
 	ListSecretNames() ([]string, error)
 	DeleteSecret(name string) error
+
+	// Users & API tokens (authentication).
+	CreateUser(u model.User) error
+	GetUserByEmail(email string) (model.User, bool, error)
+	GetUserByID(id string) (model.User, bool, error)
+	ListUsers() ([]model.User, error)
+	CountUsers() (int, error)
+
+	CreateAPIToken(t model.APIToken) error
+	GetAPITokenByHash(hash string) (model.APIToken, bool, error)
+	ListAPITokens() ([]model.APIToken, error)
+	DeleteAPIToken(id string) error
 }
 
 // New returns the default (in-memory) store.
@@ -51,6 +63,8 @@ type Mem struct {
 	runs      map[string]*model.Run
 	order     []string // run IDs, oldest first
 	secrets   map[string][]byte
+	users     map[string]model.User     // by ID
+	tokens    map[string]model.APIToken // by ID
 	broker    *Broker
 }
 
@@ -60,8 +74,88 @@ func NewMem() *Mem {
 		workflows: map[string]model.Workflow{},
 		runs:      map[string]*model.Run{},
 		secrets:   map[string][]byte{},
+		users:     map[string]model.User{},
+		tokens:    map[string]model.APIToken{},
 		broker:    newBroker(),
 	}
+}
+
+func (s *Mem) CreateUser(u model.User) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.users[u.ID] = u
+	return nil
+}
+
+func (s *Mem) GetUserByEmail(email string) (model.User, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, u := range s.users {
+		if u.Email == email {
+			return u, true, nil
+		}
+	}
+	return model.User{}, false, nil
+}
+
+func (s *Mem) GetUserByID(id string) (model.User, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	u, ok := s.users[id]
+	return u, ok, nil
+}
+
+func (s *Mem) ListUsers() ([]model.User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.User, 0, len(s.users))
+	for _, u := range s.users {
+		out = append(out, u)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Email < out[j].Email })
+	return out, nil
+}
+
+func (s *Mem) CountUsers() (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.users), nil
+}
+
+func (s *Mem) CreateAPIToken(t model.APIToken) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tokens[t.ID] = t
+	return nil
+}
+
+func (s *Mem) GetAPITokenByHash(hash string) (model.APIToken, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.tokens {
+		if t.Hash == hash {
+			return t, true, nil
+		}
+	}
+	return model.APIToken{}, false, nil
+}
+
+func (s *Mem) ListAPITokens() ([]model.APIToken, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.APIToken, 0, len(s.tokens))
+	for _, t := range s.tokens {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (s *Mem) DeleteAPIToken(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.tokens, id)
+	return nil
 }
 
 func (s *Mem) PutSecret(name string, ciphertext []byte) error {

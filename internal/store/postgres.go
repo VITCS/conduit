@@ -41,6 +41,22 @@ CREATE TABLE IF NOT EXISTS secrets (
     ciphertext bytea NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS users (
+    id            text PRIMARY KEY,
+    email         text UNIQUE NOT NULL,
+    name          text NOT NULL,
+    role          text NOT NULL,
+    password_hash text NOT NULL,
+    created_at    timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id           text PRIMARY KEY,
+    name         text NOT NULL,
+    hash         text UNIQUE NOT NULL,
+    role         text NOT NULL,
+    created_at   timestamptz NOT NULL,
+    last_used_at timestamptz
+);
 `
 
 // NewPostgres opens a connection pool, verifies it, and applies the schema.
@@ -250,6 +266,105 @@ func (s *Pg) ListSecretNames() ([]string, error) {
 
 func (s *Pg) DeleteSecret(name string) error {
 	_, err := s.db.Exec(`DELETE FROM secrets WHERE name=$1`, name)
+	return err
+}
+
+func (s *Pg) CreateUser(u model.User) error {
+	_, err := s.db.Exec(
+		`INSERT INTO users (id, email, name, role, password_hash, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+		u.ID, u.Email, u.Name, string(u.Role), u.PasswordHash, u.CreatedAt)
+	return err
+}
+
+func scanUser(row interface{ Scan(...any) error }) (model.User, error) {
+	var u model.User
+	var role string
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &role, &u.PasswordHash, &u.CreatedAt)
+	u.Role = model.Role(role)
+	return u, err
+}
+
+func (s *Pg) GetUserByEmail(email string) (model.User, bool, error) {
+	u, err := scanUser(s.db.QueryRow(`SELECT id,email,name,role,password_hash,created_at FROM users WHERE email=$1`, email))
+	if err == sql.ErrNoRows {
+		return model.User{}, false, nil
+	}
+	return u, err == nil, err
+}
+
+func (s *Pg) GetUserByID(id string) (model.User, bool, error) {
+	u, err := scanUser(s.db.QueryRow(`SELECT id,email,name,role,password_hash,created_at FROM users WHERE id=$1`, id))
+	if err == sql.ErrNoRows {
+		return model.User{}, false, nil
+	}
+	return u, err == nil, err
+}
+
+func (s *Pg) ListUsers() ([]model.User, error) {
+	rows, err := s.db.Query(`SELECT id,email,name,role,password_hash,created_at FROM users ORDER BY email`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (s *Pg) CountUsers() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT count(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+func (s *Pg) CreateAPIToken(t model.APIToken) error {
+	_, err := s.db.Exec(
+		`INSERT INTO api_tokens (id, name, hash, role, created_at, last_used_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+		t.ID, t.Name, t.Hash, string(t.Role), t.CreatedAt, t.LastUsedAt)
+	return err
+}
+
+func scanToken(row interface{ Scan(...any) error }) (model.APIToken, error) {
+	var t model.APIToken
+	var role string
+	err := row.Scan(&t.ID, &t.Name, &t.Hash, &role, &t.CreatedAt, &t.LastUsedAt)
+	t.Role = model.Role(role)
+	return t, err
+}
+
+func (s *Pg) GetAPITokenByHash(hash string) (model.APIToken, bool, error) {
+	t, err := scanToken(s.db.QueryRow(`SELECT id,name,hash,role,created_at,last_used_at FROM api_tokens WHERE hash=$1`, hash))
+	if err == sql.ErrNoRows {
+		return model.APIToken{}, false, nil
+	}
+	return t, err == nil, err
+}
+
+func (s *Pg) ListAPITokens() ([]model.APIToken, error) {
+	rows, err := s.db.Query(`SELECT id,name,hash,role,created_at,last_used_at FROM api_tokens ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.APIToken
+	for rows.Next() {
+		t, err := scanToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *Pg) DeleteAPIToken(id string) error {
+	_, err := s.db.Exec(`DELETE FROM api_tokens WHERE id=$1`, id)
 	return err
 }
 

@@ -473,6 +473,42 @@ These are covered by `go test ./...`: secrets manager (encrypt/decrypt, wrong
 key), the store secret contract (Mem + Postgres), the Slack executor and secret
 expansion (via `httptest`), and the `/api/secrets` endpoints.
 
+## 10e. Phase 4a features (auth & RBAC)
+
+When auth is enabled (it always is via the binary/compose; tests run in open
+mode), every `/api` route needs a token except health, login, and the UI.
+
+A bootstrap admin is created on first run — default `admin@conduit.local` /
+`conduit` (override with `CONDUIT_ADMIN_EMAIL` / `CONDUIT_ADMIN_PASSWORD`; set
+`CONDUIT_JWT_SECRET` so sessions survive restarts).
+
+```bash
+# unauthenticated read is rejected
+curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/api/workflows      # 401
+
+# log in to get a JWT
+TOK=$(curl -s -X POST localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@conduit.local","password":"conduit"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -s -H "Authorization: Bearer $TOK" localhost:8080/api/auth/me          # current user
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $TOK" localhost:8080/api/workflows  # 200
+
+# create an API token (for CI / webhooks); plaintext is shown once
+curl -s -X POST localhost:8080/api/tokens -H "Authorization: Bearer $TOK" \
+  -H 'Content-Type: application/json' -d '{"name":"ci","role":"member"}'
+
+# webhooks authenticate with an API token
+curl -s -X POST "localhost:8080/api/hooks/wf_preview_envs?token=<cdt_...>" \
+  -H 'Content-Type: application/json' -d '{}'
+```
+
+**RBAC**: a `viewer` can read but not mutate (writes return `403`). In the UI,
+sign in on the login screen; the top bar shows the user and a sign-out button.
+
+Covered by `go test ./...`: the auth service (bcrypt login, JWT round-trip +
+tamper, bootstrap, API-token lifecycle) and the API middleware (401 unauth, 403
+viewer-write, 200 admin, webhook token requirement, login endpoint).
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

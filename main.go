@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"conduit/internal/api"
+	"conduit/internal/auth"
 	"conduit/internal/components"
 	"conduit/internal/engine"
 	"conduit/internal/scheduler"
@@ -101,13 +102,26 @@ func run() error {
 	}
 	components.ResolveSecret = secretMgr.Lookup
 
+	// Authentication: password login (JWT) + API tokens, with RBAC.
+	authSvc := auth.New(st, os.Getenv("CONDUIT_JWT_SECRET"))
+	if os.Getenv("CONDUIT_JWT_SECRET") == "" {
+		log.Printf("auth: CONDUIT_JWT_SECRET not set — using an ephemeral key (sessions reset on restart)")
+	}
+	adminEmail := envOr("CONDUIT_ADMIN_EMAIL", "admin@conduit.local")
+	adminPass := envOr("CONDUIT_ADMIN_PASSWORD", "conduit")
+	if created, err := authSvc.EnsureBootstrapAdmin(adminEmail, adminPass); err != nil {
+		return err
+	} else if created {
+		log.Printf("auth: bootstrapped admin %q (change the password after first login)", adminEmail)
+	}
+
 	// Start the cron scheduler, tied to the process lifetime.
 	schedCtx, schedCancel := context.WithCancel(context.Background())
 	defer schedCancel()
 	sched := scheduler.New(st, eng)
 	sched.Start(schedCtx)
 
-	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Web: ui}
+	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Auth: authSvc, Web: ui}
 
 	httpSrv := &http.Server{
 		Addr:    addr,

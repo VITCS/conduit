@@ -104,6 +104,40 @@ func storeContract(t *testing.T, s Store) {
 	if _, ok, _ := s.GetSecret("tok"); ok {
 		t.Error("secret still present after delete")
 	}
+
+	// users
+	u := model.User{ID: "u1", Email: "a@b.com", Name: "A", Role: model.RoleAdmin, PasswordHash: "h", CreatedAt: time.Now()}
+	if err := s.CreateUser(u); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if got, ok, err := s.GetUserByEmail("a@b.com"); err != nil || !ok || got.Role != model.RoleAdmin {
+		t.Fatalf("GetUserByEmail: ok=%v err=%v role=%s", ok, err, got.Role)
+	}
+	if got, ok, err := s.GetUserByID("u1"); err != nil || !ok || got.Email != "a@b.com" {
+		t.Fatalf("GetUserByID: ok=%v err=%v", ok, err)
+	}
+	if n, err := s.CountUsers(); err != nil || n != 1 {
+		t.Fatalf("CountUsers = %d err=%v, want 1", n, err)
+	}
+
+	// api tokens
+	tk := model.APIToken{ID: "t1", Name: "ci", Hash: "deadbeef", Role: model.RoleMember, CreatedAt: time.Now()}
+	if err := s.CreateAPIToken(tk); err != nil {
+		t.Fatalf("CreateAPIToken: %v", err)
+	}
+	if got, ok, err := s.GetAPITokenByHash("deadbeef"); err != nil || !ok || got.ID != "t1" {
+		t.Fatalf("GetAPITokenByHash: ok=%v err=%v", ok, err)
+	}
+	toks, err := s.ListAPITokens()
+	if err != nil || len(toks) != 1 {
+		t.Fatalf("ListAPITokens = %d err=%v", len(toks), err)
+	}
+	if err := s.DeleteAPIToken("t1"); err != nil {
+		t.Fatalf("DeleteAPIToken: %v", err)
+	}
+	if _, ok, _ := s.GetAPITokenByHash("deadbeef"); ok {
+		t.Error("token still present after delete")
+	}
 }
 
 func TestMemStoreContract(t *testing.T) {
@@ -121,7 +155,7 @@ func TestPostgresStoreContract(t *testing.T) {
 	}
 	defer pg.Close()
 	// Start clean so repeated runs are deterministic.
-	if _, err := pg.db.Exec(`TRUNCATE workflows, runs, secrets`); err != nil {
+	if _, err := pg.db.Exec(`TRUNCATE workflows, runs, secrets, users, api_tokens`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	storeContract(t, pg)

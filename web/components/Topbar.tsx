@@ -1,5 +1,5 @@
 "use client";
-import { Menu, Play, Square, Save, Pencil, Sun, Moon, KeyRound } from "lucide-react";
+import { Menu, Play, Square, Save, Pencil, Sun, Moon, KeyRound, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 
 function Logo() {
@@ -32,6 +32,8 @@ export function Topbar(props: {
   onSave: () => void;
   onToggleRail: () => void;
   onOpenSecrets: () => void;
+  user: { name: string; email: string; role: string } | null;
+  onSignOut: () => void;
 }) {
   const [dark, setDark] = useState(false);
   useEffect(() => {
@@ -81,6 +83,15 @@ export function Topbar(props: {
         </button>
         <button className="btn" data-on={props.editMode} onClick={props.onToggleEdit}>
           <Pencil size={15} /> Edit
+        </button>
+        {props.user && (
+          <span className="user-chip">
+            <b>{props.user.name || props.user.email}</b>
+            <span className="role">{props.user.role}</span>
+          </span>
+        )}
+        <button className="iconbtn" onClick={props.onSignOut} title="Sign out" aria-label="Sign out">
+          <LogOut size={16} />
         </button>
       </div>
     </header>

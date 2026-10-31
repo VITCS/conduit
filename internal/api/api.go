@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"conduit/internal/auth"
 	"conduit/internal/components"
 	"conduit/internal/engine"
 	"conduit/internal/model"
@@ -26,14 +28,31 @@ type Server struct {
 	Engine    *engine.Engine
 	Scheduler *scheduler.Scheduler // optional; nil disables schedule endpoints/sync
 	Secrets   *secrets.Manager     // optional; nil disables secret endpoints
+	Auth      *auth.Service        // optional; nil disables auth (open mode, for tests)
 	Web       fs.FS                // static assets (the UI)
 }
+
+// principal carries the authenticated caller's identity through the request.
+type principal struct {
+	role   model.Role
+	userID string
+	email  string
+}
+
+type ctxKey int
+
+const principalKey ctxKey = 0
 
 // Routes returns the HTTP handler for the whole app.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.health)
+	mux.HandleFunc("POST /api/auth/login", s.login)
+	mux.HandleFunc("GET /api/auth/me", s.me)
+	mux.HandleFunc("GET /api/tokens", s.listTokens)
+	mux.HandleFunc("POST /api/tokens", s.createToken)
+	mux.HandleFunc("DELETE /api/tokens/{id}", s.deleteToken)
 	mux.HandleFunc("GET /api/components", s.listComponents)
 	mux.HandleFunc("GET /api/workflows", s.listWorkflows)
 	mux.HandleFunc("GET /api/workflows/{id}", s.getWorkflow)
@@ -60,11 +79,197 @@ func (s *Server) Routes() http.Handler {
 		fileServer.ServeHTTP(w, r)
 	}))
 
-	return logging(mux)
+	return logging(s.authMiddleware(mux))
+}
+
+// authMiddleware enforces authentication on /api routes when Auth is configured.
+// Static assets and a short public allowlist pass through; webhooks require an API
+// token; write methods require a non-viewer role.
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	if s.Auth == nil {
+		return next // open mode (tests)
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Non-API paths are the static UI; let them through.
+		if !strings.HasPrefix(path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Public API endpoints.
+		if path == "/api/health" || path == "/api/auth/login" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Webhooks authenticate with an API token (bearer or ?token=).
+		if strings.HasPrefix(path, "/api/hooks/") {
+			tok := bearerToken(r)
+			if tok == "" {
+				tok = r.URL.Query().Get("token")
+			}
+			if t, ok := s.Auth.LookupAPIToken(tok); ok {
+				next.ServeHTTP(w, r.WithContext(withPrincipal(r, principal{role: t.Role})))
+				return
+			}
+			writeErr(w, http.StatusUnauthorized, "valid API token required")
+			return
+		}
+
+		// Everything else: JWT or API token.
+		p, ok := s.identify(r)
+		if !ok {
+			writeErr(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		// Mutations require write permission.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !p.role.CanWrite() {
+			writeErr(w, http.StatusForbidden, "your role is read-only")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, p)))
+	})
+}
+
+// identify resolves the caller from a bearer JWT or API token.
+func (s *Server) identify(r *http.Request) (principal, bool) {
+	tok := bearerToken(r)
+	if tok == "" {
+		return principal{}, false
+	}
+	if strings.HasPrefix(tok, "cdt_") {
+		if t, ok := s.Auth.LookupAPIToken(tok); ok {
+			return principal{role: t.Role}, true
+		}
+		return principal{}, false
+	}
+	claims, err := s.Auth.ParseJWT(tok)
+	if err != nil {
+		return principal{}, false
+	}
+	return principal{role: claims.Role, userID: claims.Sub, email: claims.Email}, true
+}
+
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(h[len("Bearer "):])
+	}
+	return ""
+}
+
+func withPrincipal(r *http.Request, p principal) context.Context {
+	return context.WithValue(r.Context(), principalKey, p)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "time": time.Now()})
+}
+
+// login verifies credentials and returns a JWT plus the user.
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if s.Auth == nil {
+		writeErr(w, http.StatusServiceUnavailable, "auth not configured")
+		return
+	}
+	var body struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	u, err := s.Auth.Authenticate(body.Email, body.Password)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "invalid email or password")
+		return
+	}
+	token, err := s.Auth.IssueJWT(u)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": u})
+}
+
+// me returns the current authenticated user.
+func (s *Server) me(w http.ResponseWriter, r *http.Request) {
+	if s.Auth == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"auth": false})
+		return
+	}
+	p, ok := r.Context().Value(principalKey).(principal)
+	if !ok || p.userID == "" {
+		// Could be a valid API token with no user; report role only.
+		if ok {
+			writeJSON(w, http.StatusOK, map[string]any{"role": p.role})
+			return
+		}
+		writeErr(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	u, found, err := s.Auth.GetUser(p.userID)
+	if err != nil || !found {
+		writeErr(w, http.StatusUnauthorized, "user not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, u)
+}
+
+func (s *Server) listTokens(w http.ResponseWriter, _ *http.Request) {
+	if s.Auth == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	toks, err := s.Auth.ListAPITokens()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if toks == nil {
+		toks = []model.APIToken{}
+	}
+	writeJSON(w, http.StatusOK, toks)
+}
+
+func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
+	if s.Auth == nil {
+		writeErr(w, http.StatusServiceUnavailable, "auth not configured")
+		return
+	}
+	var body struct {
+		Name string     `json:"name"`
+		Role model.Role `json:"role"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body)
+	if body.Role == "" {
+		body.Role = model.RoleMember
+	}
+	if !auth.IsValidRole(body.Role) {
+		writeErr(w, http.StatusBadRequest, "invalid role")
+		return
+	}
+	plain, t, err := s.Auth.CreateAPIToken(body.Name, body.Role)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// The plaintext token is returned once, here only.
+	writeJSON(w, http.StatusCreated, map[string]any{"token": plain, "meta": t})
+}
+
+func (s *Server) deleteToken(w http.ResponseWriter, r *http.Request) {
+	if s.Auth == nil {
+		writeErr(w, http.StatusServiceUnavailable, "auth not configured")
+		return
+	}
+	if err := s.Auth.DeleteAPIToken(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) listComponents(w http.ResponseWriter, _ *http.Request) {

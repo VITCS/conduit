@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"conduit/internal/api"
+	"conduit/internal/auth"
 	"conduit/internal/engine"
 	"conduit/internal/model"
 	"conduit/internal/secrets"
@@ -171,6 +172,122 @@ func getRunRaw(t *testing.T, url string) model.Run {
 	var r model.Run
 	getJSON(t, url, &r)
 	return r
+}
+
+func TestAuthMiddleware(t *testing.T) {
+	st := store.NewMem()
+	if err := st.PutWorkflow(seed.Workflow()); err != nil {
+		t.Fatal(err)
+	}
+	authSvc := auth.New(st, "test-secret")
+	admin, err := authSvc.CreateUser("admin@x.com", "Admin", "pw", model.RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := authSvc.CreateUser("view@x.com", "View", "pw", model.RoleViewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &api.Server{Store: st, Engine: engine.New(st), Auth: authSvc, Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	get := func(path, tok string) int {
+		req, _ := http.NewRequest("GET", ts.URL+path, nil)
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	post := func(path, tok string, body any) int {
+		b, _ := json.Marshal(body)
+		req, _ := http.NewRequest("POST", ts.URL+path, bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// Health and login are public.
+	if c := get("/api/health", ""); c != 200 {
+		t.Errorf("health without auth = %d, want 200", c)
+	}
+	// Protected read without a token → 401.
+	if c := get("/api/workflows", ""); c != 401 {
+		t.Errorf("workflows without auth = %d, want 401", c)
+	}
+	// Login to get a JWT.
+	adminTok, _ := authSvc.IssueJWT(admin)
+	viewerTok, _ := authSvc.IssueJWT(viewer)
+
+	if c := get("/api/workflows", adminTok); c != 200 {
+		t.Errorf("workflows with admin token = %d, want 200", c)
+	}
+	if c := get("/api/workflows", viewerTok); c != 200 {
+		t.Errorf("viewer read = %d, want 200", c)
+	}
+	// Viewer cannot write.
+	if c := post("/api/runs", viewerTok, map[string]string{"workflow_id": "wf_preview_envs"}); c != 403 {
+		t.Errorf("viewer write = %d, want 403", c)
+	}
+	// Admin can write.
+	if c := post("/api/runs", adminTok, map[string]string{"workflow_id": "wf_preview_envs"}); c != 201 {
+		t.Errorf("admin write = %d, want 201", c)
+	}
+	// Bad token → 401.
+	if c := get("/api/workflows", "garbage"); c != 401 {
+		t.Errorf("garbage token = %d, want 401", c)
+	}
+
+	// Webhooks require an API token.
+	if c := post("/api/hooks/wf_preview_envs", "", nil); c != 401 {
+		t.Errorf("hook without token = %d, want 401", c)
+	}
+	plain, _, _ := authSvc.CreateAPIToken("ci", model.RoleMember)
+	if c := post("/api/hooks/wf_preview_envs", plain, map[string]any{"x": 1}); c != 201 {
+		t.Errorf("hook with API token = %d, want 201", c)
+	}
+}
+
+func TestLoginEndpoint(t *testing.T) {
+	st := store.NewMem()
+	authSvc := auth.New(st, "s")
+	if _, err := authSvc.CreateUser("a@b.com", "A", "pw", model.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	srv := &api.Server{Store: st, Engine: engine.New(st), Auth: authSvc, Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	var out struct {
+		Token string     `json:"token"`
+		User  model.User `json:"user"`
+	}
+	if c := postJSON(t, ts.URL+"/api/auth/login", map[string]string{"email": "a@b.com", "password": "pw"}, &out); c != 200 {
+		t.Fatalf("login = %d, want 200", c)
+	}
+	if out.Token == "" || out.User.Email != "a@b.com" {
+		t.Errorf("login response: token empty=%v user=%+v", out.Token == "", out.User)
+	}
+	// Password must never be serialized.
+	if out.User.PasswordHash != "" {
+		t.Error("password hash leaked in login response")
+	}
+	// Wrong password → 401.
+	if c := postJSON(t, ts.URL+"/api/auth/login", map[string]string{"email": "a@b.com", "password": "nope"}, nil); c != 401 {
+		t.Errorf("bad login = %d, want 401", c)
+	}
 }
 
 func TestSecretsAPI(t *testing.T) {
