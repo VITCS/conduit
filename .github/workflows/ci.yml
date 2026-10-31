@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: conduit
+          POSTGRES_PASSWORD: conduit
+          POSTGRES_DB: conduit
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U conduit"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      # The Go binary embeds web/out; provide a placeholder so the build and the
+      # Go tests (which do not exercise the UI) compile without a Node build.
+      - run: mkdir -p web/out && touch web/out/.gitkeep
+      - run: gofmt -l . | tee /dev/stderr | (! read)
+      - run: go vet ./...
+      - name: Test (with Postgres)
+        env:
+          CONDUIT_TEST_POSTGRES: "postgres://conduit:conduit@localhost:5432/conduit?sslmode=disable"
+        run: go test -race ./...
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci || npm install
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [backend, ui]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t conduit:ci .

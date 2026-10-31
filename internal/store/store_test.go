@@ -1,0 +1,127 @@
+package store
+
+import (
+	"os"
+	"testing"
+	"time"
+
+	"conduit/internal/model"
+)
+
+// storeContract exercises the behavior every Store implementation must provide.
+// It runs against the in-memory store always and against Postgres when
+// CONDUIT_TEST_POSTGRES is set to a DSN.
+func storeContract(t *testing.T, s Store) {
+	t.Helper()
+
+	// workflows: put / get / list
+	wf := model.Workflow{ID: "wf1", Name: "Demo",
+		Nodes: []model.Node{{ID: "a", Type: "http", Title: "Call"}},
+		Edges: []model.Edge{{From: "a", To: "a"}}}
+	if err := s.PutWorkflow(wf); err != nil {
+		t.Fatalf("PutWorkflow: %v", err)
+	}
+	got, ok, err := s.GetWorkflow("wf1")
+	if err != nil || !ok {
+		t.Fatalf("GetWorkflow: ok=%v err=%v", ok, err)
+	}
+	if got.Name != "Demo" || len(got.Nodes) != 1 {
+		t.Fatalf("workflow round-trip mismatch: %+v", got)
+	}
+	if _, ok, _ := s.GetWorkflow("missing"); ok {
+		t.Error("GetWorkflow(missing) returned ok=true")
+	}
+	wfs, err := s.ListWorkflows()
+	if err != nil || len(wfs) == 0 {
+		t.Fatalf("ListWorkflows: n=%d err=%v", len(wfs), err)
+	}
+
+	// runs: create / get / mutate
+	run := &model.Run{
+		ID: "r1", WorkflowID: "wf1", Title: "run one",
+		Status: model.StatusRunning, CreatedAt: time.Now(),
+		Steps:  map[string]*model.StepRun{"a": {NodeID: "a", Status: model.StatusPending}},
+		Memory: map[string]any{},
+	}
+	if _, err := s.CreateRun(run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	snap, ok, err := s.MutateRun("r1", func(r *model.Run) {
+		r.Steps["a"].Status = model.StatusSuccess
+		r.Memory["k"] = "v"
+	})
+	if err != nil || !ok {
+		t.Fatalf("MutateRun: ok=%v err=%v", ok, err)
+	}
+	if snap.Steps["a"].Status != model.StatusSuccess {
+		t.Errorf("mutate snapshot step = %s, want success", snap.Steps["a"].Status)
+	}
+
+	// the mutation must be durable (visible on a fresh read)
+	reread, ok, err := s.GetRun("r1")
+	if err != nil || !ok {
+		t.Fatalf("GetRun: ok=%v err=%v", ok, err)
+	}
+	if reread.Steps["a"].Status != model.StatusSuccess || reread.Memory["k"] != "v" {
+		t.Errorf("mutation not persisted: %+v mem=%v", reread.Steps["a"], reread.Memory)
+	}
+
+	// snapshots must be independent copies
+	reread.Steps["a"].Status = model.StatusFailed
+	again, _, _ := s.GetRun("r1")
+	if again.Steps["a"].Status != model.StatusSuccess {
+		t.Error("snapshot is not an independent copy — mutating it changed the store")
+	}
+
+	if _, ok, _ := s.MutateRun("nope", func(*model.Run) {}); ok {
+		t.Error("MutateRun(missing) returned ok=true")
+	}
+
+	runs, err := s.ListRuns()
+	if err != nil || len(runs) == 0 {
+		t.Fatalf("ListRuns: n=%d err=%v", len(runs), err)
+	}
+}
+
+func TestMemStoreContract(t *testing.T) {
+	storeContract(t, NewMem())
+}
+
+func TestPostgresStoreContract(t *testing.T) {
+	dsn := os.Getenv("CONDUIT_TEST_POSTGRES")
+	if dsn == "" {
+		t.Skip("set CONDUIT_TEST_POSTGRES to a DSN to run Postgres store tests")
+	}
+	pg, err := NewPostgres(dsn)
+	if err != nil {
+		t.Fatalf("NewPostgres: %v", err)
+	}
+	defer pg.Close()
+	// Start clean so repeated runs are deterministic.
+	if _, err := pg.db.Exec(`TRUNCATE workflows, runs`); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	storeContract(t, pg)
+}
+
+func TestMemListRunsNewestFirst(t *testing.T) {
+	s := NewMem()
+	for _, id := range []string{"a", "b", "c"} {
+		if _, err := s.CreateRun(&model.Run{ID: id, CreatedAt: time.Now(), Steps: map[string]*model.StepRun{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, _ := s.ListRuns()
+	if len(runs) != 3 || runs[0].ID != "c" || runs[2].ID != "a" {
+		t.Errorf("ListRuns order = %v, want [c b a]", ids(runs))
+	}
+}
+
+func ids(runs []model.Run) []string {
+	out := make([]string, len(runs))
+	for i, r := range runs {
+		out[i] = r.ID
+	}
+	return out
+}

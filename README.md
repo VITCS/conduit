@@ -1,0 +1,223 @@
+# Conduit
+
+A small, runnable control plane for **event-driven automation workflows** — a
+visual DAG of components you execute, watch live, and gate on human approval.
+
+Conduit is an original take on the pattern popularized by control-plane tools
+like SuperPlane: a workflow is a graph of typed **components** (trigger → steps →
+status), wired with `success` / `failed` / `approved` edges. A **run** walks that
+graph, executes each component, streams status to the UI, and pauses at approval
+gates until someone signs off.
+
+This repo is a **full-stack app** that ships as a **single Go binary**: the Go
+backend (engine + REST + SSE) serves an API, and a **Next.js** frontend is
+statically exported and embedded into that same binary — no Node runtime in
+production.
+
+```
+conduit/
+├── main.go                 # entrypoint; embeds web/out, wires store+engine+api
+├── web/                    # Next.js app (TypeScript, React Flow canvas)
+│   ├── app/                #   page.tsx (orchestrator), layout, globals.css
+│   ├── components/         #   ConduitNode, ConduitEdge, Inspector, Topbar, RunRail, Palette
+│   ├── lib/                #   api client, types, catalog, icons, editor context
+│   └── out/                #   `next build` output — embedded by Go (git-ignored in real use)
+└── internal/
+    ├── model/              # Workflow, Node, Edge, Run, StepRun, Event
+    ├── store/              # Store interface + Mem (in-memory) and Pg (Postgres) + pub/sub broker
+    ├── components/         # executors: http, ssh, timegate, if, wait, memory, status…
+    ├── engine/             # DAG walker; runs nodes, follows edges, gates on approval
+    ├── seed/               # the default "Preview Environments" workflow
+    └── api/                # HTTP routes (REST) + Server-Sent Events stream
+```
+
+The store is an interface (`internal/store`) with two implementations:
+`Mem` (in-memory, the default) and `Pg` (Postgres). The engine and API depend on
+the interface, so swapping persistence is a one-line change in `main.go`.
+
+## Build & run
+
+Requires Go 1.24+ and Node 20.9+ (for building the UI only; Next.js 16).
+
+```bash
+make ui          # cd web && npm install && npm run build  -> web/out
+make build       # go build -> ./conduitd  (UI embedded, single binary)
+./conduitd       # open http://localhost:8080
+```
+
+Or in one step for development:
+
+```bash
+make ui          # once, whenever the UI changes
+make run         # go run . (serves the embedded export + API)
+```
+
+Press **Run** and watch the pipeline execute. It pauses at **Require Approval** —
+select that node and click **Approve** (or **Reject** to exercise the failure
+branch). Set `CONDUIT_ADDR` to change the listen address.
+
+### UI development (hot reload)
+
+```bash
+make run                       # terminal 1: Go API on :8080
+make run-dev                   # terminal 2: next dev on :3000 (NEXT_PUBLIC_API_BASE -> :8080)
+```
+
+Edit under `web/`; when done, `make ui` re-exports and `make build` re-embeds.
+
+### Persistence
+
+By default state is in-memory and resets on restart. Point it at Postgres to
+persist workflows and runs:
+
+```bash
+export CONDUIT_DATABASE_URL="postgres://user:pass@localhost:5432/conduit?sslmode=disable"
+./conduitd   # logs "persistence: postgres"; schema is created automatically
+```
+
+The schema (two JSONB-backed tables, `workflows` and `runs`) is applied on
+startup — no migration tool needed. `MutateRun` loads the row `FOR UPDATE` inside
+a transaction, so concurrent step writes serialize on the run.
+
+## Deploy
+
+Run the whole stack (app + Postgres, with a persistent volume) in one command:
+
+```bash
+docker compose up --build      # http://localhost:8080
+```
+
+Or build and run just the container (in-memory):
+
+```bash
+docker build -t conduit .
+docker run --rm -p 8080:8080 conduit
+```
+
+The image is a multi-stage build — Node builds the UI, Go embeds it, and the
+final stage is a distroless, non-root static image containing only the binary.
+
+### Configuration
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `CONDUIT_ADDR` | `:8080` | listen address |
+| `CONDUIT_DATABASE_URL` | _(unset)_ | Postgres DSN; in-memory when unset |
+
+### Production notes
+
+- **Single binary**: the UI is embedded, so there is no Node runtime or static
+  file dependency to deploy alongside it.
+- **Graceful shutdown**: `SIGINT`/`SIGTERM` drains in-flight requests (15s) before
+  exit, so container stops and rolling deploys don't cut active runs mid-step.
+- **Timeouts**: the HTTP server sets `ReadHeaderTimeout` and `IdleTimeout`
+  (slowloris guard) while leaving the SSE stream long-lived.
+- **Caching**: content-hashed `/_next/static` assets are served `immutable`.
+- Before exposing publicly, add **auth** (there is none yet) and consider moving
+  the in-process SSE broker to Postgres `LISTEN/NOTIFY` for multi-instance.
+
+## Testing
+
+See **[TESTING.md](TESTING.md)** for a complete, reproducible guide: automated Go
+tests, the Postgres contract test, the UI build and browser smoke test, a manual
+UI walkthrough, API testing with `curl`, live SSE testing, validation testing,
+and durability checks.
+
+## Editor
+
+Toggle **Edit** to turn the canvas into a builder:
+
+- **Add** components from the right-hand palette.
+- **Connect** nodes by dragging from a node's right port to another node.
+- **Label an edge** (the gate): select an edge and pick `any` / `success` /
+  `failed` / `approved`, or delete it.
+- **Edit a node** in the inspector's **Config** tab: title, component type, and
+  add/remove/rename configuration fields.
+- **Delete** a selected node with the trash button or the Delete key.
+- **Save** writes the whole workflow to `PUT /api/workflows/{id}` (durable with
+  Postgres). Unsaved edits mark the Save button and warn on navigation.
+
+Saves are **validated server-side** (`internal/validate`): the API rejects a
+workflow with `422` and a list of problems if it has a **cycle**, a **dangling
+edge** (endpoint pointing at a missing node), a **self-loop**, duplicate node IDs
+or edges, an unknown component type, an invalid kind or edge label, or a missing
+name. The reasons are surfaced in the UI's save toast, e.g.
+`workflow is invalid: workflow has a cycle: a1 → u1 → t1 → …`.
+
+## Tests
+
+```bash
+go test ./...            # unit + integration; Postgres tests skip without a DB
+go test -race ./...      # same, under the race detector
+```
+
+Coverage: the DAG engine (success, approval, reject, failure branch, `skipped`
+propagation, edge matching), component executors, the store contract, and the
+HTTP API (run lifecycle, approval, error paths). The store contract test also
+runs against real Postgres when a DSN is provided — it is skipped otherwise, so
+the default `go test ./...` needs no database:
+
+```bash
+# spin up any Postgres, then:
+export CONDUIT_TEST_POSTGRES="postgres://user:pass@localhost:5432/conduit?sslmode=disable"
+go test ./internal/store/ -run TestPostgresStoreContract -v
+```
+
+## How a run works
+
+1. `POST /api/runs {workflow_id}` creates a run and kicks off `engine.execute`
+   in a goroutine.
+2. The engine starts at the trigger node and walks the DAG breadth-first. For
+   each node it marks `running`, calls the component executor, records the
+   output, and follows outgoing edges whose label matches the outcome
+   (`success` / `failed` / `approved`).
+3. Every transition is published to the broker and streamed to the browser over
+   `GET /api/events?run=<id>` (SSE), so the canvas, run rail, and console update
+   live.
+4. An **approval** node sets the run to `waiting` and blocks until
+   `POST /api/runs/{id}/approve {node_id, decision}` delivers a decision.
+
+## API
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`  | `/api/health` | liveness |
+| `GET`  | `/api/components` | registered component types |
+| `GET`  | `/api/workflows` | list workflows |
+| `GET`  | `/api/workflows/{id}` | one workflow |
+| `PUT`  | `/api/workflows/{id}` | create/replace a workflow (`422` with `details[]` if invalid) |
+| `POST` | `/api/runs` | start a run (`{workflow_id}`) |
+| `GET`  | `/api/runs` | list runs (newest first) |
+| `GET`  | `/api/runs/{id}` | one run with steps + memory |
+| `POST` | `/api/runs/{id}/approve` | resolve an approval gate (`{node_id, decision}`) |
+| `GET`  | `/api/events` | SSE stream (optional `?run=<id>`) |
+
+## What's deliberately left as a next step
+
+The foundations are real but some edges are still stubbed:
+
+- **Real side effects** — executors simulate their work deterministically;
+  replace them with real GitHub / SSH / HTTP calls behind the same `Executor`
+  signature.
+- **Parallel scheduling** — the engine runs nodes sequentially in BFS order;
+  fan-out branches could execute concurrently.
+- **Auth** — there is none; add it before exposing the server.
+- **Event durability** — the SSE broker is in-process; a multi-instance
+  deployment would move it to Postgres `LISTEN/NOTIFY` or a message bus.
+- **React 19** — the UI runs on React 18; Next.js 16 deprecates it (removed in
+  Next 17), so a React 19 bump is the next housekeeping step.
+
+Done so far: **Postgres persistence** (interface + `Pg` impl), a **`go test`
+suite** (engine, components, store contract, HTTP API, **workflow validation**),
+a **Next.js frontend** (React Flow canvas) exported and embedded into the single
+binary, **editor saves** to `PUT /api/workflows/{id}`, an **edge label/gate
+picker**, **inline node config editing**, and **save-time validation** that
+rejects cycles and dangling edges.
+
+### Dependencies
+
+`npm audit` reports **0 vulnerabilities** (Next.js 16.4.3). The UI is a static
+export served by Go as plain files, so Next's server-runtime attack surface
+isn't shipped regardless. The only warning at build time is that React 18 is
+deprecated under Next 16 — functional today, and a React 19 upgrade is listed
+above.

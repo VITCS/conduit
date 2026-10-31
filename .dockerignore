@@ -1,0 +1,8 @@
+.git
+conduitd
+web/node_modules
+web/.next
+web/out
+**/*.test.go
+*.md
+!README.md
