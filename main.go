@@ -24,6 +24,7 @@ import (
 
 	"conduit/internal/api"
 	"conduit/internal/engine"
+	"conduit/internal/scheduler"
 	"conduit/internal/seed"
 	"conduit/internal/store"
 )
@@ -85,7 +86,15 @@ func run() error {
 		return err
 	}
 
-	srv := &api.Server{Store: st, Engine: engine.New(st), Web: ui}
+	eng := engine.New(st)
+
+	// Start the cron scheduler, tied to the process lifetime.
+	schedCtx, schedCancel := context.WithCancel(context.Background())
+	defer schedCancel()
+	sched := scheduler.New(st, eng)
+	sched.Start(schedCtx)
+
+	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Web: ui}
 
 	httpSrv := &http.Server{
 		Addr:    addr,

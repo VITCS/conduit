@@ -207,6 +207,7 @@ go test ./internal/store/ -run TestPostgresStoreContract -v
 | `POST` | `/api/runs/{id}/approve` | resolve an approval gate (`{node_id, decision}`) |
 | `POST` | `/api/runs/{id}/cancel` | cancel a running/waiting run (`409` if not active) |
 | `POST` | `/api/hooks/{workflowId}` | start a run from a webhook; JSON body becomes the trigger input |
+| `GET`  | `/api/schedules` | list active cron schedules |
 | `GET`  | `/api/events` | SSE stream (optional `?run=<id>`) |
 
 ## Roadmap
@@ -225,9 +226,19 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
 - **Real HTTP executor** — opt-in (`live: true`) nodes make a real request
   (method/headers/body/timeout); the simulated default keeps the demo offline.
 
-Still ahead (see the roadmap): parallel branch scheduling, cron scheduling,
-secrets + real connectors, multi-tenancy, auth/RBAC, multi-instance event bus,
-and SSRF guards on the live HTTP executor.
+**Phase 2 (shipped):** scheduling, parallelism & run history —
+
+- **Parallel execution** — independent DAG branches run concurrently; retries,
+  cancellation and approval gating are preserved.
+- **Cron scheduling** — `schedule` trigger nodes (`cron` field) fire runs via a
+  background scheduler; `GET /api/schedules` lists them; re-syncs on save.
+- **Run history** — the rail lists past runs; pick one to load its state.
+- **New components** — `filter` (stops a branch without failing), `merge`,
+  `graphql`, and `schedule`/`start` triggers.
+
+Still ahead (see the roadmap): secrets + real connectors, multi-tenancy,
+auth/RBAC, multi-instance event bus, bounded worker pool / per-node timeouts,
+true `foreach`/`loop`, and SSRF guards on the live HTTP executor.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

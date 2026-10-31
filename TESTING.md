@@ -402,6 +402,34 @@ These behaviors are covered by `go test ./...` (engine retries/cancel/webhook,
 the live HTTP executor against an `httptest` server, and the cancel/hook API
 endpoints).
 
+## 10c. Phase 2 features (parallel, scheduling, history)
+
+**Parallel execution** — independent branches run concurrently. In the seeded
+workflow, after Health Check the Memory-write and Approval branches run at the
+same time; you can see both advance together in the Console/canvas during a run.
+
+**Cron scheduling** — add a `schedule` trigger with a `cron` field, then list
+active schedules:
+```bash
+curl -s -X PUT localhost:8080/api/workflows/wf_cron -H 'Content-Type: application/json' -d '{
+  "id":"wf_cron","name":"Cron demo",
+  "nodes":[{"id":"t","type":"schedule","title":"Every minute","icon":"clock","kind":"trigger","x":0,"y":0,"config":[{"key":"cron","value":"@every 1m"}]},
+           {"id":"s","type":"status","title":"Done","icon":"flag","kind":"status","x":300,"y":0,"config":[]}],
+  "edges":[{"from":"t","to":"s"}]}'
+curl -s localhost:8080/api/schedules
+# [{"workflow_id":"wf_cron",...,"cron":"@every 1m"}]
+```
+Cron syntax: standard 5-field, an optional leading seconds field, or descriptors
+like `@every 30s` and `@hourly`. A run appears in `GET /api/runs` each time it fires.
+
+**Run history** — in the UI, click **Run history** in the left rail to list past
+runs; pick one to load its steps, outputs and memory. Over the API it's just
+`GET /api/runs` and `GET /api/runs/{id}`.
+
+**New components** — `filter` stops a branch (without failing the run) when its
+`result` is `false`; `merge` is a pass-through join; `graphql` mirrors the
+simulated HTTP node. All selectable from the Edit palette.
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

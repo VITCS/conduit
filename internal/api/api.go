@@ -14,15 +14,17 @@ import (
 	"conduit/internal/components"
 	"conduit/internal/engine"
 	"conduit/internal/model"
+	"conduit/internal/scheduler"
 	"conduit/internal/store"
 	"conduit/internal/validate"
 )
 
 // Server bundles the dependencies the handlers need.
 type Server struct {
-	Store  store.Store
-	Engine *engine.Engine
-	Web    fs.FS // static assets (the UI)
+	Store     store.Store
+	Engine    *engine.Engine
+	Scheduler *scheduler.Scheduler // optional; nil disables schedule endpoints/sync
+	Web       fs.FS                // static assets (the UI)
 }
 
 // Routes returns the HTTP handler for the whole app.
@@ -34,6 +36,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/workflows", s.listWorkflows)
 	mux.HandleFunc("GET /api/workflows/{id}", s.getWorkflow)
 	mux.HandleFunc("PUT /api/workflows/{id}", s.putWorkflow)
+	mux.HandleFunc("GET /api/schedules", s.listSchedules)
 	mux.HandleFunc("GET /api/runs", s.listRuns)
 	mux.HandleFunc("POST /api/runs", s.createRun)
 	mux.HandleFunc("GET /api/runs/{id}", s.getRun)
@@ -103,7 +106,19 @@ func (s *Server) putWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Pick up any schedule changes immediately.
+	if s.Scheduler != nil {
+		_ = s.Scheduler.Sync()
+	}
 	writeJSON(w, http.StatusOK, wf)
+}
+
+func (s *Server) listSchedules(w http.ResponseWriter, _ *http.Request) {
+	if s.Scheduler == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Scheduler.Schedules())
 }
 
 func (s *Server) listRuns(w http.ResponseWriter, _ *http.Request) {

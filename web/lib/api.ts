@@ -38,6 +38,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ workflow_id: workflowId }),
     }),
+  listRuns: () => req<Run[]>("/api/runs"),
   getRun: (id: string) => req<Run>(`/api/runs/${encodeURIComponent(id)}`),
   approve: (runId: string, nodeId: string, decision: "approved" | "rejected") =>
     req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/approve`, {

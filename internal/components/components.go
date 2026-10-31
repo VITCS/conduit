@@ -33,10 +33,15 @@ type Executor func(n model.Node, run *model.Run) Result
 var registry = map[string]Executor{
 	"github":   execTrigger,
 	"webhook":  execTrigger,
+	"schedule": execTrigger,
+	"start":    execTrigger,
 	"timegate": execTimegate,
 	"http":     execHTTP,
+	"graphql":  execGraphQL,
 	"ssh":      execSSH,
 	"if":       execIf,
+	"filter":   execFilter,
+	"merge":    execMerge,
 	"wait":     execWait,
 	"memory":   execMemory,
 	"status":   execStatus,
@@ -216,6 +221,43 @@ func execIf(n model.Node, _ *model.Run) Result {
 		Outcome: outcome,
 		Output:  map[string]any{"condition": n.Field("expr"), "result": truthy},
 		Logs:    []string{fmt.Sprintf("if (%s) => %v", n.Field("expr"), truthy)},
+	}
+}
+
+// execFilter passes the branch through when its condition is truthy, otherwise
+// returns a skipped outcome that stops the branch WITHOUT failing the run.
+func execFilter(n model.Node, _ *model.Run) Result {
+	pass := !strings.EqualFold(strings.TrimSpace(n.Field("result")), "false")
+	if pass {
+		return Result{
+			Outcome: model.StatusSuccess,
+			Output:  map[string]any{"condition": n.Field("expr"), "passed": true},
+			Logs:    []string{fmt.Sprintf("filter (%s) => pass", n.Field("expr"))},
+		}
+	}
+	return Result{
+		Outcome: model.StatusSkipped,
+		Output:  map[string]any{"condition": n.Field("expr"), "passed": false},
+		Logs:    []string{fmt.Sprintf("filter (%s) => stop", n.Field("expr"))},
+	}
+}
+
+// execMerge is a pass-through join point. True join semantics (wait for all
+// predecessors) are a later addition; today it succeeds so the branch continues.
+func execMerge(_ model.Node, _ *model.Run) Result {
+	return Result{Outcome: model.StatusSuccess, Output: map[string]any{"merged": true}, Logs: []string{"merged"}}
+}
+
+// execGraphQL simulates a GraphQL call (mirrors the simulated http default).
+func execGraphQL(n model.Node, _ *model.Run) Result {
+	return Result{
+		Outcome: model.StatusSuccess,
+		Output: map[string]any{
+			"endpoint": n.Field("url"),
+			"query":    n.Field("query"),
+			"data":     map[string]any{"ok": true},
+		},
+		Logs: []string{fmt.Sprintf("graphql %s -> ok", firstNonEmpty(n.Field("url"), "endpoint"))},
 	}
 }
 

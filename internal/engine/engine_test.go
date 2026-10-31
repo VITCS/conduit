@@ -54,8 +54,9 @@ func TestRunReachesApprovalGate(t *testing.T) {
 	})
 
 	r := runStatus(t, st, run.ID)
-	// Everything up to the gate should have succeeded; the gate waits.
-	for _, id := range []string{"t1", "g1", "p1", "c1", "h1", "m1"} {
+	// The approval node's strict predecessors must be done before it waits.
+	// (m1 is a sibling branch and may still be running under parallel execution.)
+	for _, id := range []string{"t1", "g1", "p1", "c1", "h1"} {
 		if got := r.Steps[id].Status; got == model.StatusPending || got == model.StatusFailed {
 			t.Errorf("step %s = %s, want completed before gate", id, got)
 		}

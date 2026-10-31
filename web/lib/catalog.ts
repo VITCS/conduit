@@ -12,9 +12,13 @@ export interface CatalogItem {
 export const CATALOG: CatalogItem[] = [
   { type: "github", name: "Git event", icon: "github", kind: "trigger", desc: "Pull request / push" },
   { type: "webhook", name: "Webhook", icon: "webhook", kind: "trigger", desc: "Inbound HTTP trigger" },
+  { type: "schedule", name: "Schedule", icon: "clock", kind: "trigger", desc: "Cron schedule" },
   { type: "http", name: "HTTP", icon: "globe", kind: "step", desc: "Call an API" },
+  { type: "graphql", name: "GraphQL", icon: "globe", kind: "step", desc: "Query a GraphQL API" },
   { type: "ssh", name: "SSH", icon: "terminal", kind: "step", desc: "Run commands on a host" },
   { type: "if", name: "If", icon: "branch", kind: "step", desc: "Branch on a condition" },
+  { type: "filter", name: "Filter", icon: "branch", kind: "step", desc: "Stop a branch unless condition holds" },
+  { type: "merge", name: "Merge", icon: "branch", kind: "step", desc: "Join branches" },
   { type: "timegate", name: "Time gate", icon: "clock", kind: "step", desc: "Hold until a window" },
   { type: "wait", name: "Wait", icon: "wait", kind: "step", desc: "Pause for a duration" },
   { type: "approval", name: "Approval", icon: "approve", kind: "step", desc: "Require a human sign-off" },

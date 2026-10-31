@@ -85,6 +85,8 @@ function FlowApp() {
   const [runLabel, setRunLabel] = useState("No run yet");
   const [runMeta, setRunMeta] = useState("press Run to execute");
   const [railHidden, setRailHidden] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [runs, setRuns] = useState<Run[]>([]);
   const [toast, setToast] = useState("");
   const esRef = useRef<EventSource | null>(null);
   const seq = useRef(1000);
@@ -400,6 +402,35 @@ function FlowApp() {
     [nodes, rf],
   );
 
+  const toggleHistory = useCallback(async () => {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (next) {
+      try {
+        setRuns(await api.listRuns());
+      } catch (e) {
+        showToast("Could not load runs: " + (e as Error).message);
+      }
+    }
+  }, [showHistory, showToast]);
+
+  const pickRun = useCallback(
+    async (id: string) => {
+      try {
+        const full = await api.getRun(id);
+        setRunId(id);
+        setRunLabel(full.title);
+        setRunMeta(full.id);
+        applyRun(full);
+        setShowHistory(false);
+        setTab("canvas");
+      } catch (e) {
+        showToast("Could not load run: " + (e as Error).message);
+      }
+    },
+    [showToast],
+  );
+
   const stepRel = useCallback(
     (delta: number) => {
       if (!selected) return;
@@ -437,6 +468,11 @@ function FlowApp() {
             onSelect={focusNode}
             runLabel={runLabel}
             runMeta={runMeta}
+            showHistory={showHistory}
+            onToggleHistory={toggleHistory}
+            runs={runs}
+            currentRunId={runId}
+            onPickRun={pickRun}
           />
 
           <section className="center">

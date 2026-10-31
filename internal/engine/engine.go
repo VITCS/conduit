@@ -141,49 +141,62 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 	e.publish(model.Event{Type: "run.started", RunID: runID, Level: "info",
 		Message: fmt.Sprintf("Run %s started", runID)})
 
-	// Breadth-first walk from trigger nodes. Sequential execution keeps step
-	// ordering legible; a parallel scheduler is a natural next step.
-	queue := []string{}
-	for _, n := range wf.Nodes {
-		if n.Kind == model.KindTrigger {
-			queue = append(queue, n.ID)
-		}
-	}
-	visited := map[string]bool{}
-	failed := false
-	canceled := false
+	// Parallel scheduler: a node is activated by the first incoming edge whose
+	// label matches its predecessor's outcome, and runs exactly once. Independent
+	// branches run concurrently in their own goroutines. (A true join — waiting
+	// for all predecessors — is a later addition; "merge" is a pass-through today.)
+	var (
+		mu       sync.Mutex
+		started  = map[string]bool{}
+		wg       sync.WaitGroup
+		failed   bool
+		canceled bool
+	)
 
-	for len(queue) > 0 {
-		if ctx.Err() != nil {
-			canceled = true
-			break
+	var activate func(id string)
+	activate = func(id string) {
+		mu.Lock()
+		if started[id] {
+			mu.Unlock()
+			return
 		}
-		id := queue[0]
-		queue = queue[1:]
-		if visited[id] {
-			continue
-		}
-		visited[id] = true
-
 		node, ok := nodes[id]
 		if !ok {
-			continue
+			mu.Unlock()
+			return
 		}
+		started[id] = true
+		mu.Unlock()
 
-		outcome := e.runNode(ctx, runID, node)
-		if outcome == model.StatusCanceled {
-			canceled = true
-			break
-		}
-		if outcome == model.StatusFailed {
-			failed = true
-		}
-		for _, ed := range out[id] {
-			if edgeMatches(ed.Label, outcome) {
-				queue = append(queue, ed.To)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			outcome := e.runNode(ctx, runID, node)
+			mu.Lock()
+			switch outcome {
+			case model.StatusCanceled:
+				canceled = true
+			case model.StatusFailed:
+				failed = true
 			}
+			mu.Unlock()
+			if outcome == model.StatusCanceled {
+				return // stop propagating this branch
+			}
+			for _, ed := range out[id] {
+				if edgeMatches(ed.Label, outcome) {
+					activate(ed.To)
+				}
+			}
+		}()
+	}
+
+	for _, n := range wf.Nodes {
+		if n.Kind == model.KindTrigger {
+			activate(n.ID)
 		}
 	}
+	wg.Wait()
 
 	// Unreached nodes: skipped normally, or canceled if the run was stopped.
 	leftover := model.StatusSkipped
@@ -192,7 +205,7 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 	}
 	e.store.MutateRun(runID, func(r *model.Run) {
 		for nid, st := range r.Steps {
-			if !visited[nid] && (st.Status == model.StatusPending || st.Status == model.StatusWaiting) {
+			if !started[nid] && (st.Status == model.StatusPending || st.Status == model.StatusWaiting) {
 				st.Status = leftover
 			}
 		}
@@ -404,10 +417,15 @@ func (e *Engine) publish(ev model.Event) {
 // follows unlabeled, "success", and "approved" edges; a failure follows
 // "failed" edges only.
 func edgeMatches(label string, outcome model.Status) bool {
-	if outcome == model.StatusFailed {
+	switch outcome {
+	case model.StatusFailed:
 		return label == "failed"
+	case model.StatusSkipped:
+		// A filtered-out branch stops; no outgoing edge is taken.
+		return false
+	default:
+		return label == "" || label == "success" || label == "approved"
 	}
-	return label == "" || label == "success" || label == "approved"
 }
 
 // statusFor maps a component outcome to the step status recorded for it.
@@ -419,6 +437,8 @@ func statusFor(outcome model.Status) model.Status {
 		return model.StatusCreated
 	case model.StatusTriggered:
 		return model.StatusTriggered
+	case model.StatusSkipped:
+		return model.StatusSkipped
 	default:
 		return model.StatusSuccess
 	}

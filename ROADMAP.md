@@ -49,14 +49,22 @@ The engine becomes dependable and reachable from the outside.
   The simulated default is preserved so the demo workflow still runs offline.
 - UI: `Cancel` action, `Canceled` status, run-input surfaced in the inspector.
 
-### Phase 2 — Scheduling, parallelism & run history
+### Phase 2 — Scheduling, parallelism & run history  ✅ (this release)
 
-- **Schedule trigger** (cron): a background scheduler starts runs on a schedule.
-- **Parallel branches**: execute independent DAG branches concurrently with a
-  bounded worker pool, replacing the sequential BFS.
-- **Timeouts** per node; **run queue** with concurrency limits.
-- **Run history UI**: paginated runs list, filter by status, re-run, diff.
-- `foreach`/`loop`/`merge`/`filter`/`graphql` components.
+- **Parallel branches**: independent DAG branches run concurrently (goroutine per
+  activated node), replacing the sequential BFS; cancellation/retries/approval
+  gating preserved.
+- **Schedule trigger** (cron): a background scheduler (`internal/scheduler`,
+  robfig/cron) starts runs from `schedule` trigger nodes; re-syncs on save and
+  every 30s; `GET /api/schedules` lists active schedules.
+- **Run history UI**: the rail toggles to a list of past runs; pick one to load
+  its steps, outputs and memory.
+- New components: `filter` (stops a branch via a `skipped` outcome, no failure),
+  `merge` (pass-through join), `graphql`, plus `schedule`/`start` triggers.
+
+Still deferred to later phases: bounded worker pool / run queue, per-node
+timeouts, true `foreach`/`loop` and join semantics for `merge`, run filtering &
+re-run in the UI.
 
 ### Phase 3 — Integrations & secrets
 
