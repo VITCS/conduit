@@ -16,6 +16,7 @@ const (
 	StatusCreated   Status = "created"
 	StatusFailed    Status = "failed"
 	StatusSkipped   Status = "skipped"
+	StatusCanceled  Status = "canceled"
 )
 
 // Kind distinguishes the three roles a node can play on the canvas.
@@ -91,6 +92,9 @@ type Run struct {
 	FinishedAt *time.Time          `json:"finished_at,omitempty"`
 	Steps      map[string]*StepRun `json:"steps"`
 	Memory     map[string]any      `json:"memory"`
+	// Input is the payload a run was started with (e.g. a webhook body); the
+	// trigger node exposes it to downstream steps.
+	Input map[string]any `json:"input,omitempty"`
 }
 
 // Event is a message published to live subscribers (the SSE stream).

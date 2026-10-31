@@ -117,6 +117,61 @@ func TestRunLifecycleOverHTTP(t *testing.T) {
 	}
 }
 
+func TestCancelRunOverHTTP(t *testing.T) {
+	ts := newTestServer(t)
+	defer ts.Close()
+
+	var run model.Run
+	postJSON(t, ts.URL+"/api/runs", map[string]string{"workflow_id": "wf_preview_envs"}, &run)
+	waitHTTP(t, ts.URL+"/api/runs/"+run.ID, model.StatusWaiting)
+
+	if code := postJSON(t, ts.URL+"/api/runs/"+run.ID+"/cancel", map[string]any{}, nil); code != 200 {
+		t.Fatalf("cancel status = %d, want 200", code)
+	}
+	final := waitHTTP(t, ts.URL+"/api/runs/"+run.ID, model.StatusCanceled)
+	if final.Status != model.StatusCanceled {
+		t.Errorf("run = %s, want canceled", final.Status)
+	}
+	// Cancelling a finished run → 409.
+	if code := postJSON(t, ts.URL+"/api/runs/"+run.ID+"/cancel", map[string]any{}, nil); code != http.StatusConflict {
+		t.Errorf("second cancel = %d, want 409", code)
+	}
+}
+
+func TestWebhookStartsRunWithInput(t *testing.T) {
+	ts := newTestServer(t)
+	defer ts.Close()
+
+	var run model.Run
+	code := postJSON(t, ts.URL+"/api/hooks/wf_preview_envs", map[string]any{"pr": 154, "action": "opened"}, &run)
+	if code != http.StatusCreated {
+		t.Fatalf("hook status = %d, want 201", code)
+	}
+	if run.ID == "" {
+		t.Fatal("hook did not return a run")
+	}
+	// The trigger node should expose the posted body as input.
+	waitHTTP(t, ts.URL+"/api/runs/"+run.ID, model.StatusWaiting)
+	full := getRunRaw(t, ts.URL+"/api/runs/"+run.ID)
+	out := full.Steps["t1"].Output
+	in, ok := out["input"].(map[string]any)
+	if !ok || in["action"] != "opened" {
+		t.Errorf("trigger input not bound from webhook body: %v", out)
+	}
+
+	// Unknown workflow → 404.
+	if code := postJSON(t, ts.URL+"/api/hooks/nope", map[string]any{}, nil); code != http.StatusNotFound {
+		t.Errorf("hook unknown workflow = %d, want 404", code)
+	}
+}
+
+func getRunRaw(t *testing.T, url string) model.Run {
+	t.Helper()
+	var r model.Run
+	getJSON(t, url, &r)
+	return r
+}
+
 func TestApproveNothingWaiting(t *testing.T) {
 	ts := newTestServer(t)
 	defer ts.Close()

@@ -45,5 +45,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ node_id: nodeId, decision }),
     }),
+  cancelRun: (runId: string) =>
+    req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
   eventsURL: (runId: string) => `${BASE}/api/events?run=${encodeURIComponent(runId)}`,
 };

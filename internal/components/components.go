@@ -9,10 +9,16 @@ package components
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"conduit/internal/model"
 )
+
+// liveHTTPClient performs real outbound requests for http nodes with live:true.
+var liveHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // Result is what an executor returns to the engine.
 type Result struct {
@@ -70,15 +76,20 @@ func Types() []string {
 	return out
 }
 
-func execTrigger(n model.Node, _ *model.Run) Result {
+func execTrigger(n model.Node, run *model.Run) Result {
+	out := map[string]any{
+		"event":  n.Field("on"),
+		"repo":   n.Field("repo"),
+		"source": n.Field("url"),
+	}
+	// Expose the payload the run was started with (e.g. a webhook body).
+	if run != nil && len(run.Input) > 0 {
+		out["input"] = run.Input
+	}
 	return Result{
 		Outcome: model.StatusTriggered,
-		Output: map[string]any{
-			"event":  n.Field("on"),
-			"repo":   n.Field("repo"),
-			"source": n.Field("url"),
-		},
-		Logs: []string{fmt.Sprintf("trigger fired: %s", firstNonEmpty(n.Field("on"), n.Field("repo"), "event"))},
+		Output:  out,
+		Logs:    []string{fmt.Sprintf("trigger fired: %s", firstNonEmpty(n.Field("on"), n.Field("repo"), "event"))},
 	}
 }
 
@@ -96,9 +107,16 @@ func execTimegate(n model.Node, _ *model.Run) Result {
 }
 
 func execHTTP(n model.Node, _ *model.Run) Result {
+	url := firstNonEmpty(n.Field("url"), n.Field("target"))
+
+	// Opt-in real request. The default stays simulated so the seeded demo runs
+	// offline and deterministically.
+	if strings.EqualFold(n.Field("live"), "true") {
+		return liveHTTP(n, url)
+	}
+
 	// A health-check-style node fails loudly if its URL names a failure; this
 	// keeps the demo deterministic while still exercising the failed branch.
-	url := firstNonEmpty(n.Field("url"), n.Field("target"))
 	if strings.Contains(strings.ToLower(url), "fail") {
 		return Result{
 			Outcome: model.StatusFailed,
@@ -127,6 +145,48 @@ func execHTTP(n model.Node, _ *model.Run) Result {
 		Outcome: model.StatusSuccess,
 		Output:  out,
 		Logs:    []string{fmt.Sprintf("%s -> ok", firstNonEmpty(url, "request"))},
+	}
+}
+
+// liveHTTP performs a real HTTP request. Method defaults to GET; a body sends as
+// the request body. The outcome is success for 2xx, failed otherwise or on error.
+func liveHTTP(n model.Node, url string) Result {
+	method := strings.ToUpper(firstNonEmpty(n.Field("method"), "GET"))
+	var body io.Reader
+	if b := n.Field("body"); b != "" {
+		body = strings.NewReader(b)
+	}
+	if url == "" {
+		return Result{Outcome: model.StatusFailed, Output: map[string]any{"error": "no url"}, Logs: []string{"no url configured"}}
+	}
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return Result{Outcome: model.StatusFailed, Output: map[string]any{"error": err.Error()}, Logs: []string{err.Error()}}
+	}
+	if ct := n.Field("content_type"); ct != "" {
+		req.Header.Set("Content-Type", ct)
+	}
+	start := time.Now()
+	resp, err := liveHTTPClient.Do(req)
+	if err != nil {
+		return Result{Outcome: model.StatusFailed, Output: map[string]any{"url": url, "error": err.Error()}, Logs: []string{fmt.Sprintf("%s %s -> error: %v", method, url, err)}}
+	}
+	defer resp.Body.Close()
+	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	outcome := model.StatusSuccess
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		outcome = model.StatusFailed
+	}
+	return Result{
+		Outcome: outcome,
+		Output: map[string]any{
+			"url":         url,
+			"method":      method,
+			"status_code": resp.StatusCode,
+			"latency_ms":  time.Since(start).Milliseconds(),
+			"body":        string(snippet),
+		},
+		Logs: []string{fmt.Sprintf("%s %s -> %d (%dms)", method, url, resp.StatusCode, time.Since(start).Milliseconds())},
 	}
 }
 

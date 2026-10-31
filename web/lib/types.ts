@@ -8,7 +8,8 @@ export type Status =
   | "success"
   | "created"
   | "failed"
-  | "skipped";
+  | "skipped"
+  | "canceled";
 
 export type Kind = "trigger" | "step" | "status";
 

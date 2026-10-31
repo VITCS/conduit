@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -192,6 +193,111 @@ func TestEdgeMatches(t *testing.T) {
 		if got := edgeMatches(c.label, c.outcome); got != c.want {
 			t.Errorf("edgeMatches(%q,%s) = %v, want %v", c.label, c.outcome, got, c.want)
 		}
+	}
+}
+
+func TestRetriesBeforeFailing(t *testing.T) {
+	st := store.NewMem()
+	wf := model.Workflow{
+		ID: "wf_retry", Name: "retry",
+		Nodes: []model.Node{
+			{ID: "t", Type: "github", Kind: model.KindTrigger, Title: "Trigger"},
+			{ID: "h", Type: "http", Kind: model.KindStep, Title: "Flaky",
+				Config: []model.Field{
+					{Key: "url", Value: "http://svc/fail"},
+					{Key: "retries", Value: "2"},
+					{Key: "retry_backoff_ms", Value: "0"},
+				}},
+		},
+		Edges: []model.Edge{{From: "t", To: "h"}},
+	}
+	if err := st.PutWorkflow(wf); err != nil {
+		t.Fatal(err)
+	}
+	e := New(st)
+	e.StepDelay, e.TriggerDelay = 0, 0
+
+	// Count "retrying" log events emitted for the failing node.
+	id, ch := st.Broker().Subscribe()
+	defer st.Broker().Unsubscribe(id)
+	retries := 0
+	done := make(chan struct{})
+	go func() {
+		for ev := range ch {
+			if ev.Type == "log" && ev.NodeID == "h" && strings.Contains(ev.Message, "retrying") {
+				retries++
+			}
+			if ev.Type == "run.finished" {
+				close(done)
+				return
+			}
+		}
+	}()
+
+	run := e.Start(wf, "")
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("run did not finish")
+	}
+
+	r := runStatus(t, st, run.ID)
+	if r.Steps["h"].Status != model.StatusFailed {
+		t.Errorf("h = %s, want failed", r.Steps["h"].Status)
+	}
+	if retries != 2 { // 2 retries after attempts 1 and 2; attempt 3 fails without retry
+		t.Errorf("retry count = %d, want 2", retries)
+	}
+}
+
+func TestCancelWaitingRun(t *testing.T) {
+	e, st := newTestEngine(t)
+	run := e.Start(seed.Workflow(), "")
+	waitFor(t, 2*time.Second, func() bool {
+		return runStatus(t, st, run.ID).Status == model.StatusWaiting
+	})
+	if !e.Cancel(run.ID) {
+		t.Fatal("Cancel returned false for an active run")
+	}
+	waitFor(t, 2*time.Second, func() bool {
+		return runStatus(t, st, run.ID).Status == model.StatusCanceled
+	})
+	r := runStatus(t, st, run.ID)
+	if r.Steps["a1"].Status != model.StatusCanceled {
+		t.Errorf("a1 = %s, want canceled", r.Steps["a1"].Status)
+	}
+	// Cancelling again is a no-op (run no longer active).
+	if e.Cancel(run.ID) {
+		t.Error("Cancel returned true for a finished run")
+	}
+}
+
+func TestRetryConfig(t *testing.T) {
+	n := model.Node{Config: []model.Field{{Key: "retries", Value: "3"}, {Key: "retry_backoff_ms", Value: "50"}}}
+	attempts, backoff := retryConfig(n)
+	if attempts != 4 || backoff != 50*time.Millisecond {
+		t.Errorf("retryConfig = (%d, %v), want (4, 50ms)", attempts, backoff)
+	}
+	a2, b2 := retryConfig(model.Node{})
+	if a2 != 1 || b2 != 200*time.Millisecond {
+		t.Errorf("default retryConfig = (%d, %v), want (1, 200ms)", a2, b2)
+	}
+}
+
+func TestWebhookInputReachesTrigger(t *testing.T) {
+	e, st := newTestEngine(t)
+	run := e.StartWithInput(seed.Workflow(), "", map[string]any{"pr": 154, "action": "opened"})
+	waitFor(t, 2*time.Second, func() bool {
+		s := runStatus(t, st, run.ID).Steps["t1"]
+		return s != nil && s.Status == model.StatusTriggered
+	})
+	out := runStatus(t, st, run.ID).Steps["t1"].Output
+	in, ok := out["input"].(map[string]any)
+	if !ok {
+		t.Fatalf("trigger output has no input map: %v", out)
+	}
+	if in["action"] != "opened" {
+		t.Errorf("input.action = %v, want opened", in["action"])
 	}
 }
 

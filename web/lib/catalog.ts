@@ -34,6 +34,7 @@ export const STATUS_META: Record<Status, { cls: string; label: string }> = {
   created: { cls: "ok", label: "Created" },
   failed: { cls: "fail", label: "Failed" },
   skipped: { cls: "idle", label: "Skipped" },
+  canceled: { cls: "idle", label: "Canceled" },
 };
 
 // Selectable edge labels (gates). "" means unconditional.

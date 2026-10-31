@@ -1,6 +1,8 @@
 package components
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"conduit/internal/model"
@@ -60,6 +62,40 @@ func TestStatusAndNoop(t *testing.T) {
 	n := For("does-not-exist")(node("x"), &model.Run{})
 	if n.Outcome != model.StatusSuccess {
 		t.Errorf("unknown type should fall back to noop success, got %s", n.Outcome)
+	}
+}
+
+func TestLiveHTTP(t *testing.T) {
+	okSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("pong"))
+	}))
+	defer okSrv.Close()
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer errSrv.Close()
+
+	ok := For("http")(node("http",
+		model.Field{Key: "live", Value: "true"},
+		model.Field{Key: "url", Value: okSrv.URL},
+	), &model.Run{})
+	if ok.Outcome != model.StatusSuccess {
+		t.Errorf("live 200 outcome = %s, want success", ok.Outcome)
+	}
+	if ok.Output["status_code"] != 200 {
+		t.Errorf("status_code = %v, want 200", ok.Output["status_code"])
+	}
+	if ok.Output["body"] != "pong" {
+		t.Errorf("body = %v, want pong", ok.Output["body"])
+	}
+
+	bad := For("http")(node("http",
+		model.Field{Key: "live", Value: "true"},
+		model.Field{Key: "url", Value: errSrv.URL},
+	), &model.Run{})
+	if bad.Outcome != model.StatusFailed {
+		t.Errorf("live 500 outcome = %s, want failed", bad.Outcome)
 	}
 }
 

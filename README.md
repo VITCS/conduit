@@ -205,29 +205,34 @@ go test ./internal/store/ -run TestPostgresStoreContract -v
 | `GET`  | `/api/runs` | list runs (newest first) |
 | `GET`  | `/api/runs/{id}` | one run with steps + memory |
 | `POST` | `/api/runs/{id}/approve` | resolve an approval gate (`{node_id, decision}`) |
+| `POST` | `/api/runs/{id}/cancel` | cancel a running/waiting run (`409` if not active) |
+| `POST` | `/api/hooks/{workflowId}` | start a run from a webhook; JSON body becomes the trigger input |
 | `GET`  | `/api/events` | SSE stream (optional `?run=<id>`) |
 
-## What's deliberately left as a next step
+## Roadmap
 
-The foundations are real but some edges are still stubbed:
+The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROADMAP.md)**
+(phased: scheduling & parallelism → integrations & secrets → multi-tenancy & auth
+→ realtime/scale → agents → release hardening).
 
-- **Real side effects** — executors simulate their work deterministically;
-  replace them with real GitHub / SSH / HTTP calls behind the same `Executor`
-  signature.
-- **Parallel scheduling** — the engine runs nodes sequentially in BFS order;
-  fan-out branches could execute concurrently.
-- **Auth** — there is none; add it before exposing the server.
-- **Event durability** — the SSE broker is in-process; a multi-instance
-  deployment would move it to Postgres `LISTEN/NOTIFY` or a message bus.
-- **React 19** — the UI runs on React 18; Next.js 16 deprecates it (removed in
-  Next 17), so a React 19 bump is the next housekeeping step.
+**Phase 1 (shipped):** execution robustness & inbound triggers —
 
-Done so far: **Postgres persistence** (interface + `Pg` impl), a **`go test`
-suite** (engine, components, store contract, HTTP API, **workflow validation**),
-a **Next.js frontend** (React Flow canvas) exported and embedded into the single
-binary, **editor saves** to `PUT /api/workflows/{id}`, an **edge label/gate
-picker**, **inline node config editing**, and **save-time validation** that
-rejects cycles and dangling edges.
+- **Retries with backoff** — per-node `retries` + `retry_backoff_ms`.
+- **Run cancellation** — `POST /api/runs/{id}/cancel`; context-aware engine,
+  `Canceled` status, Cancel button in the UI.
+- **Webhook trigger** — `POST /api/hooks/{workflowId}` starts a run and binds the
+  JSON body as the trigger's `input`, available to downstream steps.
+- **Real HTTP executor** — opt-in (`live: true`) nodes make a real request
+  (method/headers/body/timeout); the simulated default keeps the demo offline.
+
+Still ahead (see the roadmap): parallel branch scheduling, cron scheduling,
+secrets + real connectors, multi-tenancy, auth/RBAC, multi-instance event bus,
+and SSRF guards on the live HTTP executor.
+
+Previously shipped: **Postgres persistence**, a **`go test` suite**, the
+**Next.js/React Flow UI** embedded in the single binary, **editor saves**, an
+**edge label/gate picker**, **inline node config editing**, and **save-time
+validation** (cycles, dangling edges, …).
 
 ### Dependencies
 

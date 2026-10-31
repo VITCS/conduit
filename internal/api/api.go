@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -37,6 +38,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/runs", s.createRun)
 	mux.HandleFunc("GET /api/runs/{id}", s.getRun)
 	mux.HandleFunc("POST /api/runs/{id}/approve", s.approve)
+	mux.HandleFunc("POST /api/runs/{id}/cancel", s.cancel)
+	mux.HandleFunc("POST /api/hooks/{workflowID}", s.hook)
 	mux.HandleFunc("GET /api/events", s.events)
 
 	// Static UI (index.html at /, assets alongside). Content-hashed Next assets
@@ -161,6 +164,36 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "decision": body.Decision})
+}
+
+// cancel stops a running or waiting run.
+func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
+	if !s.Engine.Cancel(r.PathValue("id")) {
+		writeErr(w, http.StatusConflict, "run is not active")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// hook starts a run from an inbound webhook, binding the posted JSON body as the
+// run's input (exposed by the trigger node to downstream steps).
+func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
+	wf, ok, err := s.Store.GetWorkflow(r.PathValue("workflowID"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeErr(w, http.StatusNotFound, "workflow not found")
+		return
+	}
+	var input map[string]any
+	if r.Body != nil {
+		// Tolerate an empty or non-JSON body; input is optional.
+		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&input)
+	}
+	run := s.Engine.StartWithInput(wf, "webhook: "+wf.Name, input)
+	writeJSON(w, http.StatusCreated, run)
 }
 
 // events streams run events as SSE. An optional ?run=<id> filters to one run.

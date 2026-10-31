@@ -365,6 +365,43 @@ The schema is created automatically on first connect (tables `workflows` and
 
 ---
 
+## 10b. Phase 1 features (retries, cancel, webhooks, live HTTP)
+
+With the server running (`make up` or `make run`):
+
+**Cancel a run**
+```bash
+RID=$(curl -s -X POST localhost:8080/api/runs -H 'Content-Type: application/json' \
+  -d '{"workflow_id":"wf_preview_envs"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+sleep 1
+curl -s -X POST localhost:8080/api/runs/$RID/cancel -w "\nHTTP %{http_code}\n"
+curl -s localhost:8080/api/runs/$RID | python3 -c "import sys,json;print(json.load(sys.stdin)['status'])"
+# -> canceled   (a second cancel returns HTTP 409)
+```
+In the UI, click **Run**, then the **Cancel** button that replaces it.
+
+**Trigger a run via webhook** (the body becomes the trigger's `input`)
+```bash
+curl -s -X POST localhost:8080/api/hooks/wf_preview_envs \
+  -H 'Content-Type: application/json' -d '{"pr":154,"action":"opened"}' | python3 -m json.tool
+# then inspect the trigger node's output:
+#   runs/{id} -> steps.t1.output.input == {"pr":154,"action":"opened"}
+```
+
+**Retries**: add `retries` and `retry_backoff_ms` fields to a node's config (in
+the UI's Config tab or via `PUT`). A failing node is retried that many times
+before the `failed` edge is taken; the Console logs each `attempt N failed,
+retrying`.
+
+**Real HTTP**: set a node's config `live: true` with a `url` (and optional
+`method`, `body`, `content_type`). The executor makes a real request and records
+`status_code`, `latency_ms`, and a body snippet; 2xx → success, else failed. The
+seeded workflow leaves `live` unset, so it stays simulated and offline.
+
+These behaviors are covered by `go test ./...` (engine retries/cancel/webhook,
+the live HTTP executor against an `httptest` server, and the cancel/hook API
+endpoints).
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

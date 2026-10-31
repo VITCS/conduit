@@ -8,7 +8,9 @@
 package engine
 
 import (
+	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -22,7 +24,8 @@ type Engine struct {
 	store store.Store
 
 	mu        sync.Mutex
-	approvals map[string]chan string // runID|nodeID -> decision channel
+	approvals map[string]chan string        // runID|nodeID -> decision channel
+	cancels   map[string]context.CancelFunc // runID -> cancel
 
 	// pacing between steps; exported-ish knobs kept small for a responsive demo.
 	StepDelay    time.Duration
@@ -34,6 +37,7 @@ func New(s store.Store) *Engine {
 	return &Engine{
 		store:        s,
 		approvals:    map[string]chan string{},
+		cancels:      map[string]context.CancelFunc{},
 		StepDelay:    650 * time.Millisecond,
 		TriggerDelay: 300 * time.Millisecond,
 	}
@@ -53,6 +57,12 @@ func nextRunID() string {
 
 // Start creates a run for a workflow and executes it in the background.
 func (e *Engine) Start(wf model.Workflow, title string) model.Run {
+	return e.StartWithInput(wf, title, nil)
+}
+
+// StartWithInput is Start with a payload (e.g. a webhook body) bound to the run;
+// the trigger node exposes it to downstream steps.
+func (e *Engine) StartWithInput(wf model.Workflow, title string, input map[string]any) model.Run {
 	if title == "" {
 		title = wf.Name
 	}
@@ -64,13 +74,32 @@ func (e *Engine) Start(wf model.Workflow, title string) model.Run {
 		CreatedAt:  time.Now(),
 		Steps:      map[string]*model.StepRun{},
 		Memory:     map[string]any{},
+		Input:      input,
 	}
 	for _, n := range wf.Nodes {
 		r.Steps[n.ID] = &model.StepRun{NodeID: n.ID, Status: model.StatusPending}
 	}
 	snap, _ := e.store.CreateRun(r)
-	go e.execute(r.ID, wf)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	e.mu.Lock()
+	e.cancels[r.ID] = cancel
+	e.mu.Unlock()
+
+	go e.execute(ctx, r.ID, wf)
 	return snap
+}
+
+// Cancel stops a running or waiting run. Returns false if no such run is active.
+func (e *Engine) Cancel(runID string) bool {
+	e.mu.Lock()
+	cancel, ok := e.cancels[runID]
+	e.mu.Unlock()
+	if !ok {
+		return false
+	}
+	cancel()
+	return true
 }
 
 // Resolve delivers a human decision ("approved"/"rejected") to a waiting
@@ -92,7 +121,14 @@ func (e *Engine) Resolve(runID, nodeID, decision string) bool {
 
 func key(runID, nodeID string) string { return runID + "|" + nodeID }
 
-func (e *Engine) execute(runID string, wf model.Workflow) {
+func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
+	// Release the cancel registration when the run ends.
+	defer func() {
+		e.mu.Lock()
+		delete(e.cancels, runID)
+		e.mu.Unlock()
+	}()
+
 	nodes := map[string]model.Node{}
 	for _, n := range wf.Nodes {
 		nodes[n.ID] = n
@@ -115,8 +151,13 @@ func (e *Engine) execute(runID string, wf model.Workflow) {
 	}
 	visited := map[string]bool{}
 	failed := false
+	canceled := false
 
 	for len(queue) > 0 {
+		if ctx.Err() != nil {
+			canceled = true
+			break
+		}
 		id := queue[0]
 		queue = queue[1:]
 		if visited[id] {
@@ -129,7 +170,11 @@ func (e *Engine) execute(runID string, wf model.Workflow) {
 			continue
 		}
 
-		outcome := e.runNode(runID, node)
+		outcome := e.runNode(ctx, runID, node)
+		if outcome == model.StatusCanceled {
+			canceled = true
+			break
+		}
 		if outcome == model.StatusFailed {
 			failed = true
 		}
@@ -140,17 +185,24 @@ func (e *Engine) execute(runID string, wf model.Workflow) {
 		}
 	}
 
-	// Anything never reached on a not-taken branch is marked skipped.
+	// Unreached nodes: skipped normally, or canceled if the run was stopped.
+	leftover := model.StatusSkipped
+	if canceled {
+		leftover = model.StatusCanceled
+	}
 	e.store.MutateRun(runID, func(r *model.Run) {
 		for nid, st := range r.Steps {
-			if !visited[nid] && st.Status == model.StatusPending {
-				st.Status = model.StatusSkipped
+			if !visited[nid] && (st.Status == model.StatusPending || st.Status == model.StatusWaiting) {
+				st.Status = leftover
 			}
 		}
 	})
 
 	final := model.StatusSuccess
-	if failed {
+	switch {
+	case canceled:
+		final = model.StatusCanceled
+	case failed:
 		final = model.StatusFailed
 	}
 	snap, _, _ := e.store.MutateRun(runID, func(r *model.Run) {
@@ -163,10 +215,10 @@ func (e *Engine) execute(runID string, wf model.Workflow) {
 		Run: &snap})
 }
 
-// runNode executes one node and returns its outcome. Approval nodes block here
-// until Resolve is called.
-func (e *Engine) runNode(runID string, node model.Node) model.Status {
-	// mark running
+// runNode executes one node and returns its outcome. It retries a failed
+// executor up to the node's configured attempts, and returns StatusCanceled if
+// the run's context is canceled. Approval nodes block until Resolve or cancel.
+func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) model.Status {
 	start := time.Now()
 	e.setStep(runID, node.ID, model.StatusRunning, func(s *model.StepRun) {
 		s.StartedAt = &start
@@ -175,25 +227,38 @@ func (e *Engine) runNode(runID string, node model.Node) model.Status {
 		Message: fmt.Sprintf("%s · running", node.Title)})
 
 	if node.Type == "approval" {
-		return e.runApproval(runID, node)
+		return e.runApproval(ctx, runID, node)
 	}
 
-	time.Sleep(e.stepPacing(node))
-
-	// execute against the live run (executors may touch run.Memory)
+	attempts, backoff := retryConfig(node)
 	var res components.Result
-	e.store.MutateRun(runID, func(r *model.Run) {
-		res = components.For(node.Type)(node, r)
-	}) //nolint:errcheck // best-effort during execution
+	var logs []string
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if !sleepCtx(ctx, e.stepPacing(node)) {
+			return e.finishCanceled(runID, node)
+		}
+		e.store.MutateRun(runID, func(r *model.Run) {
+			res = components.For(node.Type)(node, r)
+		}) //nolint:errcheck // best-effort during execution
+		logs = res.Logs
+		if res.Outcome != model.StatusFailed || attempt == attempts {
+			break
+		}
+		e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
+			Message: fmt.Sprintf("%s · attempt %d failed, retrying", node.Title, attempt)})
+		if !sleepCtx(ctx, backoff*time.Duration(attempt)) {
+			return e.finishCanceled(runID, node)
+		}
+	}
 
 	status := statusFor(res.Outcome)
 	end := time.Now()
 	e.setStep(runID, node.ID, status, func(s *model.StepRun) {
 		s.EndedAt = &end
 		s.Output = res.Output
-		s.Logs = res.Logs
+		s.Logs = logs
 	})
-	for _, l := range res.Logs {
+	for _, l := range logs {
 		e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID,
 			Level: levelFor(status), Message: fmt.Sprintf("%s · %s", node.Title, l)})
 	}
@@ -204,7 +269,14 @@ func (e *Engine) runNode(runID string, node model.Node) model.Status {
 	return res.Outcome
 }
 
-func (e *Engine) runApproval(runID string, node model.Node) model.Status {
+// finishCanceled marks a node canceled and returns the canceled outcome.
+func (e *Engine) finishCanceled(runID string, node model.Node) model.Status {
+	e.setStep(runID, node.ID, model.StatusCanceled, nil)
+	e.publishStep(runID, node.ID, model.StatusCanceled, node.Title+" · canceled")
+	return model.StatusCanceled
+}
+
+func (e *Engine) runApproval(ctx context.Context, runID string, node model.Node) model.Status {
 	ch := make(chan string, 1)
 	e.mu.Lock()
 	e.approvals[key(runID, node.ID)] = ch
@@ -222,7 +294,12 @@ func (e *Engine) runApproval(runID string, node model.Node) model.Status {
 		Message: fmt.Sprintf("%s · awaiting approval from %s", node.Title, node.Field("approvers")),
 		Run:     &snap})
 
-	decision := <-ch
+	var decision string
+	select {
+	case decision = <-ch:
+	case <-ctx.Done():
+		return e.finishCanceled(runID, node)
+	}
 
 	e.store.MutateRun(runID, func(r *model.Run) { r.Status = model.StatusRunning }) //nolint:errcheck
 
@@ -246,6 +323,39 @@ func (e *Engine) runApproval(runID string, node model.Node) model.Status {
 }
 
 // --- helpers ---
+
+// retryConfig reads a node's retry settings: total attempts (1 + retries) and
+// the base backoff between attempts. Defaults: 1 attempt, 200ms base backoff.
+func retryConfig(node model.Node) (attempts int, backoff time.Duration) {
+	attempts = 1
+	if v := node.Field("retries"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			attempts = 1 + n
+		}
+	}
+	backoff = 200 * time.Millisecond
+	if v := node.Field("retry_backoff_ms"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			backoff = time.Duration(n) * time.Millisecond
+		}
+	}
+	return attempts, backoff
+}
+
+// sleepCtx sleeps for d, returning false if the context is canceled first.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
 
 func (e *Engine) stepPacing(node model.Node) time.Duration {
 	if node.Kind == model.KindTrigger {

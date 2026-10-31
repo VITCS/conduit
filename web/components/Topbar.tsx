@@ -1,5 +1,5 @@
 "use client";
-import { Menu, Play, Save, Pencil, Sun, Moon } from "lucide-react";
+import { Menu, Play, Square, Save, Pencil, Sun, Moon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 function Logo() {
@@ -24,6 +24,7 @@ export function Topbar(props: {
   name: string;
   onName: (v: string) => void;
   onRun: () => void;
+  onCancel: () => void;
   running: boolean;
   editMode: boolean;
   onToggleEdit: () => void;
@@ -57,9 +58,15 @@ export function Topbar(props: {
         <input value={props.name} onChange={(e) => props.onName(e.target.value)} aria-label="Workflow name" spellCheck={false} />
       </div>
       <div className="topbar-right">
-        <button className="btn primary" onClick={props.onRun} disabled={props.running}>
-          <Play size={15} fill="currentColor" /> Run
-        </button>
+        {props.running ? (
+          <button className="btn" onClick={props.onCancel} title="Cancel run">
+            <Square size={14} fill="currentColor" /> Cancel
+          </button>
+        ) : (
+          <button className="btn primary" onClick={props.onRun}>
+            <Play size={15} fill="currentColor" /> Run
+          </button>
+        )}
         {props.editMode && (
           <button className={`btn save${props.dirty ? " dirty" : ""}`} onClick={props.onSave}>
             <Save size={15} /> {props.dirty ? "Save *" : "Save"}

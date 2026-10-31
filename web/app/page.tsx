@@ -211,6 +211,16 @@ function FlowApp() {
     setMemory(full.memory || {});
   }
 
+  const cancelRun = useCallback(async () => {
+    if (!runId) return;
+    try {
+      await api.cancelRun(runId);
+      showToast("Run canceled");
+    } catch (e) {
+      showToast("Cancel failed: " + (e as Error).message);
+    }
+  }, [runId, showToast]);
+
   const approve = useCallback(
     async (decision: "approved" | "rejected") => {
       if (!runId || !waitingNode) return;
@@ -410,6 +420,7 @@ function FlowApp() {
             markDirty();
           }}
           onRun={runWorkflow}
+          onCancel={cancelRun}
           running={running}
           editMode={editMode}
           onToggleEdit={() => setEditMode((v) => !v)}
