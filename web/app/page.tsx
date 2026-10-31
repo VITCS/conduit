@@ -28,6 +28,7 @@ import { Topbar } from "@/components/Topbar";
 import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
 import { SecretsPanel } from "@/components/SecretsPanel";
+import { MembersPanel } from "@/components/MembersPanel";
 import { Login } from "@/components/Login";
 import { EditorContext } from "@/lib/editorContext";
 import { api, getToken, setToken, setOnUnauthorized, getProject, setProject } from "@/lib/api";
@@ -90,6 +91,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [railHidden, setRailHidden] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [currentProject, setCurrentProject] = useState("default");
@@ -510,6 +512,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           onSave={save}
           onToggleRail={() => setRailHidden((v) => !v)}
           onOpenSecrets={() => setShowSecrets(true)}
+          onOpenMembers={() => setShowMembers(true)}
           user={user}
           onSignOut={onSignOut}
           projects={projects}
@@ -643,6 +646,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           <Palette hidden={!editMode} onAdd={addComponent} />
         </div>
         {showSecrets && <SecretsPanel onClose={() => setShowSecrets(false)} onToast={showToast} />}
+        {showMembers && <MembersPanel projectId={currentProject} onClose={() => setShowMembers(false)} onToast={showToast} />}
         {toast && <div className="toast">{toast}</div>}
       </div>
     </EditorContext.Provider>

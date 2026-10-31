@@ -56,6 +56,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/components", s.listComponents)
 	mux.HandleFunc("GET /api/projects", s.listProjects)
 	mux.HandleFunc("POST /api/projects", s.createProject)
+	mux.HandleFunc("GET /api/projects/{id}/members", s.listMembers)
+	mux.HandleFunc("POST /api/projects/{id}/members", s.addMember)
+	mux.HandleFunc("DELETE /api/projects/{id}/members/{userID}", s.removeMember)
+	mux.HandleFunc("GET /api/users", s.listUsers)
+	mux.HandleFunc("POST /api/users", s.createUser)
 	mux.HandleFunc("GET /api/workflows", s.listWorkflows)
 	mux.HandleFunc("GET /api/workflows/{id}", s.getWorkflow)
 	mux.HandleFunc("PUT /api/workflows/{id}", s.putWorkflow)
@@ -125,13 +130,52 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			writeErr(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		// Mutations require write permission.
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && !p.role.CanWrite() {
+		// Project-scoped routes require membership of the selected project; the
+		// effective role (per-project, or global for admins/tokens) gates writes.
+		role := p.role
+		if isProjectScoped(path) {
+			er, allowed := s.effectiveRole(p, projectID(r))
+			if !allowed {
+				writeErr(w, http.StatusForbidden, "you are not a member of this project")
+				return
+			}
+			role = er
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !role.CanWrite() {
 			writeErr(w, http.StatusForbidden, "your role is read-only")
 			return
 		}
+		p.role = role
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, p)))
 	})
+}
+
+// isProjectScoped reports whether a path's authorization depends on project
+// membership (as opposed to global, account-level routes).
+func isProjectScoped(path string) bool {
+	for _, pre := range []string{"/api/workflows", "/api/runs", "/api/secrets", "/api/schedules"} {
+		if path == pre || strings.HasPrefix(path, pre+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// effectiveRole resolves the caller's role within a project. API tokens and
+// global owner/admin users get access to every project; other users must be a
+// member, and their member role applies.
+func (s *Server) effectiveRole(p principal, project string) (model.Role, bool) {
+	if p.userID == "" { // API token (no user) — global by its role
+		return p.role, true
+	}
+	if p.role == model.RoleOwner || p.role == model.RoleAdmin {
+		return p.role, true
+	}
+	m, ok, err := s.Store.GetProjectMember(project, p.userID)
+	if err != nil || !ok {
+		return "", false
+	}
+	return m.Role, true
 }
 
 // identify resolves the caller from a bearer JWT or API token.
@@ -320,7 +364,150 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// The creator becomes the project owner.
+	if cp, ok := r.Context().Value(principalKey).(principal); ok && cp.userID != "" {
+		_ = s.Store.AddProjectMember(model.ProjectMember{ProjectID: p.ID, UserID: cp.userID, Role: model.RoleOwner, CreatedAt: time.Now()})
+	}
 	writeJSON(w, http.StatusCreated, p)
+}
+
+// callerRole returns the caller's effective role for a project (for in-handler checks).
+func (s *Server) callerRole(r *http.Request, project string) (model.Role, bool) {
+	p, ok := r.Context().Value(principalKey).(principal)
+	if !ok {
+		return "", false
+	}
+	if s.Auth == nil { // open mode (tests): treat as owner
+		return model.RoleOwner, true
+	}
+	return s.effectiveRole(p, project)
+}
+
+func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
+	pid := r.PathValue("id")
+	members, err := s.Store.ListProjectMembers(pid)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Enrich with email/name for display.
+	for i := range members {
+		if u, ok, _ := s.Store.GetUserByID(members[i].UserID); ok {
+			members[i].Email = u.Email
+			members[i].Name = u.Name
+		}
+	}
+	writeJSON(w, http.StatusOK, members)
+}
+
+func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
+	pid := r.PathValue("id")
+	if role, ok := s.callerRole(r, pid); !ok || (role != model.RoleOwner && role != model.RoleAdmin) {
+		writeErr(w, http.StatusForbidden, "only a project owner or admin can manage members")
+		return
+	}
+	var body struct {
+		Email string     `json:"email"`
+		Role  model.Role `json:"role"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if body.Role == "" {
+		body.Role = model.RoleMember
+	}
+	if !auth.IsValidRole(body.Role) {
+		writeErr(w, http.StatusBadRequest, "invalid role")
+		return
+	}
+	u, ok, err := s.Store.GetUserByEmail(strings.ToLower(strings.TrimSpace(body.Email)))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeErr(w, http.StatusNotFound, "no user with that email (create the user first)")
+		return
+	}
+	m := model.ProjectMember{ProjectID: pid, UserID: u.ID, Role: body.Role, CreatedAt: time.Now()}
+	if err := s.Store.AddProjectMember(m); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	m.Email, m.Name = u.Email, u.Name
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
+	pid := r.PathValue("id")
+	if role, ok := s.callerRole(r, pid); !ok || (role != model.RoleOwner && role != model.RoleAdmin) {
+		writeErr(w, http.StatusForbidden, "only a project owner or admin can manage members")
+		return
+	}
+	if err := s.Store.RemoveProjectMember(pid, r.PathValue("userID")); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
+	if !s.callerIsGlobalAdmin(r) {
+		writeErr(w, http.StatusForbidden, "admin only")
+		return
+	}
+	users, err := s.Store.ListUsers()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if users == nil {
+		users = []model.User{}
+	}
+	writeJSON(w, http.StatusOK, users)
+}
+
+func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
+	if s.Auth == nil {
+		writeErr(w, http.StatusServiceUnavailable, "auth not configured")
+		return
+	}
+	if !s.callerIsGlobalAdmin(r) {
+		writeErr(w, http.StatusForbidden, "admin only")
+		return
+	}
+	var body struct {
+		Email    string     `json:"email"`
+		Name     string     `json:"name"`
+		Password string     `json:"password"`
+		Role     model.Role `json:"role"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if body.Role == "" {
+		body.Role = model.RoleMember
+	}
+	if !auth.IsValidRole(body.Role) {
+		writeErr(w, http.StatusBadRequest, "invalid role")
+		return
+	}
+	u, err := s.Auth.CreateUser(body.Email, body.Name, body.Password, body.Role)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, u)
+}
+
+func (s *Server) callerIsGlobalAdmin(r *http.Request) bool {
+	if s.Auth == nil {
+		return true // open mode (tests)
+	}
+	p, ok := r.Context().Value(principalKey).(principal)
+	return ok && (p.role == model.RoleOwner || p.role == model.RoleAdmin)
 }
 
 func (s *Server) listWorkflows(w http.ResponseWriter, r *http.Request) {
@@ -374,13 +561,13 @@ func (s *Server) putWorkflow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, wf)
 }
 
-// listSecrets returns secret names only — never values.
-func (s *Server) listSecrets(w http.ResponseWriter, _ *http.Request) {
+// listSecrets returns secret names only — never values, scoped to the project.
+func (s *Server) listSecrets(w http.ResponseWriter, r *http.Request) {
 	if s.Secrets == nil {
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
-	names, err := s.Secrets.List()
+	names, err := s.Secrets.List(projectID(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -403,7 +590,7 @@ func (s *Server) putSecret(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if err := s.Secrets.Set(r.PathValue("name"), body.Value); err != nil {
+	if err := s.Secrets.Set(projectID(r), r.PathValue("name"), body.Value); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -415,7 +602,7 @@ func (s *Server) deleteSecret(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "secrets are not configured")
 		return
 	}
-	if err := s.Secrets.Delete(r.PathValue("name")); err != nil {
+	if err := s.Secrets.Delete(projectID(r), r.PathValue("name")); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

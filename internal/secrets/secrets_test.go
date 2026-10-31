@@ -15,10 +15,10 @@ func TestSetGetRoundTrip(t *testing.T) {
 	if !persistent {
 		t.Error("expected persistentKey=true when a passphrase is given")
 	}
-	if err := m.Set("slack_url", "https://hooks.example/abc"); err != nil {
+	if err := m.Set("default", "slack_url", "https://hooks.example/abc"); err != nil {
 		t.Fatal(err)
 	}
-	v, ok, err := m.Get("slack_url")
+	v, ok, err := m.Get("default", "slack_url")
 	if err != nil || !ok {
 		t.Fatalf("Get: ok=%v err=%v", ok, err)
 	}
@@ -27,7 +27,7 @@ func TestSetGetRoundTrip(t *testing.T) {
 	}
 
 	// The stored bytes must be ciphertext, not the plaintext.
-	raw, _, _ := st.GetSecret("slack_url")
+	raw, _, _ := st.GetSecret("default", "slack_url")
 	if string(raw) == "https://hooks.example/abc" {
 		t.Error("secret stored in plaintext")
 	}
@@ -36,11 +36,11 @@ func TestSetGetRoundTrip(t *testing.T) {
 func TestWrongKeyFailsToDecrypt(t *testing.T) {
 	st := store.NewMem()
 	m1, _, _ := NewManager(st, "key-one")
-	if err := m1.Set("token", "s3cr3t"); err != nil {
+	if err := m1.Set("default", "token", "s3cr3t"); err != nil {
 		t.Fatal(err)
 	}
 	m2, _, _ := NewManager(st, "key-two") // different key, same store
-	if _, _, err := m2.Get("token"); err == nil {
+	if _, _, err := m2.Get("default", "token"); err == nil {
 		t.Error("expected decrypt to fail with the wrong key")
 	}
 }
@@ -48,16 +48,16 @@ func TestWrongKeyFailsToDecrypt(t *testing.T) {
 func TestListAndDelete(t *testing.T) {
 	st := store.NewMem()
 	m, _, _ := NewManager(st, "k")
-	_ = m.Set("a", "1")
-	_ = m.Set("b", "2")
-	names, _ := m.List()
+	_ = m.Set("default", "a", "1")
+	_ = m.Set("default", "b", "2")
+	names, _ := m.List("default")
 	if len(names) != 2 {
 		t.Fatalf("list = %v, want 2", names)
 	}
-	if err := m.Delete("a"); err != nil {
+	if err := m.Delete("default", "a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := m.Get("a"); ok {
+	if _, ok, _ := m.Get("default", "a"); ok {
 		t.Error("secret 'a' still present after delete")
 	}
 }

@@ -1,5 +1,5 @@
 "use client";
-import { Menu, Play, Square, Save, Pencil, Sun, Moon, KeyRound, LogOut } from "lucide-react";
+import { Menu, Play, Square, Save, Pencil, Sun, Moon, KeyRound, LogOut, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
 function Logo() {
@@ -32,6 +32,7 @@ export function Topbar(props: {
   onSave: () => void;
   onToggleRail: () => void;
   onOpenSecrets: () => void;
+  onOpenMembers: () => void;
   user: { name: string; email: string; role: string } | null;
   onSignOut: () => void;
   projects: { id: string; name: string }[];
@@ -96,6 +97,9 @@ export function Topbar(props: {
             <Save size={15} /> {props.dirty ? "Save *" : "Save"}
           </button>
         )}
+        <button className="btn" onClick={props.onOpenMembers} title="Manage members">
+          <Users size={15} /> Members
+        </button>
         <button className="btn" onClick={props.onOpenSecrets} title="Manage secrets">
           <KeyRound size={15} /> Secrets
         </button>

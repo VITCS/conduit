@@ -10,6 +10,7 @@ package store
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"sync"
 
 	"conduit/internal/model"
@@ -40,12 +41,18 @@ type Store interface {
 	// of the result. ok is false if the run does not exist.
 	MutateRun(id string, fn func(*model.Run)) (snap model.Run, ok bool, err error)
 
-	// Secrets are stored as opaque ciphertext; encryption happens above the
-	// store (internal/secrets), so the store never sees plaintext.
-	PutSecret(name string, ciphertext []byte) error
-	GetSecret(name string) (ciphertext []byte, ok bool, err error)
-	ListSecretNames() ([]string, error)
-	DeleteSecret(name string) error
+	// Project membership (per-project roles).
+	AddProjectMember(m model.ProjectMember) error
+	GetProjectMember(projectID, userID string) (model.ProjectMember, bool, error)
+	ListProjectMembers(projectID string) ([]model.ProjectMember, error)
+	RemoveProjectMember(projectID, userID string) error
+
+	// Secrets are stored per project as opaque ciphertext; encryption happens
+	// above the store (internal/secrets), so the store never sees plaintext.
+	PutSecret(projectID, name string, ciphertext []byte) error
+	GetSecret(projectID, name string) (ciphertext []byte, ok bool, err error)
+	ListSecretNames(projectID string) ([]string, error)
+	DeleteSecret(projectID, name string) error
 
 	// Users & API tokens (authentication).
 	CreateUser(u model.User) error
@@ -67,10 +74,11 @@ func New() *Mem { return NewMem() }
 type Mem struct {
 	mu        sync.RWMutex
 	projects  map[string]model.Project
+	members   map[string]model.ProjectMember // key: projectID\x00userID
 	workflows map[string]model.Workflow
 	runs      map[string]*model.Run
-	order     []string // run IDs, oldest first
-	secrets   map[string][]byte
+	order     []string                  // run IDs, oldest first
+	secrets   map[string][]byte         // key: projectID\x00name
 	users     map[string]model.User     // by ID
 	tokens    map[string]model.APIToken // by ID
 	broker    *Broker
@@ -80,6 +88,7 @@ type Mem struct {
 func NewMem() *Mem {
 	return &Mem{
 		projects:  map[string]model.Project{},
+		members:   map[string]model.ProjectMember{},
 		workflows: map[string]model.Workflow{},
 		runs:      map[string]*model.Run{},
 		secrets:   map[string][]byte{},
@@ -87,6 +96,42 @@ func NewMem() *Mem {
 		tokens:    map[string]model.APIToken{},
 		broker:    newBroker(),
 	}
+}
+
+func mkey(a, b string) string { return a + "\x00" + b }
+
+func (s *Mem) AddProjectMember(m model.ProjectMember) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.members[mkey(m.ProjectID, m.UserID)] = m
+	return nil
+}
+
+func (s *Mem) GetProjectMember(projectID, userID string) (model.ProjectMember, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m, ok := s.members[mkey(projectID, userID)]
+	return m, ok, nil
+}
+
+func (s *Mem) ListProjectMembers(projectID string) ([]model.ProjectMember, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []model.ProjectMember{}
+	for _, m := range s.members {
+		if m.ProjectID == projectID {
+			out = append(out, m)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (s *Mem) RemoveProjectMember(projectID, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.members, mkey(projectID, userID))
+	return nil
 }
 
 func (s *Mem) CreateProject(p model.Project) error {
@@ -192,19 +237,19 @@ func (s *Mem) DeleteAPIToken(id string) error {
 	return nil
 }
 
-func (s *Mem) PutSecret(name string, ciphertext []byte) error {
+func (s *Mem) PutSecret(projectID, name string, ciphertext []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := make([]byte, len(ciphertext))
 	copy(cp, ciphertext)
-	s.secrets[name] = cp
+	s.secrets[mkey(projectID, name)] = cp
 	return nil
 }
 
-func (s *Mem) GetSecret(name string) ([]byte, bool, error) {
+func (s *Mem) GetSecret(projectID, name string) ([]byte, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	b, ok := s.secrets[name]
+	b, ok := s.secrets[mkey(projectID, name)]
 	if !ok {
 		return nil, false, nil
 	}
@@ -213,21 +258,24 @@ func (s *Mem) GetSecret(name string) ([]byte, bool, error) {
 	return cp, true, nil
 }
 
-func (s *Mem) ListSecretNames() ([]string, error) {
+func (s *Mem) ListSecretNames(projectID string) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]string, 0, len(s.secrets))
+	prefix := projectID + "\x00"
+	out := []string{}
 	for k := range s.secrets {
-		out = append(out, k)
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, strings.TrimPrefix(k, prefix))
+		}
 	}
 	sort.Strings(out)
 	return out, nil
 }
 
-func (s *Mem) DeleteSecret(name string) error {
+func (s *Mem) DeleteSecret(projectID, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.secrets, name)
+	delete(s.secrets, mkey(projectID, name))
 	return nil
 }
 

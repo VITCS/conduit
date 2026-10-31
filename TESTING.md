@@ -534,8 +534,38 @@ new one; a fresh project opens with a starter workflow. Covered by
 `go test ./...` (store project scoping in the contract test, and an API isolation
 test).
 
-> Note: projects currently isolate **data**; per-user membership/roles land in
-> Phase 4c, so any authenticated writer can select any project for now.
+## 10g. Phase 4c features (membership & scoped secrets)
+
+Projects now isolate by **user**: a caller must be a member of the selected
+project (global owner/admin override). With an admin JWT in `$TOK`:
+
+```bash
+# create a user (admin only)
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"email":"bob@x.com","name":"Bob","password":"pw","role":"member"}' localhost:8080/api/users
+
+# bob logs in and is NOT yet a member of the default project -> 403
+BTOK=$(curl -s -X POST localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"bob@x.com","password":"pw"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $BTOK" localhost:8080/api/workflows   # 403
+
+# admin adds bob to default -> bob can now read it
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"email":"bob@x.com","role":"member"}' localhost:8080/api/projects/default/members
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $BTOK" localhost:8080/api/workflows   # 200
+```
+
+**Secrets are project-scoped** — set under one project, invisible under another:
+```bash
+curl -s -X PUT -H "Authorization: Bearer $TOK" -H "X-Conduit-Project: default" \
+  -H 'Content-Type: application/json' -d '{"value":"v1"}' localhost:8080/api/secrets/mykey
+curl -s -H "Authorization: Bearer $TOK" -H "X-Conduit-Project: default" localhost:8080/api/secrets   # ["mykey"]
+curl -s -H "Authorization: Bearer $TOK" -H "X-Conduit-Project: staging" localhost:8080/api/secrets   # []
+```
+
+In the UI, use the **Members** button (top bar) to add/remove members or create
+users. Covered by `go test ./...` (store member + scoped-secret contract, and API
+membership isolation — non-member 403, member 200).
 
 ## 11. Docker
 

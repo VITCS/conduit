@@ -48,9 +48,18 @@ CREATE INDEX IF NOT EXISTS runs_created_idx ON runs (created_at DESC);
 CREATE INDEX IF NOT EXISTS runs_project_idx ON runs (project_id);
 CREATE INDEX IF NOT EXISTS workflows_project_idx ON workflows (project_id);
 CREATE TABLE IF NOT EXISTS secrets (
-    name       text PRIMARY KEY,
+    project_id text NOT NULL DEFAULT 'default',
+    name       text NOT NULL,
     ciphertext bytea NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id, name)
+);
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id text NOT NULL,
+    user_id    text NOT NULL,
+    role       text NOT NULL,
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (project_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS users (
     id            text PRIMARY KEY,
@@ -294,17 +303,17 @@ func (s *Pg) MutateRun(id string, fn func(*model.Run)) (model.Run, bool, error) 
 	return r, true, nil
 }
 
-func (s *Pg) PutSecret(name string, ciphertext []byte) error {
+func (s *Pg) PutSecret(projectID, name string, ciphertext []byte) error {
 	_, err := s.db.Exec(
-		`INSERT INTO secrets (name, ciphertext, created_at) VALUES ($1,$2,now())
-		 ON CONFLICT (name) DO UPDATE SET ciphertext=EXCLUDED.ciphertext, created_at=now()`,
-		name, ciphertext)
+		`INSERT INTO secrets (project_id, name, ciphertext, created_at) VALUES ($1,$2,$3,now())
+		 ON CONFLICT (project_id, name) DO UPDATE SET ciphertext=EXCLUDED.ciphertext, created_at=now()`,
+		projectID, name, ciphertext)
 	return err
 }
 
-func (s *Pg) GetSecret(name string) ([]byte, bool, error) {
+func (s *Pg) GetSecret(projectID, name string) ([]byte, bool, error) {
 	var b []byte
-	err := s.db.QueryRow(`SELECT ciphertext FROM secrets WHERE name=$1`, name).Scan(&b)
+	err := s.db.QueryRow(`SELECT ciphertext FROM secrets WHERE project_id=$1 AND name=$2`, projectID, name).Scan(&b)
 	if err == sql.ErrNoRows {
 		return nil, false, nil
 	}
@@ -314,8 +323,8 @@ func (s *Pg) GetSecret(name string) ([]byte, bool, error) {
 	return b, true, nil
 }
 
-func (s *Pg) ListSecretNames() ([]string, error) {
-	rows, err := s.db.Query(`SELECT name FROM secrets ORDER BY name`)
+func (s *Pg) ListSecretNames(projectID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT name FROM secrets WHERE project_id=$1 ORDER BY name`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -331,8 +340,52 @@ func (s *Pg) ListSecretNames() ([]string, error) {
 	return out, rows.Err()
 }
 
-func (s *Pg) DeleteSecret(name string) error {
-	_, err := s.db.Exec(`DELETE FROM secrets WHERE name=$1`, name)
+func (s *Pg) DeleteSecret(projectID, name string) error {
+	_, err := s.db.Exec(`DELETE FROM secrets WHERE project_id=$1 AND name=$2`, projectID, name)
+	return err
+}
+
+func (s *Pg) AddProjectMember(m model.ProjectMember) error {
+	_, err := s.db.Exec(
+		`INSERT INTO project_members (project_id, user_id, role, created_at) VALUES ($1,$2,$3,$4)
+		 ON CONFLICT (project_id, user_id) DO UPDATE SET role=EXCLUDED.role`,
+		m.ProjectID, m.UserID, string(m.Role), m.CreatedAt)
+	return err
+}
+
+func (s *Pg) GetProjectMember(projectID, userID string) (model.ProjectMember, bool, error) {
+	var m model.ProjectMember
+	var role string
+	err := s.db.QueryRow(`SELECT project_id,user_id,role,created_at FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID).
+		Scan(&m.ProjectID, &m.UserID, &role, &m.CreatedAt)
+	if err == sql.ErrNoRows {
+		return model.ProjectMember{}, false, nil
+	}
+	m.Role = model.Role(role)
+	return m, err == nil, err
+}
+
+func (s *Pg) ListProjectMembers(projectID string) ([]model.ProjectMember, error) {
+	rows, err := s.db.Query(`SELECT project_id,user_id,role,created_at FROM project_members WHERE project_id=$1 ORDER BY created_at`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.ProjectMember{}
+	for rows.Next() {
+		var m model.ProjectMember
+		var role string
+		if err := rows.Scan(&m.ProjectID, &m.UserID, &role, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		m.Role = model.Role(role)
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (s *Pg) RemoveProjectMember(projectID, userID string) error {
+	_, err := s.db.Exec(`DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID)
 	return err
 }
 

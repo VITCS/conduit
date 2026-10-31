@@ -22,20 +22,20 @@ import (
 var liveHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // ResolveSecret, when set by the host, resolves ${secret:NAME} references found
-// in a node's config values. Nil means no secrets are available.
-var ResolveSecret func(name string) (string, bool)
+// in a node's config values, within a project. Nil means no secrets are available.
+var ResolveSecret func(projectID, name string) (string, bool)
 
 var secretRefRe = regexp.MustCompile(`\$\{secret:([A-Za-z0-9_.\-]+)\}`)
 
-// secretExpand replaces ${secret:NAME} tokens using ResolveSecret. Unknown
-// references are left verbatim so failures are visible rather than silent.
-func secretExpand(s string) string {
+// secretExpand replaces ${secret:NAME} tokens using ResolveSecret, scoped to the
+// run's project. Unknown references are left verbatim so failures are visible.
+func secretExpand(projectID, s string) string {
 	if ResolveSecret == nil || !strings.Contains(s, "${secret:") {
 		return s
 	}
 	return secretRefRe.ReplaceAllStringFunc(s, func(tok string) string {
 		name := secretRefRe.FindStringSubmatch(tok)[1]
-		if v, ok := ResolveSecret(name); ok {
+		if v, ok := ResolveSecret(projectID, name); ok {
 			return v
 		}
 		return tok
@@ -140,13 +140,13 @@ func execTimegate(n model.Node, _ *model.Run) Result {
 	}
 }
 
-func execHTTP(n model.Node, _ *model.Run) Result {
+func execHTTP(n model.Node, run *model.Run) Result {
 	url := firstNonEmpty(n.Field("url"), n.Field("target"))
 
 	// Opt-in real request. The default stays simulated so the seeded demo runs
 	// offline and deterministically.
 	if strings.EqualFold(n.Field("live"), "true") {
-		return liveHTTP(n, url)
+		return liveHTTP(n, url, runProject(run))
 	}
 
 	// A health-check-style node fails loudly if its URL names a failure; this
@@ -182,14 +182,22 @@ func execHTTP(n model.Node, _ *model.Run) Result {
 	}
 }
 
+// runProject returns the run's project id (for secret scoping), defaulting safely.
+func runProject(run *model.Run) string {
+	if run != nil && run.ProjectID != "" {
+		return run.ProjectID
+	}
+	return model.DefaultProjectID
+}
+
 // liveHTTP performs a real HTTP request. Method defaults to GET; a body sends as
-// the request body. Config values may reference ${secret:NAME}. The outcome is
-// success for 2xx, failed otherwise or on error.
-func liveHTTP(n model.Node, url string) Result {
-	url = secretExpand(url)
+// the request body. Config values may reference ${secret:NAME} (project-scoped).
+// The outcome is success for 2xx, failed otherwise or on error.
+func liveHTTP(n model.Node, url, project string) Result {
+	url = secretExpand(project, url)
 	method := strings.ToUpper(firstNonEmpty(n.Field("method"), "GET"))
 	var body io.Reader
-	if b := secretExpand(n.Field("body")); b != "" {
+	if b := secretExpand(project, n.Field("body")); b != "" {
 		body = strings.NewReader(b)
 	}
 	if url == "" {
@@ -202,7 +210,7 @@ func liveHTTP(n model.Node, url string) Result {
 	if ct := n.Field("content_type"); ct != "" {
 		req.Header.Set("Content-Type", ct)
 	}
-	if auth := secretExpand(n.Field("authorization")); auth != "" {
+	if auth := secretExpand(project, n.Field("authorization")); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
 	start := time.Now()
@@ -297,9 +305,10 @@ func execGraphQL(n model.Node, _ *model.Run) Result {
 
 // execSlack posts a message to a Slack-style incoming webhook. The webhook URL is
 // typically a secret reference (webhook: "${secret:slack_url}").
-func execSlack(n model.Node, _ *model.Run) Result {
-	webhook := secretExpand(firstNonEmpty(n.Field("webhook"), n.Field("url")))
-	text := secretExpand(firstNonEmpty(n.Field("text"), n.Field("message")))
+func execSlack(n model.Node, run *model.Run) Result {
+	project := runProject(run)
+	webhook := secretExpand(project, firstNonEmpty(n.Field("webhook"), n.Field("url")))
+	text := secretExpand(project, firstNonEmpty(n.Field("text"), n.Field("message")))
 	if webhook == "" {
 		return Result{Outcome: model.StatusFailed, Output: map[string]any{"error": "no webhook"}, Logs: []string{"no slack webhook configured"}}
 	}

@@ -101,13 +101,18 @@ integrations (GitHub API, Datadog, …); SSRF guards on outbound requests (Phase
   project gets a usable starter workflow.
 - A `default` project is seeded on first run and holds the sample workflow.
 
-### Phase 4c — Per-project membership (next)
+### Phase 4c — Per-project membership  ✅ (this release)
 
-- **Members & invitations** with per-project roles (override the global role),
-  so projects isolate by *user*, not just by data.
-- Project-scoped **secrets**, and a project/workflow navigator for many
-  workflows per project.
-- OIDC / SSO login as an alternative to passwords.
+- **Project membership** with per-project roles: a user may access a project only
+  if they are a member (global owner/admin override); the member role gates writes
+  within that project. Non-members get 403 — true isolation by *user*.
+- **Members & users API/UI**: list/add/remove project members, create users (admin).
+- **Project-scoped secrets**: secrets live under a project and resolve per-run by
+  the run's project; `${secret:NAME}` is isolated across projects.
+- The project creator becomes its owner; the bootstrap admin owns the default project.
+
+Deferred to later: invitations/email, OIDC / SSO, a per-project secret UI scope
+indicator, and many-workflows-per-project navigation.
 
 ### Phase 5 — Realtime, scale & ops
 

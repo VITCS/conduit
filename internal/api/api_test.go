@@ -219,6 +219,47 @@ func TestProjectScoping(t *testing.T) {
 	}
 }
 
+func TestProjectMembershipIsolation(t *testing.T) {
+	st := store.NewMem()
+	_ = st.CreateProject(model.Project{ID: "default", Name: "Default", CreatedAt: time.Now()})
+	_ = st.CreateProject(model.Project{ID: "secret-proj", Name: "Secret", CreatedAt: time.Now()})
+	_ = st.PutWorkflow(model.Workflow{ID: "w", ProjectID: "secret-proj", Name: "W",
+		Nodes: []model.Node{{ID: "t", Type: "github", Kind: model.KindTrigger}}})
+
+	authSvc := auth.New(st, "s")
+	// A regular member-role user who is NOT a member of secret-proj.
+	u, _ := authSvc.CreateUser("bob@x.com", "Bob", "pw", model.RoleMember)
+	tok, _ := authSvc.IssueJWT(u)
+
+	srv := &api.Server{Store: st, Engine: engine.New(st), Auth: authSvc, Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	req := func(project string) int {
+		r, _ := http.NewRequest("GET", ts.URL+"/api/workflows", nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		r.Header.Set("X-Conduit-Project", project)
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// Not a member of secret-proj → 403.
+	if c := req("secret-proj"); c != http.StatusForbidden {
+		t.Errorf("non-member access = %d, want 403", c)
+	}
+	// Add as a member → now allowed.
+	if err := st.AddProjectMember(model.ProjectMember{ProjectID: "secret-proj", UserID: u.ID, Role: model.RoleMember, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if c := req("secret-proj"); c != 200 {
+		t.Errorf("member access = %d, want 200", c)
+	}
+}
+
 func TestAuthMiddleware(t *testing.T) {
 	st := store.NewMem()
 	if err := st.PutWorkflow(seed.Workflow()); err != nil {
@@ -231,6 +272,11 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 	viewer, err := authSvc.CreateUser("view@x.com", "View", "pw", model.RoleViewer)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// The viewer is a member of the default project (viewer role); the admin is a
+	// global owner and needs no membership.
+	if err := st.AddProjectMember(model.ProjectMember{ProjectID: model.DefaultProjectID, UserID: viewer.ID, Role: model.RoleViewer, CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	srv := &api.Server{Store: st, Engine: engine.New(st), Auth: authSvc, Web: fstest.MapFS{}}

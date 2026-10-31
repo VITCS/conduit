@@ -86,6 +86,26 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }),
+  listMembers: (projectId: string) =>
+    req<{ user_id: string; email: string; name: string; role: string }[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/members`,
+    ),
+  addMember: (projectId: string, email: string, role: string) =>
+    req<unknown>(`/api/projects/${encodeURIComponent(projectId)}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, role }),
+    }),
+  removeMember: (projectId: string, userId: string) =>
+    req<unknown>(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+    }),
+  createUser: (email: string, name: string, password: string, role: string) =>
+    req<unknown>("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, name, password, role }),
+    }),
   listWorkflows: () => req<Workflow[]>("/api/workflows"),
   getWorkflow: (id: string) => req<Workflow>(`/api/workflows/${encodeURIComponent(id)}`),
   putWorkflow: (wf: Workflow) =>

@@ -211,10 +211,17 @@ Write methods (`POST`/`PUT`/`DELETE`) require a non-viewer role.
 | `POST` | `/api/tokens` | create an API token (`{name, role}`) — plaintext shown once |
 | `DELETE` | `/api/tokens/{id}` | revoke an API token |
 | `GET`  | `/api/projects` | list projects |
-| `POST` | `/api/projects` | create a project (`{name}`) |
+| `POST` | `/api/projects` | create a project (`{name}`) — creator becomes owner |
+| `GET`  | `/api/projects/{id}/members` | list members |
+| `POST` | `/api/projects/{id}/members` | add a member (`{email, role}`) — project owner/admin |
+| `DELETE` | `/api/projects/{id}/members/{userID}` | remove a member |
+| `GET`  | `/api/users` | list users (global admin) |
+| `POST` | `/api/users` | create a user (`{email, name, password, role}`) — global admin |
 
-Workflow and run endpoints are scoped to a **project**, selected with the
-`X-Conduit-Project` header (default: `default`). Cross-project access is 404.
+Workflow, run and **secret** endpoints are scoped to a **project**, selected with
+the `X-Conduit-Project` header (default: `default`). A user must be a **member**
+of the selected project (global owner/admin override); non-members get 403, and
+cross-project reads are 404.
 | `GET`  | `/api/components` | registered component types |
 | `GET`  | `/api/workflows` | list workflows |
 | `GET`  | `/api/workflows/{id}` | one workflow |
@@ -282,10 +289,17 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
 - Project CRUD + a **project switcher** in the UI; new projects get a starter
   workflow; a `default` project is seeded.
 
-Still ahead (see the roadmap): **Phase 4c** per-project membership (user
-isolation, invitations, project-scoped secrets, OIDC); then multi-instance event
-bus, a broader connector/OAuth framework, bounded worker pool / per-node
-timeouts, true `foreach`/`loop`, and SSRF guards on outbound requests.
+**Phase 4c (shipped):** per-project membership —
+
+- **Membership-gated access**: a user reaches a project only if they are a member
+  (global owner/admin override); the per-project role gates writes. Non-members
+  get 403 — true isolation by user.
+- **Members & users** API + UI (add/remove members, create users).
+- **Project-scoped secrets**: secrets live under a project and resolve per-run.
+
+Still ahead (see the roadmap): invitations/email + OIDC/SSO; multi-instance event
+bus; a broader connector/OAuth framework; bounded worker pool / per-node
+timeouts; true `foreach`/`loop`; and SSRF guards on outbound requests.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

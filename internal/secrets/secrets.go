@@ -17,12 +17,13 @@ import (
 	"io"
 )
 
-// Store is the subset of the persistence layer the manager needs.
+// Store is the subset of the persistence layer the manager needs. Secrets are
+// scoped to a project.
 type Store interface {
-	PutSecret(name string, ciphertext []byte) error
-	GetSecret(name string) ([]byte, bool, error)
-	ListSecretNames() ([]string, error)
-	DeleteSecret(name string) error
+	PutSecret(projectID, name string, ciphertext []byte) error
+	GetSecret(projectID, name string) ([]byte, bool, error)
+	ListSecretNames(projectID string) ([]string, error)
+	DeleteSecret(projectID, name string) error
 }
 
 // Manager encrypts/decrypts secret values and persists them via a Store.
@@ -54,8 +55,8 @@ func NewManager(store Store, passphrase string) (m *Manager, persistentKey bool,
 	return &Manager{store: store, aead: aead}, persistentKey, nil
 }
 
-// Set encrypts and stores a secret value.
-func (m *Manager) Set(name, value string) error {
+// Set encrypts and stores a secret value in a project.
+func (m *Manager) Set(projectID, name, value string) error {
 	if name == "" {
 		return errors.New("secret name is required")
 	}
@@ -65,12 +66,12 @@ func (m *Manager) Set(name, value string) error {
 	}
 	// Prepend the nonce to the ciphertext.
 	ct := m.aead.Seal(nonce, nonce, []byte(value), nil)
-	return m.store.PutSecret(name, ct)
+	return m.store.PutSecret(projectID, name, ct)
 }
 
-// Get decrypts and returns a secret value.
-func (m *Manager) Get(name string) (string, bool, error) {
-	ct, ok, err := m.store.GetSecret(name)
+// Get decrypts and returns a secret value from a project.
+func (m *Manager) Get(projectID, name string) (string, bool, error) {
+	ct, ok, err := m.store.GetSecret(projectID, name)
 	if err != nil || !ok {
 		return "", ok, err
 	}
@@ -87,16 +88,16 @@ func (m *Manager) Get(name string) (string, bool, error) {
 }
 
 // Lookup is Get without the error, for use as an executor secret resolver.
-func (m *Manager) Lookup(name string) (string, bool) {
-	v, ok, err := m.Get(name)
+func (m *Manager) Lookup(projectID, name string) (string, bool) {
+	v, ok, err := m.Get(projectID, name)
 	if err != nil {
 		return "", false
 	}
 	return v, ok
 }
 
-// List returns the secret names (never values).
-func (m *Manager) List() ([]string, error) { return m.store.ListSecretNames() }
+// List returns the secret names in a project (never values).
+func (m *Manager) List(projectID string) ([]string, error) { return m.store.ListSecretNames(projectID) }
 
-// Delete removes a secret.
-func (m *Manager) Delete(name string) error { return m.store.DeleteSecret(name) }
+// Delete removes a secret from a project.
+func (m *Manager) Delete(projectID, name string) error { return m.store.DeleteSecret(projectID, name) }

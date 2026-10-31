@@ -74,6 +74,17 @@ type Project struct {
 // DefaultProjectID is the project seeded on first run.
 const DefaultProjectID = "default"
 
+// ProjectMember grants a user a role within a project. A per-project role
+// overrides the user's global role for that project's resources.
+type ProjectMember struct {
+	ProjectID string    `json:"project_id"`
+	UserID    string    `json:"user_id"`
+	Email     string    `json:"email,omitempty"` // filled on read for display
+	Name      string    `json:"name,omitempty"`
+	Role      Role      `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Workflow is a named DAG of nodes and edges, scoped to a project.
 type Workflow struct {
 	ID        string `json:"id"`

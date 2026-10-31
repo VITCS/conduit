@@ -119,6 +119,10 @@ func run() error {
 		return err
 	} else if created {
 		log.Printf("auth: bootstrapped admin %q (change the password after first login)", adminEmail)
+		// Make the admin an owner of the default project (admins override anyway).
+		if u, ok, _ := st.GetUserByEmail(adminEmail); ok {
+			_ = st.AddProjectMember(model.ProjectMember{ProjectID: model.DefaultProjectID, UserID: u.ID, Role: model.RoleOwner, CreatedAt: time.Now()})
+		}
 	}
 
 	// Start the cron scheduler, tied to the process lifetime.

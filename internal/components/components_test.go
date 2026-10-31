@@ -142,7 +142,7 @@ func TestSecretExpansionInSlackWebhook(t *testing.T) {
 
 	// Install a resolver mapping a secret name to the test server URL.
 	prev := ResolveSecret
-	ResolveSecret = func(name string) (string, bool) {
+	ResolveSecret = func(projectID, name string) (string, bool) {
 		if name == "slack_url" {
 			return srv.URL, true
 		}
@@ -163,7 +163,7 @@ func TestSecretExpandNoResolverLeavesTokens(t *testing.T) {
 	prev := ResolveSecret
 	ResolveSecret = nil
 	defer func() { ResolveSecret = prev }()
-	if got := secretExpand("x=${secret:foo}"); got != "x=${secret:foo}" {
+	if got := secretExpand("default", "x=${secret:foo}"); got != "x=${secret:foo}" {
 		t.Errorf("expand with no resolver = %q, want unchanged", got)
 	}
 }

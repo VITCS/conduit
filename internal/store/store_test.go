@@ -56,6 +56,33 @@ func storeContract(t *testing.T, s Store) {
 		t.Error("GetProject(pa) not found")
 	}
 
+	// project members
+	if err := s.AddProjectMember(model.ProjectMember{ProjectID: "pa", UserID: "ua", Role: model.RoleOwner, CreatedAt: time.Now()}); err != nil {
+		t.Fatalf("AddProjectMember: %v", err)
+	}
+	if m, ok, err := s.GetProjectMember("pa", "ua"); err != nil || !ok || m.Role != model.RoleOwner {
+		t.Fatalf("GetProjectMember: ok=%v err=%v role=%s", ok, err, m.Role)
+	}
+	if ms, _ := s.ListProjectMembers("pa"); len(ms) != 1 {
+		t.Errorf("ListProjectMembers(pa) = %d, want 1", len(ms))
+	}
+	if err := s.RemoveProjectMember("pa", "ua"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := s.GetProjectMember("pa", "ua"); ok {
+		t.Error("member still present after remove")
+	}
+
+	// project-scoped secrets isolate by project
+	_ = s.PutSecret("pa", "tk", []byte("A"))
+	_ = s.PutSecret("pb", "tk", []byte("B"))
+	if ct, _, _ := s.GetSecret("pa", "tk"); string(ct) != "A" {
+		t.Errorf("secret pa/tk = %q, want A", ct)
+	}
+	if names, _ := s.ListSecretNames("pa"); len(names) != 1 || names[0] != "tk" {
+		t.Errorf("ListSecretNames(pa) = %v, want [tk]", names)
+	}
+
 	// runs: create / get / mutate
 	run := &model.Run{
 		ID: "r1", WorkflowID: "wf1", Title: "run one",
@@ -104,24 +131,24 @@ func storeContract(t *testing.T, s Store) {
 	}
 
 	// secrets: opaque ciphertext round-trips; list and delete work.
-	if err := s.PutSecret("tok", []byte{1, 2, 3, 4}); err != nil {
+	if err := s.PutSecret("default", "tok", []byte{1, 2, 3, 4}); err != nil {
 		t.Fatalf("PutSecret: %v", err)
 	}
-	ct, ok, err := s.GetSecret("tok")
+	ct, ok, err := s.GetSecret("default", "tok")
 	if err != nil || !ok || len(ct) != 4 || ct[0] != 1 {
 		t.Fatalf("GetSecret round-trip failed: ok=%v err=%v ct=%v", ok, err, ct)
 	}
-	if _, ok, _ := s.GetSecret("missing"); ok {
+	if _, ok, _ := s.GetSecret("default", "missing"); ok {
 		t.Error("GetSecret(missing) returned ok=true")
 	}
-	names, err := s.ListSecretNames()
+	names, err := s.ListSecretNames("default")
 	if err != nil || len(names) == 0 {
 		t.Fatalf("ListSecretNames: %v err=%v", names, err)
 	}
-	if err := s.DeleteSecret("tok"); err != nil {
+	if err := s.DeleteSecret("default", "tok"); err != nil {
 		t.Fatalf("DeleteSecret: %v", err)
 	}
-	if _, ok, _ := s.GetSecret("tok"); ok {
+	if _, ok, _ := s.GetSecret("default", "tok"); ok {
 		t.Error("secret still present after delete")
 	}
 
@@ -175,7 +202,7 @@ func TestPostgresStoreContract(t *testing.T) {
 	}
 	defer pg.Close()
 	// Start clean so repeated runs are deterministic.
-	if _, err := pg.db.Exec(`TRUNCATE workflows, runs, secrets, users, api_tokens, projects`); err != nil {
+	if _, err := pg.db.Exec(`TRUNCATE workflows, runs, secrets, users, api_tokens, projects, project_members`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	storeContract(t, pg)
