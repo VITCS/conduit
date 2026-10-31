@@ -26,6 +26,7 @@ import (
 	"conduit/internal/auth"
 	"conduit/internal/components"
 	"conduit/internal/engine"
+	"conduit/internal/model"
 	"conduit/internal/scheduler"
 	"conduit/internal/secrets"
 	"conduit/internal/seed"
@@ -77,7 +78,12 @@ func run() error {
 	}
 	defer closeStore()
 
-	// Seed the default workflow if it is not already stored.
+	// Ensure the default project exists, then seed the default workflow into it.
+	if _, ok, _ := st.GetProject(model.DefaultProjectID); !ok {
+		if err := st.CreateProject(model.Project{ID: model.DefaultProjectID, Name: "Default", CreatedAt: time.Now()}); err != nil {
+			return err
+		}
+	}
 	if _, ok, _ := st.GetWorkflow(seed.Workflow().ID); !ok {
 		if err := st.PutWorkflow(seed.Workflow()); err != nil {
 			return err

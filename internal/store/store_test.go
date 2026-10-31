@@ -31,9 +31,29 @@ func storeContract(t *testing.T, s Store) {
 	if _, ok, _ := s.GetWorkflow("missing"); ok {
 		t.Error("GetWorkflow(missing) returned ok=true")
 	}
-	wfs, err := s.ListWorkflows()
+	wfs, err := s.ListWorkflows("")
 	if err != nil || len(wfs) == 0 {
 		t.Fatalf("ListWorkflows: n=%d err=%v", len(wfs), err)
+	}
+
+	// projects: scoping isolates workflows by project.
+	if err := s.CreateProject(model.Project{ID: "pa", Name: "A", CreatedAt: time.Now()}); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	_ = s.CreateProject(model.Project{ID: "pb", Name: "B", CreatedAt: time.Now()})
+	if err := s.PutWorkflow(model.Workflow{ID: "wa", ProjectID: "pa", Name: "WA"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.PutWorkflow(model.Workflow{ID: "wb", ProjectID: "pb", Name: "WB"})
+	inA, _ := s.ListWorkflows("pa")
+	if len(inA) != 1 || inA[0].ID != "wa" {
+		t.Errorf("ListWorkflows(pa) = %v, want [wa]", inA)
+	}
+	if ps, _ := s.ListProjects(); len(ps) < 2 {
+		t.Errorf("ListProjects = %d, want >=2", len(ps))
+	}
+	if _, ok, _ := s.GetProject("pa"); !ok {
+		t.Error("GetProject(pa) not found")
 	}
 
 	// runs: create / get / mutate
@@ -78,7 +98,7 @@ func storeContract(t *testing.T, s Store) {
 		t.Error("MutateRun(missing) returned ok=true")
 	}
 
-	runs, err := s.ListRuns()
+	runs, err := s.ListRuns("")
 	if err != nil || len(runs) == 0 {
 		t.Fatalf("ListRuns: n=%d err=%v", len(runs), err)
 	}
@@ -155,7 +175,7 @@ func TestPostgresStoreContract(t *testing.T) {
 	}
 	defer pg.Close()
 	// Start clean so repeated runs are deterministic.
-	if _, err := pg.db.Exec(`TRUNCATE workflows, runs, secrets, users, api_tokens`); err != nil {
+	if _, err := pg.db.Exec(`TRUNCATE workflows, runs, secrets, users, api_tokens, projects`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	storeContract(t, pg)
@@ -168,7 +188,7 @@ func TestMemListRunsNewestFirst(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	runs, _ := s.ListRuns()
+	runs, _ := s.ListRuns("")
 	if len(runs) != 3 || runs[0].ID != "c" || runs[2].ID != "a" {
 		t.Errorf("ListRuns order = %v, want [c b a]", ids(runs))
 	}

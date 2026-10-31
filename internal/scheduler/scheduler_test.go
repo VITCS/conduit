@@ -42,7 +42,7 @@ func TestScheduleFiresRun(t *testing.T) {
 	// Within a few seconds the schedule should have created at least one run.
 	deadline := time.Now().Add(4 * time.Second)
 	for time.Now().Before(deadline) {
-		runs, _ := st.ListRuns()
+		runs, _ := st.ListRuns("")
 		if len(runs) >= 1 {
 			return
 		}

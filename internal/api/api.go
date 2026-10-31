@@ -54,6 +54,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/tokens", s.createToken)
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.deleteToken)
 	mux.HandleFunc("GET /api/components", s.listComponents)
+	mux.HandleFunc("GET /api/projects", s.listProjects)
+	mux.HandleFunc("POST /api/projects", s.createProject)
 	mux.HandleFunc("GET /api/workflows", s.listWorkflows)
 	mux.HandleFunc("GET /api/workflows/{id}", s.getWorkflow)
 	mux.HandleFunc("PUT /api/workflows/{id}", s.putWorkflow)
@@ -276,11 +278,59 @@ func (s *Server) listComponents(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"types": components.Types()})
 }
 
-func (s *Server) listWorkflows(w http.ResponseWriter, _ *http.Request) {
-	wfs, err := s.Store.ListWorkflows()
+// projectID resolves the selected project from the X-Conduit-Project header,
+// defaulting to the built-in default project.
+func projectID(r *http.Request) string {
+	if p := r.Header.Get("X-Conduit-Project"); p != "" {
+		return p
+	}
+	return model.DefaultProjectID
+}
+
+func (s *Server) listProjects(w http.ResponseWriter, _ *http.Request) {
+	ps, err := s.Store.ListProjects()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if ps == nil {
+		ps = []model.Project{}
+	}
+	writeJSON(w, http.StatusOK, ps)
+}
+
+func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+		writeErr(w, http.StatusBadRequest, "project name is required")
+		return
+	}
+	p := model.Project{ID: body.ID, Name: body.Name, CreatedAt: time.Now()}
+	if p.ID == "" {
+		p.ID = slugify(body.Name)
+	}
+	if existing, ok, _ := s.Store.GetProject(p.ID); ok {
+		writeErr(w, http.StatusConflict, "project already exists: "+existing.ID)
+		return
+	}
+	if err := s.Store.CreateProject(p); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (s *Server) listWorkflows(w http.ResponseWriter, r *http.Request) {
+	wfs, err := s.Store.ListWorkflows(projectID(r))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if wfs == nil {
+		wfs = []model.Workflow{}
 	}
 	writeJSON(w, http.StatusOK, wfs)
 }
@@ -291,7 +341,7 @@ func (s *Server) getWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !ok {
+	if !ok || wf.ProjectID != projectID(r) {
 		writeErr(w, http.StatusNotFound, "workflow not found")
 		return
 	}
@@ -305,6 +355,7 @@ func (s *Server) putWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wf.ID = r.PathValue("id")
+	wf.ProjectID = projectID(r) // scope to the selected project
 	if problems := validate.Workflow(wf); len(problems) > 0 {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 			"error":   "workflow is invalid",
@@ -379,11 +430,14 @@ func (s *Server) listSchedules(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Scheduler.Schedules())
 }
 
-func (s *Server) listRuns(w http.ResponseWriter, _ *http.Request) {
-	runs, err := s.Store.ListRuns()
+func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
+	runs, err := s.Store.ListRuns(projectID(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if runs == nil {
+		runs = []model.Run{}
 	}
 	writeJSON(w, http.StatusOK, runs)
 }
@@ -399,7 +453,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !ok {
+	if !ok || wf.ProjectID != projectID(r) {
 		writeErr(w, http.StatusNotFound, "workflow not found")
 		return
 	}
@@ -413,7 +467,7 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !ok {
+	if !ok || run.ProjectID != projectID(r) {
 		writeErr(w, http.StatusNotFound, "run not found")
 		return
 	}
@@ -521,6 +575,30 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]any{"error": msg})
+}
+
+// slugify turns a project name into a URL/id-safe slug.
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	prevDash := false
+	for _, r := range s {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash && b.Len() > 0 {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		out = "project"
+	}
+	return out
 }
 
 func logging(next http.Handler) http.Handler {

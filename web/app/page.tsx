@@ -30,7 +30,7 @@ import { Palette } from "@/components/Palette";
 import { SecretsPanel } from "@/components/SecretsPanel";
 import { Login } from "@/components/Login";
 import { EditorContext } from "@/lib/editorContext";
-import { api, getToken, setToken, setOnUnauthorized } from "@/lib/api";
+import { api, getToken, setToken, setOnUnauthorized, getProject, setProject } from "@/lib/api";
 import { type CatalogItem } from "@/lib/catalog";
 import type { EdgeData, NodeData, Run, SSEvent, Status, Workflow, WFNode } from "@/lib/types";
 
@@ -91,6 +91,8 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [showHistory, setShowHistory] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [currentProject, setCurrentProject] = useState("default");
   const [toast, setToast] = useState("");
   const esRef = useRef<EventSource | null>(null);
   const seq = useRef(1000);
@@ -101,28 +103,68 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   }, []);
   const markDirty = useCallback(() => setDirty(true), []);
 
-  // --- load current user (for display) ---
+  // --- load the current project's workflow (creating a starter if empty) ---
+  const loadWorkflows = useCallback(async () => {
+    try {
+      const wfs = await api.listWorkflows();
+      let w = wfs[0];
+      if (!w) {
+        // A fresh project has no workflow yet — create a usable starter.
+        w = await api.putWorkflow({
+          id: `wf_${getProject()}_main`,
+          project_id: getProject(),
+          name: "New workflow",
+          nodes: [{ id: "t1", type: "webhook", title: "Start", icon: "webhook", kind: "trigger", x: 80, y: 200, config: [] }],
+          edges: [],
+        });
+      }
+      setWf(w);
+      setName(w.name);
+      setNodes(wfToNodes(w));
+      setEdges(wfToEdges(w));
+      setStatuses(Object.fromEntries(w.nodes.map((n) => [n.id, "pending" as Status])));
+      setDirty(false);
+      setTimeout(() => rf.fitView({ padding: 0.2, duration: 300 }), 60);
+    } catch (e) {
+      showToast("Load failed: " + (e as Error).message);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rf, showToast]);
+
+  // --- initial load: user, projects, workflow ---
   useEffect(() => {
     api.me().then(setUser).catch(() => {});
-  }, []);
-
-  // --- load workflow ---
-  useEffect(() => {
     api
-      .listWorkflows()
-      .then((wfs) => {
-        const w = wfs[0];
-        if (!w) return;
-        setWf(w);
-        setName(w.name);
-        setNodes(wfToNodes(w));
-        setEdges(wfToEdges(w));
-        setStatuses(Object.fromEntries(w.nodes.map((n) => [n.id, "pending" as Status])));
-        setTimeout(() => rf.fitView({ padding: 0.2, duration: 300 }), 60);
-      })
-      .catch((e) => showToast("Load failed: " + e.message));
+      .listProjects()
+      .then((ps) => setProjects(ps.length ? ps : [{ id: "default", name: "Default" }]))
+      .catch(() => {});
+    setCurrentProject(getProject());
+    loadWorkflows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const switchProject = useCallback(
+    (id: string) => {
+      setProject(id);
+      setCurrentProject(id);
+      setSelected(null);
+      loadWorkflows();
+    },
+    [loadWorkflows],
+  );
+
+  const newProject = useCallback(async () => {
+    const name = window.prompt("New project name");
+    if (!name) return;
+    try {
+      const p = await api.createProject(name);
+      setProjects(await api.listProjects());
+      switchProject(p.id);
+      showToast("Project created");
+    } catch (e) {
+      showToast("Create failed: " + (e as Error).message);
+    }
+  }, [switchProject, showToast]);
 
   // --- reflect statuses onto node data + edge styling ---
   useEffect(() => {
@@ -470,6 +512,10 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           onOpenSecrets={() => setShowSecrets(true)}
           user={user}
           onSignOut={onSignOut}
+          projects={projects}
+          currentProject={currentProject}
+          onSwitchProject={switchProject}
+          onNewProject={newProject}
         />
         <div className="body">
           <RunRail

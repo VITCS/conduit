@@ -21,21 +21,32 @@ type Pg struct {
 }
 
 const schema = `
+CREATE TABLE IF NOT EXISTS projects (
+    id         text PRIMARY KEY,
+    name       text NOT NULL,
+    created_at timestamptz NOT NULL
+);
 CREATE TABLE IF NOT EXISTS workflows (
     id         text PRIMARY KEY,
+    project_id text NOT NULL DEFAULT 'default',
     name       text NOT NULL,
     data       jsonb NOT NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT 'default';
 CREATE TABLE IF NOT EXISTS runs (
     id          text PRIMARY KEY,
     workflow_id text NOT NULL,
+    project_id  text NOT NULL DEFAULT 'default',
     status      text NOT NULL,
     data        jsonb NOT NULL,
     created_at  timestamptz NOT NULL,
     finished_at timestamptz
 );
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT 'default';
 CREATE INDEX IF NOT EXISTS runs_created_idx ON runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS runs_project_idx ON runs (project_id);
+CREATE INDEX IF NOT EXISTS workflows_project_idx ON workflows (project_id);
 CREATE TABLE IF NOT EXISTS secrets (
     name       text PRIMARY KEY,
     ciphertext bytea NOT NULL,
@@ -89,11 +100,49 @@ func (s *Pg) PutWorkflow(w model.Workflow) error {
 	if err != nil {
 		return err
 	}
+	pid := w.ProjectID
+	if pid == "" {
+		pid = model.DefaultProjectID
+	}
 	_, err = s.db.Exec(
-		`INSERT INTO workflows (id, name, data, updated_at) VALUES ($1,$2,$3,now())
-		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, data=EXCLUDED.data, updated_at=now()`,
-		w.ID, w.Name, b)
+		`INSERT INTO workflows (id, project_id, name, data, updated_at) VALUES ($1,$2,$3,$4,now())
+		 ON CONFLICT (id) DO UPDATE SET project_id=EXCLUDED.project_id, name=EXCLUDED.name, data=EXCLUDED.data, updated_at=now()`,
+		w.ID, pid, w.Name, b)
 	return err
+}
+
+func (s *Pg) CreateProject(p model.Project) error {
+	_, err := s.db.Exec(
+		`INSERT INTO projects (id, name, created_at) VALUES ($1,$2,$3)
+		 ON CONFLICT (id) DO NOTHING`,
+		p.ID, p.Name, p.CreatedAt)
+	return err
+}
+
+func (s *Pg) GetProject(id string) (model.Project, bool, error) {
+	var p model.Project
+	err := s.db.QueryRow(`SELECT id,name,created_at FROM projects WHERE id=$1`, id).Scan(&p.ID, &p.Name, &p.CreatedAt)
+	if err == sql.ErrNoRows {
+		return model.Project{}, false, nil
+	}
+	return p, err == nil, err
+}
+
+func (s *Pg) ListProjects() ([]model.Project, error) {
+	rows, err := s.db.Query(`SELECT id,name,created_at FROM projects ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Project
+	for rows.Next() {
+		var p model.Project
+		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 func (s *Pg) GetWorkflow(id string) (model.Workflow, bool, error) {
@@ -112,8 +161,15 @@ func (s *Pg) GetWorkflow(id string) (model.Workflow, bool, error) {
 	return w, true, nil
 }
 
-func (s *Pg) ListWorkflows() ([]model.Workflow, error) {
-	rows, err := s.db.Query(`SELECT data FROM workflows ORDER BY name`)
+func (s *Pg) ListWorkflows(projectID string) ([]model.Workflow, error) {
+	q := `SELECT data FROM workflows`
+	args := []any{}
+	if projectID != "" {
+		q += ` WHERE project_id=$1`
+		args = append(args, projectID)
+	}
+	q += ` ORDER BY name`
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -138,10 +194,14 @@ func (s *Pg) CreateRun(r *model.Run) (model.Run, error) {
 	if err != nil {
 		return model.Run{}, err
 	}
+	pid := r.ProjectID
+	if pid == "" {
+		pid = model.DefaultProjectID
+	}
 	_, err = s.db.Exec(
-		`INSERT INTO runs (id, workflow_id, status, data, created_at, finished_at)
-		 VALUES ($1,$2,$3,$4,$5,$6)`,
-		r.ID, r.WorkflowID, string(r.Status), b, r.CreatedAt, r.FinishedAt)
+		`INSERT INTO runs (id, workflow_id, project_id, status, data, created_at, finished_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		r.ID, r.WorkflowID, pid, string(r.Status), b, r.CreatedAt, r.FinishedAt)
 	if err != nil {
 		return model.Run{}, err
 	}
@@ -164,8 +224,15 @@ func (s *Pg) GetRun(id string) (model.Run, bool, error) {
 	return r, true, nil
 }
 
-func (s *Pg) ListRuns() ([]model.Run, error) {
-	rows, err := s.db.Query(`SELECT data FROM runs ORDER BY created_at DESC`)
+func (s *Pg) ListRuns(projectID string) ([]model.Run, error) {
+	q := `SELECT data FROM runs`
+	args := []any{}
+	if projectID != "" {
+		q += ` WHERE project_id=$1`
+		args = append(args, projectID)
+	}
+	q += ` ORDER BY created_at DESC`
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

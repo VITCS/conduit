@@ -210,6 +210,11 @@ Write methods (`POST`/`PUT`/`DELETE`) require a non-viewer role.
 | `GET`  | `/api/tokens` | list API tokens |
 | `POST` | `/api/tokens` | create an API token (`{name, role}`) — plaintext shown once |
 | `DELETE` | `/api/tokens/{id}` | revoke an API token |
+| `GET`  | `/api/projects` | list projects |
+| `POST` | `/api/projects` | create a project (`{name}`) |
+
+Workflow and run endpoints are scoped to a **project**, selected with the
+`X-Conduit-Project` header (default: `default`). Cross-project access is 404.
 | `GET`  | `/api/components` | registered component types |
 | `GET`  | `/api/workflows` | list workflows |
 | `GET`  | `/api/workflows/{id}` | one workflow |
@@ -269,10 +274,18 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
 - **RBAC**: owner/admin/member/viewer; auth middleware guards every `/api` route;
   viewers are read-only.
 
-Still ahead (see the roadmap): **Phase 4b** multi-tenancy (orgs → projects
-scoping, members, project switcher, OIDC); then multi-instance event bus, a
-broader connector/OAuth framework, bounded worker pool / per-node timeouts, true
-`foreach`/`loop`, and SSRF guards on outbound requests.
+**Phase 4b (shipped):** multi-tenancy (projects) —
+
+- **Projects** scope workflows and runs (`project_id`); every list/get/create is
+  filtered by the selected project (`X-Conduit-Project` header), cross-project
+  access is 404.
+- Project CRUD + a **project switcher** in the UI; new projects get a starter
+  workflow; a `default` project is seeded.
+
+Still ahead (see the roadmap): **Phase 4c** per-project membership (user
+isolation, invitations, project-scoped secrets, OIDC); then multi-instance event
+bus, a broader connector/OAuth framework, bounded worker pool / per-node
+timeouts, true `foreach`/`loop`, and SSRF guards on outbound requests.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

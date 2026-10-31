@@ -509,6 +509,34 @@ Covered by `go test ./...`: the auth service (bcrypt login, JWT round-trip +
 tamper, bootstrap, API-token lifecycle) and the API middleware (401 unauth, 403
 viewer-write, 200 admin, webhook token requirement, login endpoint).
 
+## 10f. Phase 4b features (projects / multi-tenancy)
+
+Workflows and runs are scoped to a project, chosen with the `X-Conduit-Project`
+header (default `default`). With a JWT in `$TOK`:
+
+```bash
+# the seeded workflow lives in the default project
+curl -s -H "Authorization: Bearer $TOK" localhost:8080/api/projects
+curl -s -H "Authorization: Bearer $TOK" localhost:8080/api/workflows | python3 -c "import sys,json;print([w['id'] for w in json.load(sys.stdin)])"
+
+# create a project
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"name":"Staging"}' localhost:8080/api/projects
+
+# that project is isolated — empty, and the seed is 404 under it
+curl -s -H "Authorization: Bearer $TOK" -H "X-Conduit-Project: staging" localhost:8080/api/workflows          # []
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $TOK" \
+  -H "X-Conduit-Project: staging" localhost:8080/api/workflows/wf_preview_envs                                 # 404
+```
+
+In the UI, use the **project switcher** (top bar) to change projects or create a
+new one; a fresh project opens with a starter workflow. Covered by
+`go test ./...` (store project scoping in the contract test, and an API isolation
+test).
+
+> Note: projects currently isolate **data**; per-user membership/roles land in
+> Phase 4c, so any authenticated writer can select any project for now.
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

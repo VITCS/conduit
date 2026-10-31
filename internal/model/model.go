@@ -64,12 +64,23 @@ type Edge struct {
 	Label string `json:"label,omitempty"`
 }
 
-// Workflow is a named DAG of nodes and edges.
+// Project is a tenancy boundary: workflows and runs belong to exactly one.
+type Project struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// DefaultProjectID is the project seeded on first run.
+const DefaultProjectID = "default"
+
+// Workflow is a named DAG of nodes and edges, scoped to a project.
 type Workflow struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Nodes []Node `json:"nodes"`
-	Edges []Edge `json:"edges"`
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"`
+	Name      string `json:"name"`
+	Nodes     []Node `json:"nodes"`
+	Edges     []Edge `json:"edges"`
 }
 
 // StepRun is the execution record for one node within a run.
@@ -86,6 +97,7 @@ type StepRun struct {
 type Run struct {
 	ID         string              `json:"id"`
 	WorkflowID string              `json:"workflow_id"`
+	ProjectID  string              `json:"project_id"`
 	Title      string              `json:"title"`
 	Status     Status              `json:"status"`
 	CreatedAt  time.Time           `json:"created_at"`

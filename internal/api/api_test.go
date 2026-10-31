@@ -174,6 +174,51 @@ func getRunRaw(t *testing.T, url string) model.Run {
 	return r
 }
 
+func TestProjectScoping(t *testing.T) {
+	ts := newTestServer(t)
+	defer ts.Close()
+
+	// The seeded workflow lives in the default project; it is NOT visible under
+	// another project header.
+	get := func(path, project string) (int, []byte) {
+		req, _ := http.NewRequest("GET", ts.URL+path, nil)
+		if project != "" {
+			req.Header.Set("X-Conduit-Project", project)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
+
+	var def []model.Workflow
+	_, body := get("/api/workflows", "")
+	_ = json.Unmarshal(body, &def)
+	if len(def) != 1 {
+		t.Fatalf("default project workflows = %d, want 1", len(def))
+	}
+
+	var other []model.Workflow
+	_, body = get("/api/workflows", "empty-project")
+	_ = json.Unmarshal(body, &other)
+	if len(other) != 0 {
+		t.Errorf("empty project workflows = %d, want 0 (isolation)", len(other))
+	}
+
+	// The seeded workflow is 404 when accessed under the wrong project.
+	code, _ := get("/api/workflows/wf_preview_envs", "empty-project")
+	if code != http.StatusNotFound {
+		t.Errorf("cross-project get = %d, want 404", code)
+	}
+	code, _ = get("/api/workflows/wf_preview_envs", "")
+	if code != 200 {
+		t.Errorf("same-project get = %d, want 200", code)
+	}
+}
+
 func TestAuthMiddleware(t *testing.T) {
 	st := store.NewMem()
 	if err := st.PutWorkflow(seed.Workflow()); err != nil {

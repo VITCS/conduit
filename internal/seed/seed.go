@@ -10,8 +10,9 @@ func f(key, icon, value string) model.Field { return model.Field{Key: key, Icon:
 // Workflow returns the default "Preview Environments" DAG.
 func Workflow() model.Workflow {
 	return model.Workflow{
-		ID:   "wf_preview_envs",
-		Name: "Preview Environments · DigitalOcean",
+		ID:        "wf_preview_envs",
+		ProjectID: model.DefaultProjectID,
+		Name:      "Preview Environments · DigitalOcean",
 		Nodes: []model.Node{
 			{ID: "t1", Type: "github", Icon: "github", Kind: model.KindTrigger, Title: "On Pull Request", X: 40, Y: 300,
 				Config: []model.Field{f("repo", "github", "storejs / storefront"), f("on", "webhook", "pull_request.opened")}},

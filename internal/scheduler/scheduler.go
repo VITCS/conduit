@@ -79,7 +79,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 // Sync rebuilds cron entries from the current set of workflows.
 func (s *Scheduler) Sync() error {
-	wfs, err := s.store.ListWorkflows()
+	wfs, err := s.store.ListWorkflows("") // all projects
 	if err != nil {
 		return err
 	}

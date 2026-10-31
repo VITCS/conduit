@@ -66,6 +66,7 @@ input, select { font-family: inherit; }
 .brand { display: flex; align-items: center; gap: 9px; }
 .wordmark { font-family: var(--font-brand); font-weight: 700; font-size: 18px; letter-spacing: -.02em; }
 .beta { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; background: var(--accent); padding: 2px 7px; border-radius: 999px; color: #04201d; }
+.project-switch { flex: 0 0 auto; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px; font-size: 13px; font-weight: 600; color: var(--fg); max-width: 180px; }
 .wf-search { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; max-width: 520px; margin: 0 auto; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 7px 12px; color: var(--faint); }
 .wf-search input { border: 0; background: transparent; color: var(--fg); font-size: 13.5px; font-weight: 500; width: 100%; min-width: 0; }
 .wf-search input:focus { outline: none; }

@@ -20,14 +20,21 @@ type Store interface {
 	// Broker returns the live-event broker shared by this store.
 	Broker() *Broker
 
+	// Projects are tenancy boundaries for workflows and runs.
+	CreateProject(p model.Project) error
+	GetProject(id string) (model.Project, bool, error)
+	ListProjects() ([]model.Project, error)
+
 	PutWorkflow(w model.Workflow) error
 	GetWorkflow(id string) (model.Workflow, bool, error)
-	ListWorkflows() ([]model.Workflow, error)
+	// ListWorkflows returns workflows in a project, or all when projectID is "".
+	ListWorkflows(projectID string) ([]model.Workflow, error)
 
 	// CreateRun stores a new run and returns a snapshot.
 	CreateRun(r *model.Run) (model.Run, error)
 	GetRun(id string) (model.Run, bool, error)
-	ListRuns() ([]model.Run, error)
+	// ListRuns returns runs in a project (newest first), or all when projectID is "".
+	ListRuns(projectID string) ([]model.Run, error)
 
 	// MutateRun applies fn to the stored run atomically and returns a snapshot
 	// of the result. ok is false if the run does not exist.
@@ -59,6 +66,7 @@ func New() *Mem { return NewMem() }
 // Mem is an in-memory, concurrency-safe Store.
 type Mem struct {
 	mu        sync.RWMutex
+	projects  map[string]model.Project
 	workflows map[string]model.Workflow
 	runs      map[string]*model.Run
 	order     []string // run IDs, oldest first
@@ -71,6 +79,7 @@ type Mem struct {
 // NewMem builds an empty in-memory store.
 func NewMem() *Mem {
 	return &Mem{
+		projects:  map[string]model.Project{},
 		workflows: map[string]model.Workflow{},
 		runs:      map[string]*model.Run{},
 		secrets:   map[string][]byte{},
@@ -78,6 +87,31 @@ func NewMem() *Mem {
 		tokens:    map[string]model.APIToken{},
 		broker:    newBroker(),
 	}
+}
+
+func (s *Mem) CreateProject(p model.Project) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.projects[p.ID] = p
+	return nil
+}
+
+func (s *Mem) GetProject(id string) (model.Project, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	p, ok := s.projects[id]
+	return p, ok, nil
+}
+
+func (s *Mem) ListProjects() ([]model.Project, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.Project, 0, len(s.projects))
+	for _, p := range s.projects {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 func (s *Mem) CreateUser(u model.User) error {
@@ -213,13 +247,16 @@ func (s *Mem) GetWorkflow(id string) (model.Workflow, bool, error) {
 	return w, ok, nil
 }
 
-func (s *Mem) ListWorkflows() ([]model.Workflow, error) {
+func (s *Mem) ListWorkflows(projectID string) ([]model.Workflow, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]model.Workflow, 0, len(s.workflows))
 	for _, w := range s.workflows {
-		out = append(out, w)
+		if projectID == "" || w.ProjectID == projectID {
+			out = append(out, w)
+		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -241,13 +278,15 @@ func (s *Mem) GetRun(id string) (model.Run, bool, error) {
 	return cloneRun(r), true, nil
 }
 
-func (s *Mem) ListRuns() ([]model.Run, error) {
+func (s *Mem) ListRuns(projectID string) ([]model.Run, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]model.Run, 0, len(s.order))
 	for i := len(s.order) - 1; i >= 0; i-- { // newest first
 		if r, ok := s.runs[s.order[i]]; ok {
-			out = append(out, cloneRun(r))
+			if projectID == "" || r.ProjectID == projectID {
+				out = append(out, cloneRun(r))
+			}
 		}
 	}
 	return out, nil

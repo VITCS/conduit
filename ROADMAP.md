@@ -92,11 +92,21 @@ integrations (GitHub API, Datadog, …); SSRF guards on outbound requests (Phase
   UI stay public).
 - **UI**: a login screen, user chip, and sign-out.
 
-### Phase 4b — Multi-tenancy (next)
+### Phase 4b — Multi-tenancy (projects)  ✅ (this release)
 
-- **Organizations → projects → workflows/runs/secrets** data model and scoping on
-  every query.
-- **Members & invitations**, per-project roles, project switcher in the UI.
+- **Projects** are a tenancy boundary: workflows and runs carry a `project_id`
+  and every list/get/create is scoped to the selected project (via the
+  `X-Conduit-Project` header). Cross-project access returns 404.
+- Project CRUD (`/api/projects`) and a **project switcher** in the UI; a fresh
+  project gets a usable starter workflow.
+- A `default` project is seeded on first run and holds the sample workflow.
+
+### Phase 4c — Per-project membership (next)
+
+- **Members & invitations** with per-project roles (override the global role),
+  so projects isolate by *user*, not just by data.
+- Project-scoped **secrets**, and a project/workflow navigator for many
+  workflows per project.
 - OIDC / SSO login as an alternative to passwords.
 
 ### Phase 5 — Realtime, scale & ops

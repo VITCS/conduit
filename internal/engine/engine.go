@@ -69,6 +69,7 @@ func (e *Engine) StartWithInput(wf model.Workflow, title string, input map[strin
 	r := &model.Run{
 		ID:         nextRunID(),
 		WorkflowID: wf.ID,
+		ProjectID:  wf.ProjectID,
 		Title:      title,
 		Status:     model.StatusRunning,
 		CreatedAt:  time.Now(),

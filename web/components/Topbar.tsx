@@ -34,6 +34,10 @@ export function Topbar(props: {
   onOpenSecrets: () => void;
   user: { name: string; email: string; role: string } | null;
   onSignOut: () => void;
+  projects: { id: string; name: string }[];
+  currentProject: string;
+  onSwitchProject: (id: string) => void;
+  onNewProject: () => void;
 }) {
   const [dark, setDark] = useState(false);
   useEffect(() => {
@@ -56,6 +60,23 @@ export function Topbar(props: {
         <span className="wordmark">Conduit</span>
         <span className="beta">BETA</span>
       </div>
+      <select
+        className="project-switch"
+        value={props.currentProject}
+        onChange={(e) => {
+          if (e.target.value === "__new__") props.onNewProject();
+          else props.onSwitchProject(e.target.value);
+        }}
+        title="Project"
+        aria-label="Project"
+      >
+        {props.projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+        <option value="__new__">+ New project…</option>
+      </select>
       <div className="wf-search" role="search">
         <Pencil size={14} style={{ opacity: 0 }} />
         <input value={props.name} onChange={(e) => props.onName(e.target.value)} aria-label="Workflow name" spellCheck={false} />

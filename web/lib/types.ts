@@ -38,6 +38,7 @@ export interface WFEdge {
 
 export interface Workflow {
   id: string;
+  project_id?: string;
   name: string;
   nodes: WFNode[];
   edges: WFEdge[];

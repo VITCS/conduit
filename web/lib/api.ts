@@ -28,10 +28,27 @@ export function setOnUnauthorized(fn: () => void) {
   onUnauthorized = fn;
 }
 
+const PROJECT_KEY = "conduit_project";
+export function getProject(): string {
+  try {
+    return localStorage.getItem(PROJECT_KEY) || "default";
+  } catch {
+    return "default";
+  }
+}
+export function setProject(p: string) {
+  try {
+    localStorage.setItem(PROJECT_KEY, p);
+  } catch {
+    /* ignore */
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   const tok = getToken();
   if (tok) headers.set("Authorization", "Bearer " + tok);
+  headers.set("X-Conduit-Project", getProject());
   const r = await fetch(BASE + path, { ...init, headers });
   if (r.status === 401) {
     setToken("");
@@ -62,6 +79,13 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => req<{ email: string; name: string; role: string }>("/api/auth/me"),
+  listProjects: () => req<{ id: string; name: string }[]>("/api/projects"),
+  createProject: (name: string) =>
+    req<{ id: string; name: string }>("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
   listWorkflows: () => req<Workflow[]>("/api/workflows"),
   getWorkflow: (id: string) => req<Workflow>(`/api/workflows/${encodeURIComponent(id)}`),
   putWorkflow: (wf: Workflow) =>
