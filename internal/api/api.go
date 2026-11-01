@@ -447,7 +447,10 @@ func projectID(r *http.Request) string {
 	return model.DefaultProjectID
 }
 
-func (s *Server) listProjects(w http.ResponseWriter, _ *http.Request) {
+// listProjects returns the projects the caller may access: a member sees only
+// projects they belong to, while API tokens and global owner/admin users see all.
+// (In open mode — Auth disabled, used by tests — every project is returned.)
+func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	ps, err := s.Store.ListProjects()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -455,6 +458,16 @@ func (s *Server) listProjects(w http.ResponseWriter, _ *http.Request) {
 	}
 	if ps == nil {
 		ps = []model.Project{}
+	}
+	if s.Auth != nil {
+		p, _ := r.Context().Value(principalKey).(principal)
+		visible := make([]model.Project, 0, len(ps))
+		for _, proj := range ps {
+			if _, ok := s.effectiveRole(p, proj.ID); ok {
+				visible = append(visible, proj)
+			}
+		}
+		ps = visible
 	}
 	writeJSON(w, http.StatusOK, ps)
 }

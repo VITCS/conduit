@@ -154,12 +154,23 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   // --- initial load: user, projects, workflow ---
   useEffect(() => {
     api.me().then(setUser).catch(() => {});
-    api
-      .listProjects()
-      .then((ps) => setProjects(ps.length ? ps : [{ id: "default", name: "Default" }]))
-      .catch(() => {});
-    setCurrentProject(getProject());
-    loadWorkflows();
+    (async () => {
+      let ps: { id: string; name: string }[] = [];
+      try {
+        ps = await api.listProjects();
+      } catch {
+        /* ignore — fall back below */
+      }
+      if (!ps.length) ps = [{ id: "default", name: "Default" }];
+      setProjects(ps);
+      // Make sure the selected project is one the caller can actually access;
+      // otherwise fall back to the first visible project.
+      const cur = getProject();
+      const eff = ps.some((p) => p.id === cur) ? cur : ps[0].id;
+      if (eff !== cur) setProject(eff);
+      setCurrentProject(eff);
+      await loadWorkflows();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -328,6 +328,49 @@ func TestProjectMembershipIsolation(t *testing.T) {
 	}
 }
 
+func TestListProjectsFiltersByMembership(t *testing.T) {
+	st := store.NewMem()
+	_ = st.CreateProject(model.Project{ID: "default", Name: "Default", CreatedAt: time.Now()})
+	_ = st.CreateProject(model.Project{ID: "ai-factory", Name: "AI Factory", CreatedAt: time.Now()})
+	_ = st.CreateProject(model.Project{ID: "mine", Name: "Mine", CreatedAt: time.Now()})
+
+	authSvc := auth.New(st, "s")
+	member, _ := authSvc.CreateUser("m@x.com", "M", "pw", model.RoleMember)
+	_ = st.AddProjectMember(model.ProjectMember{ProjectID: "mine", UserID: member.ID, Role: model.RoleOwner, CreatedAt: time.Now()})
+	memberTok, _ := authSvc.IssueJWT(member)
+
+	admin, _ := authSvc.CreateUser("a@x.com", "A", "pw", model.RoleAdmin)
+	adminTok, _ := authSvc.IssueJWT(admin)
+
+	srv := &api.Server{Store: st, Engine: engine.New(st), Auth: authSvc, Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	list := func(tok string) []model.Project {
+		r, _ := http.NewRequest("GET", ts.URL+"/api/projects", nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var ps []model.Project
+		_ = json.NewDecoder(resp.Body).Decode(&ps)
+		return ps
+	}
+
+	// The member sees only their own project.
+	ms := list(memberTok)
+	if len(ms) != 1 || ms[0].ID != "mine" {
+		t.Errorf("member projects = %v, want [mine]", ms)
+	}
+	// The global admin sees all three.
+	as := list(adminTok)
+	if len(as) != 3 {
+		t.Errorf("admin projects = %d, want 3", len(as))
+	}
+}
+
 func TestAuthMiddleware(t *testing.T) {
 	st := store.NewMem()
 	if err := st.PutWorkflow(seed.Workflow()); err != nil {
