@@ -32,7 +32,7 @@ Do not file public issues with exploit details.
 
 ## Production checklist
 
-Before exposing Conduit publicly:
+Before exposing Conduit Agent publicly:
 
 1. Set strong, stable **`CONDUIT_JWT_SECRET`** and **`CONDUIT_SECRET_KEY`**
    (losing them logs everyone out / makes secrets undecryptable).

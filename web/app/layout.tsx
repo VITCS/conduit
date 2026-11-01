@@ -3,8 +3,8 @@ import "./globals.css";
 import "@xyflow/react/dist/style.css";
 
 export const metadata: Metadata = {
-  title: "Conduit",
-  description: "Visual control plane for event-driven automation workflows",
+  title: "Conduit Agent",
+  description: "Visual control plane for event-driven automation workflows with a human in the loop",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

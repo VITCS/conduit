@@ -1,6 +1,6 @@
-# Conduit Roadmap — from mini-clone to full product
+# Conduit Agent Roadmap — from mini-clone to full product
 
-This is the development plan to take Conduit from the current working slice to a
+This is the development plan to take Conduit Agent from the current working slice to a
 full-featured, production-grade control plane in the spirit of SuperPlane.
 
 ## Where we are (shipped)

@@ -111,10 +111,10 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     try {
       if (typeof Notification === "undefined") return;
       if (Notification.permission === "granted") {
-        new Notification("Conduit — approval required", { body });
+        new Notification("Conduit Agent — approval required", { body });
       } else if (Notification.permission === "default") {
         Notification.requestPermission().then((p) => {
-          if (p === "granted") new Notification("Conduit — approval required", { body });
+          if (p === "granted") new Notification("Conduit Agent — approval required", { body });
         });
       }
     } catch {

@@ -1,10 +1,10 @@
-# Conduit — Getting Started & Real‑World Guide
+# Conduit Agent — Getting Started & Real‑World Guide
 
-This guide takes you from zero to running Conduit (locally and with Docker) and
+This guide takes you from zero to running Conduit Agent (locally and with Docker) and
 then **uses it as a real user would**, with a concrete, timed scenario that shows
 why it's useful.
 
-Conduit is an **event‑driven automation control plane**: you build a workflow as a
+Conduit Agent is an **event‑driven automation control plane**: you build a workflow as a
 visual graph of components (triggers → steps → status), run it, watch every step
 live, gate risky steps on a human, keep secrets and state, and get metrics + an
 audit trail — all from one binary.

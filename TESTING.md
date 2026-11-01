@@ -1,6 +1,6 @@
 # Testing & Usage Guide
 
-This document is a complete, reproducible guide to running Conduit and verifying
+This document is a complete, reproducible guide to running Conduit Agent and verifying
 every part of it: the Go backend, the workflow engine, the REST + SSE API, the
 Next.js UI, Postgres persistence, and save-time validation.
 

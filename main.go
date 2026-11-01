@@ -209,7 +209,7 @@ func run() error {
 	// Run the server; report a startup failure through errCh.
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("Conduit listening on http://localhost%s", addr)
+		log.Printf("Conduit Agent listening on http://localhost%s", addr)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}

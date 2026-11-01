@@ -1,10 +1,10 @@
-# Conduit
+# Conduit Agent
 
 A small, runnable control plane for **event-driven automation workflows** — a
 visual DAG of components you execute, watch live, and gate on human approval.
 
-Conduit is an original take on the pattern popularized by control-plane tools
-like SuperPlane: a workflow is a graph of typed **components** (trigger → steps →
+Conduit Agent is an original take on the pattern popularized by control-plane
+tools like SuperPlane: a workflow is a graph of typed **components** (trigger → steps →
 status), wired with `success` / `failed` / `approved` edges. A **run** walks that
 graph, executes each component, streams status to the UI, and pauses at approval
 gates until someone signs off.

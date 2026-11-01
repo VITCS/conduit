@@ -40,7 +40,7 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
       <header className="lx-nav">
         <div className="lx-brand">
           <Logo />
-          <span className="wordmark">Conduit</span>
+          <span className="wordmark">Conduit Agent</span>
           <span className="beta">BETA</span>
         </div>
         <div className="lx-nav-actions">
@@ -53,7 +53,7 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
         <span className="lx-eyebrow">Event-driven automation control plane</span>
         <h1>Build, run, and watch automated workflows — with a human in the loop.</h1>
         <p className="lx-lead">
-          Conduit turns a visual graph of components into a live pipeline. Trigger it from a
+          Conduit Agent turns a visual graph of components into a live pipeline. Trigger it from a
           webhook or a schedule, watch every step execute in real time, pause for human approval
           before anything risky, and open a real pull request, call an API, post to Slack, or run
           an AI agent — all from one self-hosted binary.
@@ -99,7 +99,7 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
       </section>
 
       <footer className="lx-foot">
-        <div className="lx-brand"><Logo size={22} /><span className="wordmark">Conduit</span></div>
+        <div className="lx-brand"><Logo size={22} /><span className="wordmark">Conduit Agent</span></div>
         <div className="lx-foot-actions">
           <button className="btn" onClick={onSignIn}>Sign in</button>
           <button className="btn primary" onClick={onGetStarted}>Create account</button>

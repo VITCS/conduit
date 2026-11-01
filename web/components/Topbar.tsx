@@ -58,7 +58,7 @@ export function Topbar(props: {
       </button>
       <div className="brand">
         <Logo />
-        <span className="wordmark">Conduit</span>
+        <span className="wordmark">Conduit Agent</span>
         <span className="beta">BETA</span>
       </div>
       <select

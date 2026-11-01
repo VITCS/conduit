@@ -77,7 +77,7 @@ export function Auth({
         )}
         <div className="login-brand">
           <Logo />
-          <span className="wordmark" style={{ fontSize: 22 }}>Conduit</span>
+          <span className="wordmark" style={{ fontSize: 22 }}>Conduit Agent</span>
         </div>
 
         <div className="auth-tabs" role="tablist">
