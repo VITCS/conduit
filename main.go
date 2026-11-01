@@ -15,9 +15,11 @@ import (
 	"errors"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -70,6 +72,9 @@ func healthcheck() int {
 }
 
 func run() error {
+	// Structured JSON logging for the whole process.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
 	addr := envOr("CONDUIT_ADDR", ":8080")
 
 	st, closeStore, err := openStore()
@@ -125,13 +130,33 @@ func run() error {
 		}
 	}
 
-	// Start the cron scheduler, tied to the process lifetime.
-	schedCtx, schedCancel := context.WithCancel(context.Background())
-	defer schedCancel()
-	sched := scheduler.New(st, eng)
-	sched.Start(schedCtx)
+	// Background context tied to the process lifetime (scheduler + event relay).
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
 
-	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Auth: authSvc, Web: ui}
+	// Multi-instance live events: with Postgres, fan events out via LISTEN/NOTIFY.
+	if pg, ok := st.(*store.Pg); ok {
+		pg.StartEventRelay(bgCtx)
+		log.Printf("events: Postgres LISTEN/NOTIFY relay enabled (multi-instance)")
+	}
+
+	// Start the cron scheduler.
+	sched := scheduler.New(st, eng)
+	sched.Start(bgCtx)
+
+	// Rate limiting (per client IP). CONDUIT_RATE_LIMIT is requests/sec; 0 disables.
+	rate := 20.0
+	if v := os.Getenv("CONDUIT_RATE_LIMIT"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			rate = f
+		}
+	}
+	var limiter = api.NewRateLimiter(rate, int(rate*2)+10)
+	if rate <= 0 {
+		limiter = nil
+	}
+
+	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Auth: authSvc, Limiter: limiter, Web: ui}
 
 	httpSrv := &http.Server{
 		Addr:    addr,

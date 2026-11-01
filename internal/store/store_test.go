@@ -185,6 +185,15 @@ func storeContract(t *testing.T, s Store) {
 	if _, ok, _ := s.GetAPITokenByHash("deadbeef"); ok {
 		t.Error("token still present after delete")
 	}
+
+	// audit log
+	if err := s.AppendAudit(model.AuditEntry{ID: "a1", Time: time.Now(), Actor: "x@y.com", Method: "POST", Path: "/api/runs", Status: 201}); err != nil {
+		t.Fatalf("AppendAudit: %v", err)
+	}
+	entries, err := s.ListAudit(10)
+	if err != nil || len(entries) == 0 || entries[0].Actor != "x@y.com" {
+		t.Fatalf("ListAudit: n=%d err=%v", len(entries), err)
+	}
 }
 
 func TestMemStoreContract(t *testing.T) {
@@ -202,7 +211,7 @@ func TestPostgresStoreContract(t *testing.T) {
 	}
 	defer pg.Close()
 	// Start clean so repeated runs are deterministic.
-	if _, err := pg.db.Exec(`TRUNCATE workflows, runs, secrets, users, api_tokens, projects, project_members`); err != nil {
+	if _, err := pg.db.Exec(`TRUNCATE workflows, runs, secrets, users, api_tokens, projects, project_members, audit`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	storeContract(t, pg)

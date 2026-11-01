@@ -5,18 +5,24 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"conduit/internal/model"
 
+	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // register the "pgx" database/sql driver
 )
 
+// pgNotifyChannel is the Postgres LISTEN/NOTIFY channel for cross-instance events.
+const pgNotifyChannel = "conduit_events"
+
 // Pg is a Postgres-backed Store. Workflows and runs are stored as JSONB with a
-// few promoted columns for ordering and filtering. The live-event broker stays
-// in-process (events are ephemeral), so a single server instance owns the stream.
+// few promoted columns for ordering and filtering. Live events fan out through a
+// local broker and, via LISTEN/NOTIFY, across every server instance.
 type Pg struct {
 	db     *sql.DB
+	dsn    string
 	broker *Broker
 }
 
@@ -61,6 +67,16 @@ CREATE TABLE IF NOT EXISTS project_members (
     created_at timestamptz NOT NULL,
     PRIMARY KEY (project_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS audit (
+    id       text PRIMARY KEY,
+    ts       timestamptz NOT NULL,
+    actor    text NOT NULL,
+    method   text NOT NULL,
+    path     text NOT NULL,
+    project  text NOT NULL,
+    status   int NOT NULL
+);
+CREATE INDEX IF NOT EXISTS audit_ts_idx ON audit (ts DESC);
 CREATE TABLE IF NOT EXISTS users (
     id            text PRIMARY KEY,
     email         text UNIQUE NOT NULL,
@@ -96,13 +112,73 @@ func NewPostgres(dsn string) (*Pg, error) {
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	return &Pg{db: db, broker: newBroker()}, nil
+	return &Pg{db: db, dsn: dsn, broker: newBroker()}, nil
 }
 
 // Close releases the connection pool.
 func (s *Pg) Close() error { return s.db.Close() }
 
 func (s *Pg) Broker() *Broker { return s.broker }
+
+// StartEventRelay wires the broker to Postgres LISTEN/NOTIFY so run events fan
+// out across every server instance. Published events are forwarded via NOTIFY,
+// and a background LISTEN loop delivers remote events into the local broker.
+func (s *Pg) StartEventRelay(ctx context.Context) {
+	s.broker.SetRelay(s.notify)
+	go s.listenLoop(ctx)
+}
+
+// notify forwards an event to other instances via NOTIFY. Heavy snapshot fields
+// are stripped to stay within Postgres's ~8KB payload limit; subscribers that
+// need the full run refetch it over the API.
+func (s *Pg) notify(e model.Event) {
+	e.Step = nil
+	e.Run = nil
+	b, err := json.Marshal(e)
+	if err != nil || len(b) > 7500 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_, _ = s.db.ExecContext(ctx, "SELECT pg_notify($1,$2)", pgNotifyChannel, string(b))
+	}()
+}
+
+// listenLoop LISTENs for events from other instances and delivers them locally.
+// It reconnects with backoff until the context is canceled.
+func (s *Pg) listenLoop(ctx context.Context) {
+	for ctx.Err() == nil {
+		if err := s.listenOnce(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("event relay: %v; reconnecting in 2s", err)
+			select {
+			case <-ctx.Done():
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+}
+
+func (s *Pg) listenOnce(ctx context.Context) error {
+	conn, err := pgx.Connect(ctx, s.dsn)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(context.Background())
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyChannel); err != nil {
+		return err
+	}
+	for {
+		n, err := conn.WaitForNotification(ctx)
+		if err != nil {
+			return err
+		}
+		var e model.Event
+		if json.Unmarshal([]byte(n.Payload), &e) == nil {
+			s.broker.Deliver(e) // local-only; no re-notify
+		}
+	}
+}
 
 func (s *Pg) PutWorkflow(w model.Workflow) error {
 	b, err := json.Marshal(w)
@@ -387,6 +463,33 @@ func (s *Pg) ListProjectMembers(projectID string) ([]model.ProjectMember, error)
 func (s *Pg) RemoveProjectMember(projectID, userID string) error {
 	_, err := s.db.Exec(`DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID)
 	return err
+}
+
+func (s *Pg) AppendAudit(e model.AuditEntry) error {
+	_, err := s.db.Exec(
+		`INSERT INTO audit (id, ts, actor, method, path, project, status) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		e.ID, e.Time, e.Actor, e.Method, e.Path, e.Project, e.Status)
+	return err
+}
+
+func (s *Pg) ListAudit(limit int) ([]model.AuditEntry, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := s.db.Query(`SELECT id,ts,actor,method,path,project,status FROM audit ORDER BY ts DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.AuditEntry{}
+	for rows.Next() {
+		var e model.AuditEntry
+		if err := rows.Scan(&e.ID, &e.Time, &e.Actor, &e.Method, &e.Path, &e.Project, &e.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 func (s *Pg) CreateUser(u model.User) error {

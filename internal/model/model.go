@@ -154,6 +154,17 @@ type APIToken struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+// AuditEntry records a mutating action for the audit log.
+type AuditEntry struct {
+	ID      string    `json:"id"`
+	Time    time.Time `json:"time"`
+	Actor   string    `json:"actor"`   // user email or "token"/"anonymous"
+	Method  string    `json:"method"`  // HTTP method
+	Path    string    `json:"path"`    // request path
+	Project string    `json:"project"` // selected project, if any
+	Status  int       `json:"status"`  // response status code
+}
+
 // Event is a message published to live subscribers (the SSE stream).
 type Event struct {
 	Type    string    `json:"type"` // run.started, step.updated, log, run.waiting, run.finished

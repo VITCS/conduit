@@ -567,6 +567,41 @@ In the UI, use the **Members** button (top bar) to add/remove members or create
 users. Covered by `go test ./...` (store member + scoped-secret contract, and API
 membership isolation — non-member 403, member 200).
 
+## 10h. Phase 5 features (realtime, scale & ops)
+
+**Metrics** — Prometheus text at `/metrics` (public, not under `/api`):
+```bash
+curl -s localhost:8080/metrics | grep conduit_
+# conduit_http_requests_total{method="GET",status="2xx"} ...
+# conduit_runs_started_total 1, conduit_runs_finished_total{status="success"} 1, conduit_runs_active 0
+```
+
+**Audit log** — mutations are recorded; read them as a global admin:
+```bash
+curl -s -H "Authorization: Bearer $TOK" localhost:8080/api/audit | python3 -m json.tool
+# entries show actor, method, path, project, status
+```
+
+**Structured logs** — the server logs one JSON line per request (with a request
+id, returned in the `X-Request-ID` header):
+```
+{"level":"INFO","msg":"request","id":"...","method":"POST","path":"/api/runs","status":201,"dur_ms":0}
+```
+
+**Rate limiting** — per-IP token bucket on `/api`; over the limit returns `429`
+with `Retry-After`. Tune with `CONDUIT_RATE_LIMIT` (req/sec, 0 disables).
+
+**Multi-instance live events (Postgres)** — with `CONDUIT_DATABASE_URL` set, run
+events fan out across instances via `LISTEN/NOTIFY`, so SSE works behind a load
+balancer. To exercise the relay directly against a DB:
+```bash
+export CONDUIT_TEST_POSTGRES="postgres://user:pass@localhost:5432/conduit?sslmode=disable"
+go test ./internal/store/ -run TestPostgresEventRelay -v   # publishes on one instance, receives on another
+```
+
+Covered by `go test ./...`: metrics exposition, rate-limit 429, audit record +
+`/api/audit`, the store audit contract, and the gated cross-instance relay.
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

@@ -65,6 +65,10 @@ type Store interface {
 	GetAPITokenByHash(hash string) (model.APIToken, bool, error)
 	ListAPITokens() ([]model.APIToken, error)
 	DeleteAPIToken(id string) error
+
+	// Audit log of mutating actions.
+	AppendAudit(e model.AuditEntry) error
+	ListAudit(limit int) ([]model.AuditEntry, error)
 }
 
 // New returns the default (in-memory) store.
@@ -81,6 +85,7 @@ type Mem struct {
 	secrets   map[string][]byte         // key: projectID\x00name
 	users     map[string]model.User     // by ID
 	tokens    map[string]model.APIToken // by ID
+	audit     []model.AuditEntry
 	broker    *Broker
 }
 
@@ -235,6 +240,30 @@ func (s *Mem) DeleteAPIToken(id string) error {
 	defer s.mu.Unlock()
 	delete(s.tokens, id)
 	return nil
+}
+
+func (s *Mem) AppendAudit(e model.AuditEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.audit = append(s.audit, e)
+	// Bound in-memory growth.
+	if len(s.audit) > 5000 {
+		s.audit = s.audit[len(s.audit)-5000:]
+	}
+	return nil
+}
+
+func (s *Mem) ListAudit(limit int) ([]model.AuditEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if limit <= 0 || limit > len(s.audit) {
+		limit = len(s.audit)
+	}
+	out := make([]model.AuditEntry, 0, limit)
+	for i := len(s.audit) - 1; i >= 0 && len(out) < limit; i-- { // newest first
+		out = append(out, s.audit[i])
+	}
+	return out, nil
 }
 
 func (s *Mem) PutSecret(projectID, name string, ciphertext []byte) error {

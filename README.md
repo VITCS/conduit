@@ -122,6 +122,7 @@ final stage is a distroless, non-root static image containing only the binary.
 | `CONDUIT_JWT_SECRET` | _(unset)_ | secret for signing login JWTs; ephemeral (sessions reset on restart) when unset |
 | `CONDUIT_ADMIN_EMAIL` | `admin@conduit.local` | bootstrap admin email (created only if there are no users) |
 | `CONDUIT_ADMIN_PASSWORD` | `conduit` | bootstrap admin password — change it after first login |
+| `CONDUIT_RATE_LIMIT` | `20` | per-IP request/second limit on `/api` (0 disables) |
 
 ### Production notes
 
@@ -233,6 +234,8 @@ cross-project reads are 404.
 | `POST` | `/api/runs/{id}/cancel` | cancel a running/waiting run (`409` if not active) |
 | `POST` | `/api/hooks/{workflowId}` | start a run from a webhook; JSON body becomes the trigger input |
 | `GET`  | `/api/schedules` | list active cron schedules |
+| `GET`  | `/api/audit` | recent audit entries (global admin) |
+| `GET`  | `/metrics` | Prometheus metrics (public, not under `/api`) |
 | `GET`  | `/api/secrets` | list secret names (never values) |
 | `PUT`  | `/api/secrets/{name}` | create/update a secret (`{value}`) |
 | `DELETE` | `/api/secrets/{name}` | delete a secret |
@@ -297,9 +300,18 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
 - **Members & users** API + UI (add/remove members, create users).
 - **Project-scoped secrets**: secrets live under a project and resolve per-run.
 
-Still ahead (see the roadmap): invitations/email + OIDC/SSO; multi-instance event
-bus; a broader connector/OAuth framework; bounded worker pool / per-node
-timeouts; true `foreach`/`loop`; and SSRF guards on outbound requests.
+**Phase 5 (shipped):** realtime, scale & ops —
+
+- **Postgres `LISTEN/NOTIFY`** event bus so live run events (SSE) fan out across
+  multiple instances behind a load balancer (auto-enabled with a DB).
+- **Observability**: Prometheus `/metrics`, structured JSON logs with request
+  IDs, and an **audit log** of mutations (`/api/audit`, admin).
+- **Rate limiting** (per-IP token bucket, `CONDUIT_RATE_LIMIT`).
+
+Still ahead (see the roadmap): **Phase 5b** a dedicated worker model (claim/lease
+run execution) + OTel traces; invitations/email + OIDC/SSO; a broader
+connector/OAuth framework; per-node timeouts; true `foreach`/`loop`; and SSRF
+guards on outbound requests.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

@@ -219,6 +219,55 @@ func TestProjectScoping(t *testing.T) {
 	}
 }
 
+func TestRateLimiting(t *testing.T) {
+	st := store.NewMem()
+	_ = st.PutWorkflow(seed.Workflow())
+	srv := &api.Server{Store: st, Engine: engine.New(st), Limiter: api.NewRateLimiter(0, 3), Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	// With rate 0 and burst 3, the 4th request within the window is limited.
+	codes := map[int]int{}
+	for i := 0; i < 6; i++ {
+		resp, err := http.Get(ts.URL + "/api/health")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		codes[resp.StatusCode]++
+	}
+	if codes[http.StatusTooManyRequests] == 0 {
+		t.Errorf("expected some 429s, got %v", codes)
+	}
+}
+
+func TestAuditLog(t *testing.T) {
+	ts := newTestServer(t) // open mode (no auth) -> callerIsGlobalAdmin true
+	defer ts.Close()
+
+	// A mutation is recorded.
+	postJSON(t, ts.URL+"/api/runs", map[string]string{"workflow_id": "wf_preview_envs"}, nil)
+	// Audit writes are best-effort (async); poll briefly.
+	var entries []model.AuditEntry
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		getJSON(t, ts.URL+"/api/audit", &entries)
+		if len(entries) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Method == "POST" && e.Path == "/api/runs" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("audit did not record POST /api/runs: %+v", entries)
+	}
+}
+
 func TestProjectMembershipIsolation(t *testing.T) {
 	st := store.NewMem()
 	_ = st.CreateProject(model.Project{ID: "default", Name: "Default", CreatedAt: time.Now()})

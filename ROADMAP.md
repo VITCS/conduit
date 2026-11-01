@@ -114,13 +114,19 @@ integrations (GitHub API, Datadog, …); SSRF guards on outbound requests (Phase
 Deferred to later: invitations/email, OIDC / SSO, a per-project secret UI scope
 indicator, and many-workflows-per-project navigation.
 
-### Phase 5 — Realtime, scale & ops
+### Phase 5 — Realtime, scale & ops  ✅ (this release)
 
-- **Postgres `LISTEN/NOTIFY`** event bus so SSE works across multiple instances.
-- **Worker model**: separate run-executor workers from the API; at-least-once
-  execution with claim/lease on runs.
-- **Observability**: Prometheus metrics, OTel traces, structured JSON logs,
-  **audit log**; rate limiting and request size limits.
+- **Postgres `LISTEN/NOTIFY`** event bus: run events fan out across every server
+  instance, so SSE works behind a load balancer (enabled automatically with a DB).
+- **Observability**: Prometheus `/metrics` (HTTP + runs), structured JSON logs
+  with per-request IDs, and an **audit log** (`/api/audit`, admin) of mutations.
+- **Rate limiting**: per-IP token bucket on `/api` (`CONDUIT_RATE_LIMIT`), plus
+  the existing request-body size limits.
+
+Deferred to a follow-up (**Phase 5b**): a dedicated **worker model** — separate
+run-executor workers from the API with at-least-once execution via a claim/lease
+on runs — and OTel traces. The engine runs in-process today, which is correct for
+one instance; the worker model is what lets execution scale out independently.
 
 ### Phase 6 — Agents / factory (optional track)
 

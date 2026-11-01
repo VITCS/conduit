@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"conduit/internal/components"
+	"conduit/internal/metrics"
 	"conduit/internal/model"
 	"conduit/internal/store"
 )
@@ -81,6 +82,8 @@ func (e *Engine) StartWithInput(wf model.Workflow, title string, input map[strin
 		r.Steps[n.ID] = &model.StepRun{NodeID: n.ID, Status: model.StatusPending}
 	}
 	snap, _ := e.store.CreateRun(r)
+	metrics.RunsStarted.Inc("")
+	metrics.RunsActive.Add(1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	e.mu.Lock()
@@ -224,6 +227,8 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 		now := time.Now()
 		r.FinishedAt = &now
 	})
+	metrics.RunsActive.Add(-1)
+	metrics.RunsFinished.Inc(metrics.Labels("status", string(final)))
 	e.publish(model.Event{Type: "run.finished", RunID: runID, Status: final,
 		Level: levelFor(final), Message: fmt.Sprintf("Run %s %s", runID, final),
 		Run: &snap})

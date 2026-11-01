@@ -15,6 +15,7 @@ import (
 	"conduit/internal/auth"
 	"conduit/internal/components"
 	"conduit/internal/engine"
+	"conduit/internal/metrics"
 	"conduit/internal/model"
 	"conduit/internal/scheduler"
 	"conduit/internal/secrets"
@@ -29,7 +30,13 @@ type Server struct {
 	Scheduler *scheduler.Scheduler // optional; nil disables schedule endpoints/sync
 	Secrets   *secrets.Manager     // optional; nil disables secret endpoints
 	Auth      *auth.Service        // optional; nil disables auth (open mode, for tests)
+	Limiter   *rateLimiter         // optional; nil disables rate limiting
 	Web       fs.FS                // static assets (the UI)
+}
+
+// NewRateLimiter builds a per-IP token-bucket limiter (requests/second, burst).
+func NewRateLimiter(ratePerSec float64, burst int) *rateLimiter {
+	return newRateLimiter(ratePerSec, burst)
 }
 
 // principal carries the authenticated caller's identity through the request.
@@ -47,7 +54,9 @@ const principalKey ctxKey = 0
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /api/health", s.health)
+	mux.HandleFunc("GET /api/audit", s.listAudit)
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("GET /api/auth/me", s.me)
 	mux.HandleFunc("GET /api/tokens", s.listTokens)
@@ -86,7 +95,9 @@ func (s *Server) Routes() http.Handler {
 		fileServer.ServeHTTP(w, r)
 	}))
 
-	return logging(s.authMiddleware(mux))
+	// Middleware chain (outermost first): observe (metrics + structured log + request
+	// id) → rate limit → auth (sets principal) → audit (records mutations) → mux.
+	return observe(s.rateLimit(s.authMiddleware(s.audit(mux))))
 }
 
 // authMiddleware enforces authentication on /api routes when Auth is configured.
@@ -788,12 +799,19 @@ func slugify(s string) string {
 	return out
 }
 
-func logging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		if r.URL.Path != "/api/events" {
-			fmt.Printf("%s %s %s\n", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
-		}
-	})
+// listAudit returns recent audit entries (global admin only).
+func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
+	if !s.callerIsGlobalAdmin(r) {
+		writeErr(w, http.StatusForbidden, "admin only")
+		return
+	}
+	entries, err := s.Store.ListAudit(200)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []model.AuditEntry{}
+	}
+	writeJSON(w, http.StatusOK, entries)
 }
