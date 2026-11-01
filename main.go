@@ -123,6 +123,13 @@ func run() error {
 	}
 	components.ResolveSecret = secretMgr.Lookup
 
+	// SSRF guard: outbound executors (http/slack/agent) may reach only public
+	// addresses unless explicitly allowed (e.g. local testing / trusted network).
+	if strings.EqualFold(os.Getenv("CONDUIT_ALLOW_PRIVATE_EGRESS"), "true") {
+		components.AllowPrivateEgress = true
+		log.Printf("egress: private/loopback egress ALLOWED (CONDUIT_ALLOW_PRIVATE_EGRESS=true)")
+	}
+
 	// Authentication: password login (JWT) + API tokens, with RBAC.
 	authSvc := auth.New(st, os.Getenv("CONDUIT_JWT_SECRET"))
 	if os.Getenv("CONDUIT_JWT_SECRET") == "" {

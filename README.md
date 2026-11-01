@@ -124,6 +124,7 @@ final stage is a distroless, non-root static image containing only the binary.
 | `CONDUIT_ADMIN_PASSWORD` | `conduit` | bootstrap admin password — change it after first login |
 | `CONDUIT_RATE_LIMIT` | `20` | per-IP request/second limit on `/api` (0 disables) |
 | `CONDUIT_WORKERS` | `4` | run-executor workers per instance |
+| `CONDUIT_ALLOW_PRIVATE_EGRESS` | `false` | allow outbound executors to reach private/loopback addresses (SSRF guard off) |
 
 ### Production notes
 
@@ -325,11 +326,16 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
 - A seeded **AI Factory** workflow (in the `ai-factory` project) modeling
   *issue → refine → implement → verify → review → approve → open PR*.
 
-Still ahead (see the roadmap): OTel traces + resumable execution (so a reclaimed
-run resumes rather than re-runs, which also enables cross-instance approval);
-agent tool-use + a real coding-agent sandbox; invitations/email + OIDC/SSO; a
-broader connector/OAuth framework; per-node timeouts; true `foreach`/`loop`; and
-SSRF guards on outbound requests.
+**Phase 7 (shipped — `v1.0.0`):** release hardening —
+
+- **SSRF guard** on outbound executors (private/loopback blocked at dial time;
+  `CONDUIT_ALLOW_PRIVATE_EGRESS` to opt in), a 4 MiB request-body cap, and
+  security headers. See **[SECURITY.md](SECURITY.md)** for the security model and
+  production checklist.
+
+Post-1.0 (tracked in SECURITY.md): resumable execution (reclaim resumes rather
+than re-runs; also enables cross-instance approval), httpOnly-cookie sessions,
+OTel traces, agent tool-use + coding-agent sandbox, and OIDC/SSO.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

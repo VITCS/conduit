@@ -95,9 +95,10 @@ func (s *Server) Routes() http.Handler {
 		fileServer.ServeHTTP(w, r)
 	}))
 
-	// Middleware chain (outermost first): observe (metrics + structured log + request
-	// id) → rate limit → auth (sets principal) → audit (records mutations) → mux.
-	return observe(s.rateLimit(s.authMiddleware(s.audit(mux))))
+	// Middleware chain (outermost first): observe (metrics + log + request id) →
+	// security headers → body-size limit → rate limit → auth (sets principal) →
+	// audit (records mutations) → mux.
+	return observe(secureHeaders(limitBody(s.rateLimit(s.authMiddleware(s.audit(mux))))))
 }
 
 // authMiddleware enforces authentication on /api routes when Auth is configured.

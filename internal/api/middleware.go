@@ -92,6 +92,30 @@ func statusText(code int) string {
 	}
 }
 
+// maxBodyBytes caps request body size (SSE/GET have no body; harmless there).
+const maxBodyBytes = 4 << 20 // 4 MiB
+
+func limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// secureHeaders adds conservative security headers. The UI is same-origin, so
+// framing is restricted to same-origin; no CSP is set to avoid breaking the SPA.
+func secureHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "SAMEORIGIN")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // --- rate limiting (token bucket per client IP) ---
 
 type bucket struct {

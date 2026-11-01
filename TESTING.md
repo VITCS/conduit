@@ -657,6 +657,29 @@ Covered by `go test ./...`: the simulated agent, live agent via `httptest`
 (Anthropic + OpenAI request/response shapes, failure status), prompt templating,
 and that the seeded factory workflow passes validation.
 
+## 10k. Phase 7 features (hardening)
+
+**SSRF guard** — outbound executors (`http` live, `slack`, `agent`) refuse
+private/loopback/link-local targets at dial time. With the server running
+normally (guard on), a live HTTP node pointed at `127.0.0.1`/`10.x`/`169.254.x`
+fails. For local testing against internal targets, start with
+`CONDUIT_ALLOW_PRIVATE_EGRESS=true`.
+
+**Security headers** — every response carries them:
+```bash
+curl -s -D - -o /dev/null localhost:8080/ | grep -iE 'x-content-type-options|x-frame-options|referrer-policy'
+# X-Content-Type-Options: nosniff / X-Frame-Options: SAMEORIGIN / Referrer-Policy: no-referrer
+```
+
+**Body-size cap** — requests over 4 MiB are rejected instead of buffered.
+
+Covered by `go test ./...`: the SSRF guard blocks loopback when disallowed and
+permits it when allowed (`internal/components`); the rest is middleware exercised
+by the API suite.
+
+See **[SECURITY.md](SECURITY.md)** for the full security model and the production
+checklist.
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

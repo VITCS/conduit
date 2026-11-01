@@ -154,10 +154,20 @@ resumable state machine and is tracked with it.
 Deferred: streaming agent output, tool-use/function-calling, and a real
 coding-agent sandbox (the `impl` step is an agent call today).
 
-### Phase 7 — Release hardening
+### Phase 7 — Release hardening  ✅ (this release)
 
-- Security review (authz coverage, SSRF guards on the HTTP executor, input
-  limits), load testing, backup/restore docs, versioned API, `v1.0.0`.
+- **SSRF guard** on all outbound executors (`http` live, `slack`, `agent`):
+  private/loopback/link-local targets are blocked at dial time; opt in with
+  `CONDUIT_ALLOW_PRIVATE_EGRESS`.
+- **Input/transport hardening**: 4 MiB request-body cap, security headers
+  (`nosniff` / `SAMEORIGIN` / `no-referrer`), on top of existing rate limiting,
+  timeouts, and graceful shutdown.
+- **SECURITY.md**: security model, production checklist, and tracked limitations.
+- Tagged **`v1.0.0`**.
+
+Post-1.0 (tracked in SECURITY.md): resumable execution (reclaim resumes rather
+than re-runs; also enables cross-instance approval), httpOnly-cookie sessions,
+OTel traces, agent tool-use + coding-agent sandbox, OIDC/SSO.
 
 ---
 

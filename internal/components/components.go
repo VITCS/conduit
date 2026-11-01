@@ -10,16 +10,52 @@ package components
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"conduit/internal/model"
 )
 
-// liveHTTPClient performs real outbound requests for http/slack nodes.
-var liveHTTPClient = &http.Client{Timeout: 10 * time.Second}
+// AllowPrivateEgress, when true, disables the SSRF guard so outbound executors
+// may reach private/loopback addresses. Keep false in production; set it only for
+// local testing or a trusted internal network.
+var AllowPrivateEgress bool
+
+// controlSSRF runs after DNS resolution with the concrete IP, so it blocks
+// requests to private/loopback/link-local ranges even under DNS rebinding.
+func controlSSRF(_, address string, _ syscall.RawConn) error {
+	if AllowPrivateEgress {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("blocked egress: cannot parse address %q", address)
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
+		return fmt.Errorf("blocked egress to non-public address %s", ip)
+	}
+	return nil
+}
+
+// liveHTTPClient performs real outbound requests for http/slack/agent nodes,
+// with an SSRF guard at dial time.
+var liveHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, Control: controlSSRF}).DialContext,
+		TLSHandshakeTimeout: 10 * time.Second,
+		MaxIdleConns:        50,
+	},
+}
 
 // ResolveSecret, when set by the host, resolves ${secret:NAME} references found
 // in a node's config values, within a project. Nil means no secrets are available.
