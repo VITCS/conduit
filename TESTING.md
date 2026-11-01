@@ -680,6 +680,99 @@ by the API suite.
 See **[SECURITY.md](SECURITY.md)** for the full security model and the production
 checklist.
 
+## 10l. Going real — live execution against external systems
+
+The seeded demo workflows **simulate** their side effects so they run offline and
+deterministically. To exercise Conduit end-to-end against real systems, components
+have live modes:
+
+| Component | How to make it real |
+|-----------|---------------------|
+| `http` / `graphql` | set field `live = true` (performs a real request; outcome from the status code) |
+| `slack` | set `webhook = ${secret:slack_url}` (always posts for real) |
+| `agent` | set `live = true`, `provider`, `model`, `api_key = ${secret:...}` |
+| `github_pr` | opens a **real pull request** (always real; needs `github_token`) |
+| `github_comment` | posts a **real** issue/PR comment (needs `github_token`) |
+
+### Open a real GitHub pull request
+
+This is the "configure an actual PR for a git repo" path.
+
+**1. Create a GitHub token.** On GitHub → *Settings → Developer settings →
+Personal access tokens → Fine-grained tokens*. Scope it to the target repository
+with **Pull requests: Read and write** (and **Contents: Read and write** if the
+`head` branch is created by an earlier step). Copy the token.
+
+**2. Store it as a project secret** named `github_token` (UI → **Secrets**, or API):
+
+```bash
+curl -s -X PUT localhost:8080/api/secrets/github_token \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"value":"github_pat_xxx"}'
+```
+
+**3. Add a `github_pr` node** (palette → **GitHub PR**) and configure its fields:
+
+| Field | Example | Notes |
+|-------|---------|-------|
+| `owner` | `your-org` | repo owner |
+| `repo` | `your-repo` | repo name |
+| `head` | `feature/login` or `${input.branch}` | the branch with changes (must already exist on the remote) |
+| `base` | `main` | target branch (default `main`) |
+| `title` | `Automated: ${input.branch}` | supports `${input.*}` / `${memory.*}` |
+| `body` | `Opened by Conduit` | optional |
+| `token` | *(omit)* | defaults to `${secret:github_token}` |
+| `api_base` | *(omit)* | set to your GHE API URL for GitHub Enterprise |
+
+Config values expand `${secret:NAME}`, `${input.KEY}` (the webhook/run payload)
+and `${memory.KEY}` (state written by earlier steps).
+
+**4. Run it.** On success the step is **Created** and its output carries the real
+`number` and `html_url`; the PR URL is also written to memory as `last_pr_url`.
+
+**Verify the real call fires even without a valid token** (it reaches GitHub and
+returns a real error — proof it is not simulated):
+
+```bash
+# with no github_token secret -> failed, with a hint
+# with a bogus github_token   -> failed, status_code 401 "Bad credentials"
+curl -s localhost:8080/api/runs/<run_id> -H "Authorization: Bearer $TOK" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['steps']['<node_id>'])"
+```
+
+A full webhook-driven recipe (Git host → run → real PR) is in
+**[GUIDE.md](GUIDE.md)**.
+
+## 10m. Run control (cancel & approval)
+
+**Cancel** stops a run in any non-terminal state and is **idempotent**:
+
+- Canceling a **running** or **waiting** run unwinds it to `canceled`.
+- Canceling a **queued** run (before a worker claims it) marks it `canceled` and a
+  tombstone prevents a worker from executing it.
+- Canceling an **already-finished** run returns `200` with its status (so the UI
+  never gets stuck showing "Cancel"); an unknown run returns `404`.
+
+```bash
+# start a run, let it reach `waiting`, then cancel it
+curl -s -X POST localhost:8080/api/runs/<id>/cancel -H "Authorization: Bearer $TOK" \
+  -H 'Content-Type: application/json' -d '{}'
+# -> {"ok":true,"canceled":true,"status":"waiting"}  (settles to canceled)
+```
+
+**Approval** emits a `run.waiting` SSE event and, in the UI, a **persistent banner**
+across the top with **Approve / Reject / View step** (plus a best-effort desktop
+notification), so a held run is impossible to miss regardless of which tab you are
+on. Resolve it from the banner, or via the API:
+
+```bash
+curl -s -X POST localhost:8080/api/runs/<id>/approve -H "Authorization: Bearer $TOK" \
+  -H 'Content-Type: application/json' -d '{"node_id":"<approval_node>","decision":"approved"}'
+```
+
+If the SSE stream drops, the UI reconciles from `GET /api/runs/<id>`, so the
+Run/Cancel button and the approval banner always match the backend's real state.
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

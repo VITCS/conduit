@@ -216,6 +216,20 @@ input, select { font-family: inherit; }
 .approve-bar .msg { flex: 1 1 auto; font-size: 13px; font-weight: 500; color: var(--wait-ink); }
 .approve-bar .btn.ok { background: var(--ok); color: #042017; border-color: transparent; }
 
+/* ---------- persistent approval banner (above the workspace) ---------- */
+.approval-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; z-index: 30;
+  background: var(--wait-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--wait) 45%, transparent);
+  color: var(--wait-ink); font-size: 13.5px;
+}
+.approval-banner .ab-text { flex: 1 1 auto; }
+.approval-banner .ab-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--wait); flex: 0 0 auto; animation: pulse 1.8s infinite; }
+.approval-banner .btn.ok { background: var(--ok); color: #042017; border-color: transparent; }
+.approval-banner .btn.danger { background: var(--fail); color: #fff; border-color: transparent; }
+.approval-banner .btn.ghost { background: transparent; }
+
 /* ---------- edit palette ---------- */
 .palette { flex: 0 0 236px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; z-index: 20; }
 .palette.hidden { display: none; }

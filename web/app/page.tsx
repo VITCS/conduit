@@ -103,6 +103,23 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     setToast(m);
     window.setTimeout(() => setToast((cur) => (cur === m ? "" : cur)), 1900);
   }, []);
+
+  // Best-effort desktop notification for approvals (in addition to the in-app
+  // banner), so a reviewer is alerted even when the tab is in the background.
+  const notifyApproval = useCallback((body: string) => {
+    try {
+      if (typeof Notification === "undefined") return;
+      if (Notification.permission === "granted") {
+        new Notification("Conduit — approval required", { body });
+      } else if (Notification.permission === "default") {
+        Notification.requestPermission().then((p) => {
+          if (p === "granted") new Notification("Conduit — approval required", { body });
+        });
+      }
+    } catch {
+      /* notifications unavailable; the in-app banner still shows */
+    }
+  }, []);
   const markDirty = useCallback(() => setDirty(true), []);
 
   // --- load the current project's workflow (creating a starter if empty) ---
@@ -235,11 +252,13 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           setSelected(d.node_id);
         }
         addLog("info", d.message || "awaiting approval");
-        showToast("Run held for approval");
+        showToast("Approval required");
+        notifyApproval(d.message || "A run is waiting for your approval.");
       });
       es.addEventListener("run.finished", (ev) => {
         const d: SSEvent = JSON.parse((ev as MessageEvent).data);
         setRunning(false);
+        setWaitingNode(null);
         setConn(d.status || "done");
         es.close();
         esRef.current = null;
@@ -247,7 +266,12 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         api.getRun(run.id).then((full) => applyRun(full));
         showToast("Run " + d.status);
       });
-      es.onerror = () => setConn("disconnected");
+      // If the stream drops while a run is still active, reconcile from the
+      // authoritative run state instead of leaving the UI stuck "running".
+      es.onerror = () => {
+        setConn("reconnecting");
+        reconcileRun(run.id);
+      };
     } catch (e) {
       setRunning(false);
       showToast("Run failed: " + (e as Error).message);
@@ -266,15 +290,54 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     setMemory(full.memory || {});
   }
 
+  const TERMINAL: Status[] = ["success", "failed", "canceled", "created", "skipped"];
+
+  // reconcileRun pulls the authoritative run state and reflects it in the UI. Used
+  // when the SSE stream drops or right after cancel, so the Run/Cancel button and
+  // the approval banner never get stuck out of sync with the backend.
+  const reconcileRun = useCallback(
+    async (id: string) => {
+      try {
+        const full = await api.getRun(id);
+        applyRun(full);
+        if (TERMINAL.includes(full.status)) {
+          setRunning(false);
+          setWaitingNode(null);
+          setConn(full.status);
+          esRef.current?.close();
+          esRef.current = null;
+        } else if (full.status === "waiting") {
+          const wn = Object.entries(full.steps || {}).find(([, s]) => s.status === "waiting")?.[0] || null;
+          setRunning(true);
+          if (wn) setWaitingNode(wn);
+        } else {
+          setRunning(true);
+        }
+      } catch {
+        /* leave current state; a later event or manual retry will reconcile */
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const cancelRun = useCallback(async () => {
     if (!runId) return;
+    // Optimistically leave the running state so the button recovers immediately,
+    // then reconcile against the backend's final status.
+    setRunning(false);
+    setWaitingNode(null);
+    setConn("canceled");
+    esRef.current?.close();
+    esRef.current = null;
     try {
       await api.cancelRun(runId);
       showToast("Run canceled");
     } catch (e) {
       showToast("Cancel failed: " + (e as Error).message);
     }
-  }, [runId, showToast]);
+    reconcileRun(runId);
+  }, [runId, showToast, reconcileRun]);
 
   const approve = useCallback(
     async (decision: "approved" | "rejected") => {
@@ -520,6 +583,18 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           onSwitchProject={switchProject}
           onNewProject={newProject}
         />
+        {waitingNode && (
+          <div className="approval-banner" role="alert">
+            <span className="ab-dot" />
+            <span className="ab-text">
+              <b>Approval required</b> — “{(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "a step"}”
+              is waiting for your decision.
+            </span>
+            <button className="btn ok" onClick={() => { focusNode(waitingNode); approve("approved"); }}>Approve</button>
+            <button className="btn danger" onClick={() => { focusNode(waitingNode); approve("rejected"); }}>Reject</button>
+            <button className="btn ghost" onClick={() => focusNode(waitingNode)}>View step</button>
+          </div>
+        )}
         <div className="body">
           <RunRail
             hidden={railHidden}

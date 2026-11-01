@@ -24,9 +24,10 @@ import (
 type Engine struct {
 	store store.Store
 
-	mu        sync.Mutex
-	approvals map[string]chan string        // runID|nodeID -> decision channel
-	cancels   map[string]context.CancelFunc // runID -> cancel
+	mu          sync.Mutex
+	approvals   map[string]chan string        // runID|nodeID -> decision channel
+	cancels     map[string]context.CancelFunc // runID -> cancel (active runs only)
+	canceledIDs map[string]bool               // runID -> canceled before/at claim time
 
 	// pacing between steps; exported-ish knobs kept small for a responsive demo.
 	StepDelay    time.Duration
@@ -39,6 +40,7 @@ func New(s store.Store) *Engine {
 		store:        s,
 		approvals:    map[string]chan string{},
 		cancels:      map[string]context.CancelFunc{},
+		canceledIDs:  map[string]bool{},
 		StepDelay:    650 * time.Millisecond,
 		TriggerDelay: 300 * time.Millisecond,
 	}
@@ -134,23 +136,81 @@ func (e *Engine) ExecuteClaimed(parentCtx context.Context, run model.Run) {
 			Level: "fail", Message: "workflow not found for run"})
 		return
 	}
-	ctx, cancel := context.WithCancel(parentCtx)
+	// If the run was canceled while queued (before any worker claimed it), don't
+	// execute it — just finalize it as canceled.
 	e.mu.Lock()
+	if e.canceledIDs[run.ID] {
+		delete(e.canceledIDs, run.ID)
+		e.mu.Unlock()
+		e.markCanceledFinished(run.ID)
+		return
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
 	e.cancels[run.ID] = cancel
 	e.mu.Unlock()
 	e.execute(ctx, run.ID, wf)
 }
 
-// Cancel stops a running or waiting run. Returns false if no such run is active.
+// Cancel stops a run in any non-terminal state. If the run is actively executing
+// it cancels its context (steps and approval waits unwind to canceled). If it is
+// still queued (no worker has claimed it yet) it is marked canceled now, and a
+// tombstone prevents a racing worker from executing it. Returns false only if the
+// run is unknown or already in a terminal state.
 func (e *Engine) Cancel(runID string) bool {
 	e.mu.Lock()
-	cancel, ok := e.cancels[runID]
-	e.mu.Unlock()
-	if !ok {
+	if cancel, ok := e.cancels[runID]; ok {
+		e.mu.Unlock()
+		cancel()
+		return true
+	}
+	// Not actively executing here. Inspect the stored run.
+	snap, ok, err := e.store.GetRun(runID)
+	if err != nil || !ok {
+		e.mu.Unlock()
 		return false
 	}
-	cancel()
-	return true
+	switch snap.Status {
+	case model.StatusQueued, model.StatusPending:
+		// Queued (possibly claimable). Tombstone it so a worker that claims it
+		// between now and ExecuteClaimed will skip execution, then finalize.
+		e.canceledIDs[runID] = true
+		e.mu.Unlock()
+		e.markCanceledFinished(runID)
+		return true
+	case model.StatusRunning, model.StatusWaiting:
+		// Active on another instance (no local cancel func). Best-effort: mark it
+		// canceled in the shared store and notify; that instance stops renewing.
+		e.canceledIDs[runID] = true
+		e.mu.Unlock()
+		e.markCanceledFinished(runID)
+		return true
+	default:
+		e.mu.Unlock()
+		return false // already success/failed/canceled/skipped
+	}
+}
+
+// markCanceledFinished sets a run (and its unfinished steps) to canceled and
+// publishes the terminal event, so the UI leaves the running state immediately.
+func (e *Engine) markCanceledFinished(runID string) {
+	snap, ok, _ := e.store.MutateRun(runID, func(r *model.Run) {
+		if r.Status == model.StatusSuccess || r.Status == model.StatusFailed || r.Status == model.StatusCanceled {
+			return
+		}
+		r.Status = model.StatusCanceled
+		now := time.Now()
+		r.FinishedAt = &now
+		for _, st := range r.Steps {
+			if st.Status == model.StatusPending || st.Status == model.StatusRunning || st.Status == model.StatusWaiting {
+				st.Status = model.StatusCanceled
+			}
+		}
+	})
+	if !ok {
+		return
+	}
+	e.publish(model.Event{Type: "run.finished", RunID: runID, Status: model.StatusCanceled,
+		Level: "info", Message: fmt.Sprintf("Run %s canceled", runID), Run: &snap})
 }
 
 // Resolve delivers a human decision ("approved"/"rejected") to a waiting

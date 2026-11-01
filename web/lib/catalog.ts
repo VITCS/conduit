@@ -16,6 +16,8 @@ export const CATALOG: CatalogItem[] = [
   { type: "http", name: "HTTP", icon: "globe", kind: "step", desc: "Call an API" },
   { type: "graphql", name: "GraphQL", icon: "globe", kind: "step", desc: "Query a GraphQL API" },
   { type: "slack", name: "Slack", icon: "webhook", kind: "step", desc: "Post to a Slack webhook" },
+  { type: "github_pr", name: "GitHub PR", icon: "github", kind: "step", desc: "Open a real pull request (needs github_token)" },
+  { type: "github_comment", name: "GitHub comment", icon: "github", kind: "step", desc: "Comment on a real issue/PR" },
   { type: "agent", name: "AI Agent", icon: "agent", kind: "step", desc: "Prompt an LLM (simulated unless live)" },
   { type: "ssh", name: "SSH", icon: "terminal", kind: "step", desc: "Run commands on a host" },
   { type: "if", name: "If", icon: "branch", kind: "step", desc: "Branch on a condition" },

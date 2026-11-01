@@ -148,9 +148,14 @@ func TestCancelRunOverHTTP(t *testing.T) {
 	if final.Status != model.StatusCanceled {
 		t.Errorf("run = %s, want canceled", final.Status)
 	}
-	// Cancelling a finished run → 409.
-	if code := postJSON(t, ts.URL+"/api/runs/"+run.ID+"/cancel", map[string]any{}, nil); code != http.StatusConflict {
-		t.Errorf("second cancel = %d, want 409", code)
+	// Cancel is idempotent: cancelling an already-finished run returns 200 so the
+	// UI always leaves the running state cleanly (it reports the run's status).
+	if code := postJSON(t, ts.URL+"/api/runs/"+run.ID+"/cancel", map[string]any{}, nil); code != 200 {
+		t.Errorf("second cancel = %d, want 200 (idempotent)", code)
+	}
+	// Cancelling an unknown run is still a 404.
+	if code := postJSON(t, ts.URL+"/api/runs/run_does_not_exist/cancel", map[string]any{}, nil); code != http.StatusNotFound {
+		t.Errorf("cancel unknown run = %d, want 404", code)
 	}
 }
 

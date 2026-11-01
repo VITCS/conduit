@@ -14,9 +14,11 @@ audit trail — all from one binary.
 - [3. First sign‑in](#3-first-sign-in)
 - [4. Real‑world walkthrough: PR preview environments](#4-real-world-walkthrough-pr-preview-environments)
 - [5. Trigger it the way production does: a webhook](#5-trigger-it-the-way-production-does-a-webhook)
-- [6. Build your own automation from scratch](#6-build-your-own-automation-from-scratch)
-- [7. The AI Factory: issue → reviewed PR](#7-the-ai-factory-issue--reviewed-pr)
-- [8. Why this saves you time](#8-why-this-saves-you-time)
+- [6. Make it real: open an actual GitHub pull request](#6-make-it-real-open-an-actual-github-pull-request)
+- [7. Build your own automation from scratch](#7-build-your-own-automation-from-scratch)
+- [8. The AI Factory: issue → reviewed PR](#8-the-ai-factory-issue--reviewed-pr)
+- [9. Run control: cancel and approval](#9-run-control-cancel-and-approval)
+- [10. Why this saves you time](#10-why-this-saves-you-time)
 
 ---
 
@@ -123,7 +125,8 @@ a human approval, branch‑on‑failure, live visibility, and durable state — 
 writing or babysitting a shell script.
 
 > The seeded steps are **simulated** so the demo runs offline and deterministically.
-> §6 shows how to make a step perform a *real* action.
+> §6 and §7 show how to make steps perform *real* actions (a live GitHub PR, a
+> real HTTP/Slack call, a live LLM).
 
 ---
 
@@ -161,7 +164,66 @@ at `/api/hooks/{workflowId}?token=…` and every PR drives a run.
 
 ---
 
-## 6. Build your own automation from scratch
+## 6. Make it real: open an actual GitHub pull request
+
+The seeded demo is simulated; this section does something **real** against GitHub,
+end to end. We'll build *"on webhook → open a pull request in my repo."*
+
+**a) Create a GitHub token.** GitHub → *Settings → Developer settings → Personal
+access tokens → Fine-grained tokens*. Give it access to your repo with
+**Pull requests: Read and write** (add **Contents: Read and write** if an earlier
+step creates the `head` branch). Copy it.
+
+**b) Store it as a project secret** named `github_token` (top bar → **Secrets**):
+
+```bash
+curl -s -X PUT localhost:8080/api/secrets/github_token \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"value":"github_pat_xxx"}'
+```
+
+**c) Build the workflow.** Click **Edit**, then from the palette add a **Webhook**
+trigger and a **GitHub PR** step, and wire `Webhook → GitHub PR`. Select the
+GitHub PR node and set its config fields:
+
+| Field | Value |
+|-------|-------|
+| `owner` | your org/user |
+| `repo` | your repo |
+| `head` | `${input.branch}` (the branch to merge; must exist on the remote) |
+| `base` | `main` |
+| `title` | `Automated PR: ${input.branch}` |
+| `body` | `Opened automatically by Conduit.` |
+
+`token` defaults to `${secret:github_token}`, so you don't need to set it. Values
+expand `${secret:NAME}`, `${input.KEY}` (the webhook payload) and `${memory.KEY}`.
+Click **Save**.
+
+**d) Fire it** (as your Git host / CI would), passing the branch in the payload:
+
+```bash
+HOOKTOK=$(curl -s -X POST localhost:8080/api/tokens \
+  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"name":"github-webhook","role":"member"}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -s -X POST "localhost:8080/api/hooks/<your_workflow_id>?token=$HOOKTOK" \
+  -H 'Content-Type: application/json' -d '{"branch":"feature/login"}'
+```
+
+The run executes and the **GitHub PR** step turns **Created** — open it in the UI
+and its output shows the real `number` and `html_url`; the PR URL is also saved to
+the run's **Memory** as `last_pr_url`. Refresh your repo on GitHub: the pull request
+is really there.
+
+> **Honest failure:** if the token is missing the step fails with a clear hint; if
+> the token is wrong it reaches GitHub and reports the real error (e.g.
+> `401 Bad credentials`) — there's no silent fake success. A **GitHub comment**
+> component works the same way for posting a real comment on an issue/PR.
+
+---
+
+## 7. Build your own automation from scratch
 
 Let's build something genuinely useful and **make one step do a real thing**:
 *"When called, run a health check against a real URL and post the result to Slack;
@@ -203,7 +265,7 @@ You now have a real monitor‑and‑alert automation — versioned as a graph, w
 live run view, retries (set `retries` on the HTTP node), and an audit record of
 who changed it.
 
-## 7. The AI Factory: issue → reviewed PR
+## 8. The AI Factory: issue → reviewed PR
 
 Switch the project (top‑bar switcher) to **AI Factory**. The seeded
 *"AI Factory · Issue → Reviewed PR"* workflow models agent‑assisted engineering:
@@ -221,10 +283,25 @@ and records the delivery. To make the agents real, edit an agent node and set
 `api_key = ${secret:my_llm_key}` (store the key in **Secrets** first). Prompts can
 pull run context with `${input.issue}` and `${memory.key}`.
 
+To make the final "Open PR" step open a *real* pull request, swap it for a
+**GitHub PR** node configured as in §6 — the agents draft the change, the human
+approves, and Conduit opens the actual PR.
+
 This shows Conduit coordinating AI agents, CI, and a human reviewer in one visible,
 gated pipeline rather than a pile of scripts and manual steps.
 
-## 8. Why this saves you time
+## 9. Run control: cancel and approval
+
+- **Cancel** (top bar, while a run is active) stops it immediately and the button
+  returns to **Run** — whether the run is queued, executing, or waiting on a human.
+  It's idempotent and the UI reconciles with the backend, so it never gets stuck.
+- **Approval** raises a **persistent banner** across the top of the app —
+  *Approve / Reject / View step* — the moment a run reaches an approval gate, plus a
+  best-effort desktop notification, so a held run is impossible to miss no matter
+  which tab you're on. (Allow notifications when your browser asks, to get the
+  desktop alert too.)
+
+## 10. Why this saves you time
 
 Without Conduit, the §4 pipeline is a bash/CI script: no live view, approvals
 hacked in with `sleep`/manual steps, no retry/branch logic, secrets in env files,

@@ -692,13 +692,26 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "decision": body.Decision})
 }
 
-// cancel stops a running or waiting run.
+// cancel stops a run in any non-terminal state. It is idempotent: canceling a run
+// that already finished returns its current status rather than an error, so the UI
+// always leaves the running state cleanly.
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
-	if !s.Engine.Cancel(r.PathValue("id")) {
-		writeErr(w, http.StatusConflict, "run is not active")
+	id := r.PathValue("id")
+	run, ok, err := s.Store.GetRun(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	if !ok || run.ProjectID != projectID(r) {
+		writeErr(w, http.StatusNotFound, "run not found")
+		return
+	}
+	canceled := s.Engine.Cancel(id)
+	// Re-read so the response reflects the final/authoritative status.
+	if latest, ok, _ := s.Store.GetRun(id); ok {
+		run = latest
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "canceled": canceled, "status": run.Status})
 }
 
 // hook starts a run from an inbound webhook, binding the posted JSON body as the

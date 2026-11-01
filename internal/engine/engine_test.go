@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -308,4 +309,44 @@ func keys(m map[string]any) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestCancelQueuedRun verifies the worker-model cancel fix: a run canceled while
+// still queued (before any worker claims it) is finalized as canceled and never
+// executes, so the UI leaves the running state.
+func TestCancelQueuedRun(t *testing.T) {
+	e, st := newTestEngine(t)
+	wf := seed.Workflow()
+
+	run := e.Enqueue(wf, "", nil)
+	if run.Status != model.StatusQueued {
+		t.Fatalf("enqueued status = %s, want queued", run.Status)
+	}
+	if !e.Cancel(run.ID) {
+		t.Fatal("Cancel(queued) returned false")
+	}
+	got := runStatus(t, st, run.ID)
+	if got.Status != model.StatusCanceled {
+		t.Fatalf("after cancel status = %s, want canceled", got.Status)
+	}
+
+	// A worker that nonetheless claims the (tombstoned) run must not execute it.
+	e.ExecuteClaimed(context.Background(), run)
+	got = runStatus(t, st, run.ID)
+	if got.Status != model.StatusCanceled {
+		t.Fatalf("after ExecuteClaimed status = %s, want still canceled", got.Status)
+	}
+	for id, s := range got.Steps {
+		if s.Status == model.StatusCreated || s.Status == model.StatusSuccess {
+			t.Fatalf("step %s = %s, want no execution after cancel", id, s.Status)
+		}
+	}
+}
+
+// TestCancelUnknownRun returns false for a run that does not exist.
+func TestCancelUnknownRun(t *testing.T) {
+	e, _ := newTestEngine(t)
+	if e.Cancel("run_nope") {
+		t.Fatal("Cancel(unknown) = true, want false")
+	}
 }
