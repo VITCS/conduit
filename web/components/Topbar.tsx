@@ -84,11 +84,11 @@ export function Topbar(props: {
       </div>
       <div className="topbar-right">
         {props.running ? (
-          <button className="btn" onClick={props.onCancel} title="Cancel run">
+          <button className="btn" onClick={props.onCancel} title="Cancel run" data-testid="cancel-btn">
             <Square size={14} fill="currentColor" /> Cancel
           </button>
         ) : (
-          <button className="btn primary" onClick={props.onRun}>
+          <button className="btn primary" onClick={props.onRun} data-testid="run-btn">
             <Play size={15} fill="currentColor" /> Run
           </button>
         )}

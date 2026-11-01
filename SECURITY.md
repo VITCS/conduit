@@ -37,6 +37,9 @@ Before exposing Conduit publicly:
 1. Set strong, stable **`CONDUIT_JWT_SECRET`** and **`CONDUIT_SECRET_KEY`**
    (losing them logs everyone out / makes secrets undecryptable).
 2. Change the bootstrap admin password (`CONDUIT_ADMIN_PASSWORD`) after first login.
+   Decide on self-serve signup: `POST /api/auth/register` is **enabled by default**
+   (new users get the `member` role and a personal project). Set
+   `CONDUIT_ALLOW_SIGNUP=false` to make accounts admin-provisioned only.
 3. Use **Postgres** (`CONDUIT_DATABASE_URL`) and terminate **TLS** at a reverse
    proxy (set `X-Forwarded-For` so rate limiting sees real client IPs).
 4. Leave `CONDUIT_ALLOW_PRIVATE_EGRESS` unset unless you specifically need

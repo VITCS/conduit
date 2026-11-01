@@ -78,6 +78,17 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     }),
+  register: (email: string, name: string, password: string) =>
+    req<{
+      token: string;
+      user: { email: string; name: string; role: string };
+      project: { id: string; name: string };
+    }>("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, name, password }),
+    }),
+  authConfig: () => req<{ signup_enabled: boolean; methods: string[] }>("/api/auth/config"),
   me: () => req<{ email: string; name: string; role: string }>("/api/auth/me"),
   listProjects: () => req<{ id: string; name: string }[]>("/api/projects"),
   createProject: (name: string) =>

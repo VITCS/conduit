@@ -29,7 +29,8 @@ import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
 import { SecretsPanel } from "@/components/SecretsPanel";
 import { MembersPanel } from "@/components/MembersPanel";
-import { Login } from "@/components/Login";
+import { Landing } from "@/components/Landing";
+import { Auth } from "@/components/Auth";
 import { EditorContext } from "@/lib/editorContext";
 import { api, getToken, setToken, setOnUnauthorized, getProject, setProject } from "@/lib/api";
 import { type CatalogItem } from "@/lib/catalog";
@@ -584,14 +585,14 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           onNewProject={newProject}
         />
         {waitingNode && (
-          <div className="approval-banner" role="alert">
+          <div className="approval-banner" role="alert" data-testid="approval-banner">
             <span className="ab-dot" />
             <span className="ab-text">
               <b>Approval required</b> — “{(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "a step"}”
               is waiting for your decision.
             </span>
-            <button className="btn ok" onClick={() => { focusNode(waitingNode); approve("approved"); }}>Approve</button>
-            <button className="btn danger" onClick={() => { focusNode(waitingNode); approve("rejected"); }}>Reject</button>
+            <button className="btn ok" data-testid="approve-btn" onClick={() => { focusNode(waitingNode); approve("approved"); }}>Approve</button>
+            <button className="btn danger" data-testid="reject-btn" onClick={() => { focusNode(waitingNode); approve("rejected"); }}>Reject</button>
             <button className="btn ghost" onClick={() => focusNode(waitingNode)}>View step</button>
           </div>
         )}
@@ -728,8 +729,11 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   );
 }
 
+type AuthView = "landing" | "signin" | "signup";
+
 export default function Page() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [view, setView] = useState<AuthView>("landing");
 
   useEffect(() => {
     setOnUnauthorized(() => setSignedIn(false));
@@ -737,7 +741,18 @@ export default function Page() {
   }, []);
 
   if (signedIn === null) return <div className="login-wrap" />; // brief pre-auth frame
-  if (!signedIn) return <Login onSignedIn={() => setSignedIn(true)} />;
+  if (!signedIn) {
+    if (view === "landing") {
+      return <Landing onSignIn={() => setView("signin")} onGetStarted={() => setView("signup")} />;
+    }
+    return (
+      <Auth
+        initialMode={view === "signup" ? "signup" : "signin"}
+        onSignedIn={() => setSignedIn(true)}
+        onBack={() => setView("landing")}
+      />
+    );
+  }
 
   return (
     <ReactFlowProvider>

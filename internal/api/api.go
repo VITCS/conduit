@@ -4,6 +4,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +34,10 @@ type Server struct {
 	Auth      *auth.Service        // optional; nil disables auth (open mode, for tests)
 	Limiter   *rateLimiter         // optional; nil disables rate limiting
 	Web       fs.FS                // static assets (the UI)
+
+	// AllowSignup enables the public self-serve registration endpoint
+	// (POST /api/auth/register). When false, accounts are admin-provisioned only.
+	AllowSignup bool
 }
 
 // NewRateLimiter builds a per-IP token-bucket limiter (requests/second, burst).
@@ -58,6 +64,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/audit", s.listAudit)
 	mux.HandleFunc("POST /api/auth/login", s.login)
+	mux.HandleFunc("POST /api/auth/register", s.register)
+	mux.HandleFunc("GET /api/auth/config", s.authConfig)
 	mux.HandleFunc("GET /api/auth/me", s.me)
 	mux.HandleFunc("GET /api/tokens", s.listTokens)
 	mux.HandleFunc("POST /api/tokens", s.createToken)
@@ -117,7 +125,8 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		// Public API endpoints.
-		if path == "/api/health" || path == "/api/auth/login" {
+		if path == "/api/health" || path == "/api/auth/login" ||
+			path == "/api/auth/register" || path == "/api/auth/config" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -255,6 +264,96 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": u})
+}
+
+// authConfig reports which auth options the UI should present. Today only email
+// (password) is supported; this lets the landing page avoid advertising methods
+// that are not actually wired (e.g. no OAuth providers are configured).
+func (s *Server) authConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"signup_enabled": s.Auth != nil && s.AllowSignup,
+		"methods":        []string{"email"},
+	})
+}
+
+// register is the public self-serve signup. It creates a member user and a
+// personal project they own (so they land in a usable workspace), then logs them
+// in. Disabled unless AllowSignup is set.
+func (s *Server) register(w http.ResponseWriter, r *http.Request) {
+	if s.Auth == nil {
+		writeErr(w, http.StatusServiceUnavailable, "auth not configured")
+		return
+	}
+	if !s.AllowSignup {
+		writeErr(w, http.StatusForbidden, "self-serve signup is disabled on this server")
+		return
+	}
+	var body struct {
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	body.Email = strings.ToLower(strings.TrimSpace(body.Email))
+	if !strings.Contains(body.Email, "@") || strings.Contains(body.Email, " ") {
+		writeErr(w, http.StatusBadRequest, "a valid email is required")
+		return
+	}
+	if len(body.Password) < 8 {
+		writeErr(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+
+	u, err := s.Auth.CreateUser(body.Email, body.Name, body.Password, model.RoleMember)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	// Give the new user a personal project they own, so they have somewhere to work.
+	base := slugify(firstNonEmptyStr(body.Name, strings.SplitN(body.Email, "@", 2)[0]))
+	pid := base + "-" + shortID()
+	proj := model.Project{ID: pid, Name: displayName(body.Name, body.Email) + "'s workspace", CreatedAt: time.Now()}
+	if err := s.Store.CreateProject(proj); err == nil {
+		_ = s.Store.AddProjectMember(model.ProjectMember{ProjectID: pid, UserID: u.ID, Role: model.RoleOwner, CreatedAt: time.Now()})
+	}
+
+	token, err := s.Auth.IssueJWT(u)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"token":   token,
+		"user":    u,
+		"project": map[string]string{"id": proj.ID, "name": proj.Name},
+	})
+}
+
+func firstNonEmptyStr(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}
+
+func displayName(name, email string) string {
+	if n := strings.TrimSpace(name); n != "" {
+		return n
+	}
+	return strings.SplitN(email, "@", 2)[0]
+}
+
+// shortID returns a short random hex suffix for generated ids.
+func shortID() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "0000"
+	}
+	return hex.EncodeToString(b)
 }
 
 // me returns the current authenticated user.

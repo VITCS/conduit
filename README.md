@@ -126,6 +126,7 @@ final stage is a distroless, non-root static image containing only the binary.
 | `CONDUIT_JWT_SECRET` | _(unset)_ | secret for signing login JWTs; ephemeral (sessions reset on restart) when unset |
 | `CONDUIT_ADMIN_EMAIL` | `admin@conduit.local` | bootstrap admin email (created only if there are no users) |
 | `CONDUIT_ADMIN_PASSWORD` | `conduit` | bootstrap admin password — change it after first login |
+| `CONDUIT_ALLOW_SIGNUP` | `true` | allow self-serve account creation (`POST /api/auth/register`); set `false` for admin-provisioned accounts only |
 | `CONDUIT_RATE_LIMIT` | `20` | per-IP request/second limit on `/api` (0 disables) |
 | `CONDUIT_WORKERS` | `4` | run-executor workers per instance |
 | `CONDUIT_ALLOW_PRIVATE_EGRESS` | `false` | allow outbound executors to reach private/loopback addresses (SSRF guard off) |

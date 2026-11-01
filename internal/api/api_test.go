@@ -449,6 +449,57 @@ func TestLoginEndpoint(t *testing.T) {
 	}
 }
 
+func TestRegisterEndpoint(t *testing.T) {
+	st := store.NewMem()
+	authSvc := auth.New(st, "s")
+	srv := &api.Server{Store: st, Engine: engine.New(st), Auth: authSvc, Web: fstest.MapFS{}, AllowSignup: true}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	var out struct {
+		Token   string            `json:"token"`
+		User    model.User        `json:"user"`
+		Project map[string]string `json:"project"`
+	}
+	if c := postJSON(t, ts.URL+"/api/auth/register",
+		map[string]string{"email": "new@user.com", "name": "New", "password": "password123"}, &out); c != 201 {
+		t.Fatalf("register = %d, want 201", c)
+	}
+	if out.Token == "" || out.User.Email != "new@user.com" || out.User.Role != model.RoleMember {
+		t.Errorf("register response: token empty=%v user=%+v", out.Token == "", out.User)
+	}
+	if out.User.PasswordHash != "" {
+		t.Error("password hash leaked in register response")
+	}
+	// A personal project was created and the user owns it.
+	if out.Project["id"] == "" {
+		t.Fatal("register did not return a personal project")
+	}
+	if _, ok, _ := st.GetProject(out.Project["id"]); !ok {
+		t.Error("personal project was not created")
+	}
+
+	// Short password → 400.
+	if c := postJSON(t, ts.URL+"/api/auth/register",
+		map[string]string{"email": "x@y.com", "password": "short"}, nil); c != 400 {
+		t.Errorf("short password = %d, want 400", c)
+	}
+	// Duplicate email → 409.
+	if c := postJSON(t, ts.URL+"/api/auth/register",
+		map[string]string{"email": "new@user.com", "password": "password123"}, nil); c != 409 {
+		t.Errorf("duplicate email = %d, want 409", c)
+	}
+
+	// Signup disabled → 403.
+	srv2 := &api.Server{Store: store.NewMem(), Engine: engine.New(st), Auth: auth.New(store.NewMem(), "s"), Web: fstest.MapFS{}, AllowSignup: false}
+	ts2 := httptest.NewServer(srv2.Routes())
+	defer ts2.Close()
+	if c := postJSON(t, ts2.URL+"/api/auth/register",
+		map[string]string{"email": "z@y.com", "password": "password123"}, nil); c != 403 {
+		t.Errorf("signup disabled = %d, want 403", c)
+	}
+}
+
 func TestSecretsAPI(t *testing.T) {
 	st := store.NewMem()
 	if err := st.PutWorkflow(seed.Workflow()); err != nil {

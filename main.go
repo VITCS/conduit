@@ -191,7 +191,11 @@ func run() error {
 		limiter = nil
 	}
 
-	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Auth: authSvc, Limiter: limiter, Web: ui}
+	// Self-serve signup is on by default so the landing page's "create account"
+	// works out of the box; set CONDUIT_ALLOW_SIGNUP=false to lock it down.
+	allowSignup := !strings.EqualFold(os.Getenv("CONDUIT_ALLOW_SIGNUP"), "false")
+
+	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Auth: authSvc, Limiter: limiter, Web: ui, AllowSignup: allowSignup}
 
 	httpSrv := &http.Server{
 		Addr:    addr,

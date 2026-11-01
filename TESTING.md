@@ -190,16 +190,49 @@ Expected: 9 nodes, no errors.
 
 ---
 
+## 5c. End-to-end tests (Playwright)
+
+Browser smoke tests drive the **real UI against the real binary**, covering the
+path unit tests can't: landing → auth → run → live approval.
+
+```bash
+make build                 # produce ./conduitd with the UI embedded
+cd web
+npm install                # first time (installs @playwright/test)
+npm run test:e2e           # launches ./conduitd on :8080 and runs the specs
+```
+
+The config (`web/playwright.config.ts`) starts the binary itself; to run against an
+already-running server instead, set `E2E_BASE_URL`:
+
+```bash
+E2E_BASE_URL=http://localhost:8080 npm run test:e2e
+```
+
+`web/e2e/smoke.spec.ts` asserts:
+1. the landing page renders real capabilities and the sign-in / create-account CTAs;
+2. **login → Run → approval banner appears → Approve → run finishes** (this guards
+   the SSE/approval regression — if events don't reach the browser, it fails);
+3. **create account** signs a new user into their own workspace.
+
 ## 6. Manual UI walkthrough
 
 Start the server (`make run`) and open <http://localhost:8080>.
 
+**Landing & account**
+- The intro page describes what Conduit does and offers **Sign in** and **Create
+  account** (email only — there is no third-party SSO yet).
+- **Create account** registers a new user and drops them into their own workspace
+  (self-serve signup; disable it with `CONDUIT_ALLOW_SIGNUP=false`).
+- **Sign in** with the bootstrap admin (`admin@conduit.local` / `conduit`).
+
 **Run a workflow**
 1. Click **Run** (top right). Node badges flip `Pending → Running → Success` and
    the active edge animates.
-2. The run pauses at **Require Approval** (badge `Waiting`); a toast says so.
-3. Click the **Require Approval** node, then **Approve** in the inspector. The
-   run completes; `Publish Preview URL` and `Record Environment` finish.
+2. The run pauses at **Require Approval** (badge `Waiting`); a **persistent banner**
+   appears across the top with **Approve / Reject**, plus a desktop notification.
+3. Click **Approve** in the banner (or open the node and approve in the inspector).
+   The run completes; `Publish Preview URL` and `Record Environment` finish.
 4. Open the **Console** tab to see the structured log, and **Memory** to see
    `preview-envs/154` written by the run.
 5. Run again and click **Reject** instead — the run ends `failed` and the
