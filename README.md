@@ -55,8 +55,12 @@ make down        # stop (keep data)
 make down-v      # stop and wipe the database volume (fresh start)
 ```
 
-That's the whole testing loop: **build once, run everything at once.** The full
-testing guide is in [TESTING.md](TESTING.md).
+That's the whole testing loop: **build once, run everything at once.**
+
+> **New here?** Start with **[GUIDE.md](GUIDE.md)** — a step-by-step walkthrough
+> from local/Docker setup through using the app as a real user, with a concrete
+> real-world scenario (PR preview environments) that shows what Conduit is for.
+> The full reproducible test guide is in [TESTING.md](TESTING.md).
 
 ## Build & run from source (without Docker)
 
