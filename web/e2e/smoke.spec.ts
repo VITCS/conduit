@@ -22,7 +22,7 @@ test("landing page shows what the app does and offers sign in / create account",
   // Real capabilities are described; no fake SSO is advertised.
   await expect(page.getByText(/Human approval gates/i)).toBeVisible();
   await expect(page.getByText(/Encrypted secrets/i)).toBeVisible();
-  await expect(page.getByText(/no third-party SSO yet/i)).toBeVisible();
+  await expect(page.getByText(/when the server has those providers configured/i)).toBeVisible();
   await expect(page.getByTestId("nav-signin")).toBeVisible();
   await expect(page.getByTestId("hero-getstarted")).toBeVisible();
 });

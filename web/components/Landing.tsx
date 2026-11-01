@@ -94,7 +94,8 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
           deterministically. Components that perform real side effects — <b>GitHub PR / comment</b>,
           <b> live HTTP</b>, <b>Slack</b>, and the <b>AI Agent</b> — act for real once you configure a
           secret (and set <code>live: true</code> for HTTP/agent). A few components (GraphQL, SSH) are
-          simulated today. Authentication is email + password; there is no third-party SSO yet.
+          simulated today. You can sign in with email, or with Google / GitHub when the server
+          has those providers configured.
         </p>
       </section>
 

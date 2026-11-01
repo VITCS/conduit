@@ -746,21 +746,36 @@ export default function Page() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [view, setView] = useState<AuthView>("landing");
 
+  const [authError, setAuthError] = useState("");
+
   useEffect(() => {
     setOnUnauthorized(() => setSignedIn(false));
+    // OAuth callback returns here with the token (or an error) in the URL fragment,
+    // which is never sent to a server or written to access logs.
+    if (typeof window !== "undefined" && window.location.hash) {
+      const h = new URLSearchParams(window.location.hash.slice(1));
+      const tok = h.get("access_token");
+      const errMsg = h.get("auth_error");
+      if (tok) setToken(tok);
+      if (errMsg) setAuthError(errMsg);
+      if (tok || errMsg) {
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+    }
     setSignedIn(getToken() !== "");
   }, []);
 
   if (signedIn === null) return <div className="login-wrap" />; // brief pre-auth frame
   if (!signedIn) {
-    if (view === "landing") {
+    if (view === "landing" && !authError) {
       return <Landing onSignIn={() => setView("signin")} onGetStarted={() => setView("signup")} />;
     }
     return (
       <Auth
         initialMode={view === "signup" ? "signup" : "signin"}
+        notice={authError}
         onSignedIn={() => setSignedIn(true)}
-        onBack={() => setView("landing")}
+        onBack={() => { setAuthError(""); setView("landing"); }}
       />
     );
   }

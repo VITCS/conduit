@@ -2,6 +2,7 @@ package auth
 
 import (
 	"testing"
+	"time"
 
 	"conduit/internal/model"
 	"conduit/internal/store"
@@ -113,5 +114,45 @@ func TestRoleCanWrite(t *testing.T) {
 	}
 	if model.RoleViewer.CanWrite() {
 		t.Error("viewer should be read-only")
+	}
+}
+
+func TestOAuthStateRoundTrip(t *testing.T) {
+	st := store.NewMem()
+	svc := New(st, "state-secret")
+
+	state := svc.SignState("google", time.Minute)
+	if p, ok := svc.VerifyState(state); !ok || p != "google" {
+		t.Fatalf("round-trip failed: provider=%q ok=%v", p, ok)
+	}
+	// Tampered state is rejected.
+	if _, ok := svc.VerifyState(state + "x"); ok {
+		t.Error("tampered state verified")
+	}
+	// A state from a different secret is rejected.
+	other := New(st, "different").SignState("google", time.Minute)
+	if _, ok := svc.VerifyState(other); ok {
+		t.Error("state signed with a different secret verified")
+	}
+	// Expired state is rejected.
+	expired := svc.SignState("github", -time.Second)
+	if _, ok := svc.VerifyState(expired); ok {
+		t.Error("expired state verified")
+	}
+}
+
+func TestCreateOAuthUserHasNoUsablePassword(t *testing.T) {
+	st := store.NewMem()
+	svc := New(st, "s")
+	u, err := svc.CreateOAuthUser("dev@example.com", "Dev", model.RoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Email != "dev@example.com" || u.Role != model.RoleMember {
+		t.Fatalf("unexpected user %+v", u)
+	}
+	// The random password must not authenticate.
+	if _, err := svc.Authenticate("dev@example.com", ""); err == nil {
+		t.Error("empty password authenticated an oauth user")
 	}
 }

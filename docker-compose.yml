@@ -37,6 +37,14 @@ services:
       # password after first login.
       CONDUIT_ADMIN_EMAIL: "admin@conduit.local"
       CONDUIT_ADMIN_PASSWORD: "conduit"
+      # Optional external sign-in. Set these in your shell (or a .env file) and they
+      # pass through; leave unset and the UI stays email-only. CONDUIT_BASE_URL must
+      # be the public origin so OAuth redirect URIs match what you registered.
+      CONDUIT_BASE_URL: "${CONDUIT_BASE_URL:-}"
+      CONDUIT_GOOGLE_CLIENT_ID: "${CONDUIT_GOOGLE_CLIENT_ID:-}"
+      CONDUIT_GOOGLE_CLIENT_SECRET: "${CONDUIT_GOOGLE_CLIENT_SECRET:-}"
+      CONDUIT_GITHUB_CLIENT_ID: "${CONDUIT_GITHUB_CLIENT_ID:-}"
+      CONDUIT_GITHUB_CLIENT_SECRET: "${CONDUIT_GITHUB_CLIENT_SECRET:-}"
     ports:
       - "8080:8080"
     healthcheck:

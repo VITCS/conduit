@@ -322,3 +322,10 @@ input, select { font-family: inherit; }
 
 .lx-foot { max-width: 1200px; margin: 0 auto; padding: 32px; display: flex; align-items: center; justify-content: space-between; border-top: 2px solid var(--accent); flex-wrap: wrap; gap: 12px; }
 .lx-foot-actions { display: flex; gap: 10px; }
+
+/* ---------- OAuth sign-in buttons ---------- */
+.oauth-list { display: flex; flex-direction: column; gap: 8px; }
+.btn.oauth { justify-content: center; width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--fg); padding: 10px 14px; border-radius: 6px; text-decoration: none; }
+.btn.oauth:hover { border-color: var(--border-strong); background: var(--surface); }
+.oauth-divider { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; margin: 2px 0; }
+.oauth-divider::before, .oauth-divider::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--border); }

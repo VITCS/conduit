@@ -127,6 +127,9 @@ final stage is a distroless, non-root static image containing only the binary.
 | `CONDUIT_ADMIN_EMAIL` | `admin@conduit.local` | bootstrap admin email (created only if there are no users) |
 | `CONDUIT_ADMIN_PASSWORD` | `conduit` | bootstrap admin password — change it after first login |
 | `CONDUIT_ALLOW_SIGNUP` | `true` | allow self-serve account creation (`POST /api/auth/register`); set `false` for admin-provisioned accounts only |
+| `CONDUIT_BASE_URL` | _(derived)_ | public origin used to build OAuth redirect URIs (e.g. `https://conduit.example`) |
+| `CONDUIT_GOOGLE_CLIENT_ID` / `CONDUIT_GOOGLE_CLIENT_SECRET` | — | enable **Sign in with Google**; redirect URI `…/api/auth/oauth/google/callback` |
+| `CONDUIT_GITHUB_CLIENT_ID` / `CONDUIT_GITHUB_CLIENT_SECRET` | — | enable **Sign in with GitHub**; redirect URI `…/api/auth/oauth/github/callback` |
 | `CONDUIT_RATE_LIMIT` | `20` | per-IP request/second limit on `/api` (0 disables) |
 | `CONDUIT_WORKERS` | `4` | run-executor workers per instance |
 | `CONDUIT_ALLOW_PRIVATE_EGRESS` | `false` | allow outbound executors to reach private/loopback addresses (SSRF guard off) |

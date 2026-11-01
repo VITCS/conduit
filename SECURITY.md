@@ -10,7 +10,11 @@ Do not file public issues with exploit details.
 
 - **Authentication**: password login (bcrypt) issues short-lived HS256 **JWTs**
   signed with `CONDUIT_JWT_SECRET`; **API tokens** are random and stored only as
-  SHA-256 hashes.
+  SHA-256 hashes. Optional **OAuth sign-in** (Google / GitHub) uses the
+  authorization-code flow with a signed, short-lived `state` (CSRF) parameter; the
+  JWT is returned to the SPA in the URL **fragment** (never sent to a server or
+  logged). External identities are persisted in a `user_identities` table
+  (`(provider, subject)` unique) that links a provider login to a Conduit user.
 - **Authorization (RBAC)**: roles are owner / admin / member / viewer. Every
   `/api` route requires authentication except `GET /api/health`,
   `POST /api/auth/login`, and the static UI. Write methods require a non-viewer

@@ -253,3 +253,21 @@ func ids(runs []model.Run) []string {
 	}
 	return out
 }
+
+func TestUserIdentityLinking(t *testing.T) {
+	st := NewMem()
+	u := model.User{ID: "usr_1", Email: "a@b.com", Name: "A", Role: model.RoleMember}
+	if err := st.CreateUser(u); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := st.GetUserByIdentity("github", "123"); ok {
+		t.Fatal("identity should not exist yet")
+	}
+	if err := st.AddUserIdentity(model.UserIdentity{Provider: "github", Subject: "123", UserID: "usr_1", Email: "a@b.com"}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, _ := st.GetUserByIdentity("github", "123")
+	if !ok || got.ID != "usr_1" {
+		t.Fatalf("GetUserByIdentity = %+v ok=%v, want usr_1", got, ok)
+	}
+}

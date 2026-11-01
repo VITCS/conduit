@@ -38,6 +38,13 @@ type Server struct {
 	// AllowSignup enables the public self-serve registration endpoint
 	// (POST /api/auth/register). When false, accounts are admin-provisioned only.
 	AllowSignup bool
+
+	// OAuth holds configured external sign-in providers (google / github), keyed by
+	// name. Empty means password auth only — the UI shows no provider buttons.
+	OAuth map[string]*OAuthProvider
+	// BaseURL is the public origin used to build OAuth redirect URIs, e.g.
+	// "https://conduit.example". Empty derives it from the request.
+	BaseURL string
 }
 
 // NewRateLimiter builds a per-IP token-bucket limiter (requests/second, burst).
@@ -66,6 +73,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("POST /api/auth/register", s.register)
 	mux.HandleFunc("GET /api/auth/config", s.authConfig)
+	mux.HandleFunc("GET /api/auth/oauth/{provider}/start", s.oauthStart)
+	mux.HandleFunc("GET /api/auth/oauth/{provider}/callback", s.oauthCallback)
 	mux.HandleFunc("GET /api/auth/me", s.me)
 	mux.HandleFunc("GET /api/tokens", s.listTokens)
 	mux.HandleFunc("POST /api/tokens", s.createToken)
@@ -126,7 +135,8 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 		// Public API endpoints.
 		if path == "/api/health" || path == "/api/auth/login" ||
-			path == "/api/auth/register" || path == "/api/auth/config" {
+			path == "/api/auth/register" || path == "/api/auth/config" ||
+			strings.HasPrefix(path, "/api/auth/oauth/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -270,10 +280,28 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 // (password) is supported; this lets the landing page avoid advertising methods
 // that are not actually wired (e.g. no OAuth providers are configured).
 func (s *Server) authConfig(w http.ResponseWriter, _ *http.Request) {
+	providers := []string{}
+	for _, name := range []string{"google", "github"} {
+		if p, ok := s.OAuth[name]; ok && p != nil && p.ClientID != "" {
+			providers = append(providers, name)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"signup_enabled": s.Auth != nil && s.AllowSignup,
 		"methods":        []string{"email"},
+		"providers":      providers,
 	})
+}
+
+// createPersonalProject gives a freshly-registered user a workspace they own, so
+// they land somewhere usable. Best-effort; a failure doesn't block sign-in.
+func (s *Server) createPersonalProject(u model.User) model.Project {
+	base := slugify(firstNonEmptyStr(u.Name, strings.SplitN(u.Email, "@", 2)[0]))
+	proj := model.Project{ID: base + "-" + shortID(), Name: displayName(u.Name, u.Email) + "'s workspace", CreatedAt: time.Now()}
+	if err := s.Store.CreateProject(proj); err == nil {
+		_ = s.Store.AddProjectMember(model.ProjectMember{ProjectID: proj.ID, UserID: u.ID, Role: model.RoleOwner, CreatedAt: time.Now()})
+	}
+	return proj
 }
 
 // register is the public self-serve signup. It creates a member user and a
@@ -314,12 +342,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Give the new user a personal project they own, so they have somewhere to work.
-	base := slugify(firstNonEmptyStr(body.Name, strings.SplitN(body.Email, "@", 2)[0]))
-	pid := base + "-" + shortID()
-	proj := model.Project{ID: pid, Name: displayName(body.Name, body.Email) + "'s workspace", CreatedAt: time.Now()}
-	if err := s.Store.CreateProject(proj); err == nil {
-		_ = s.Store.AddProjectMember(model.ProjectMember{ProjectID: pid, UserID: u.ID, Role: model.RoleOwner, CreatedAt: time.Now()})
-	}
+	proj := s.createPersonalProject(u)
 
 	token, err := s.Auth.IssueJWT(u)
 	if err != nil {

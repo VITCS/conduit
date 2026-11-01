@@ -1,4 +1,9 @@
 import type { Metadata } from "next";
+// Self-hosted, licensed monospace (JetBrains Mono, SIL OFL 1.1). Bundled by Next
+// and served from our own origin — no third-party font request for code/mono.
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/600.css";
 import "./globals.css";
 import "@xyflow/react/dist/style.css";
 
@@ -15,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
         />
         {/* VoltAgent is a dark-first brand: default to dark unless the user picked
             light. Applied before paint to avoid a flash. */}

@@ -144,6 +144,17 @@ type User struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// UserIdentity links an external identity provider (google / github) to a user.
+// It is the persistence layer that lets a person sign in with Google or GitHub and
+// resolve to the same Conduit user across sessions. (provider, subject) is unique.
+type UserIdentity struct {
+	Provider  string    `json:"provider"` // "google" | "github"
+	Subject   string    `json:"subject"`  // the provider's stable user id
+	UserID    string    `json:"user_id"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // APIToken is a long-lived credential for programmatic access (CI, webhooks).
 // Only the SHA-256 hash is stored; the plaintext is shown once at creation.
 type APIToken struct {

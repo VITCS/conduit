@@ -9,6 +9,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.1.1",
     "@xyflow/react": "12.3.5",
     "lucide-react": "0.454.0",
     "next": "^16.4.3",

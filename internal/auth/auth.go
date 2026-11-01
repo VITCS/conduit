@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +46,69 @@ func newID(prefix string) string {
 	b := make([]byte, 9)
 	_, _ = rand.Read(b)
 	return prefix + "_" + base64.RawURLEncoding.EncodeToString(b)
+}
+
+// CreateOAuthUser registers a user authenticated via an external provider. It has
+// no usable password (a random hash is stored), so they can only sign in through
+// the provider until they set a password out of band.
+func (s *Service) CreateOAuthUser(email, name string, role model.Role) (model.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return model.User{}, errors.New("email is required")
+	}
+	if _, ok, _ := s.store.GetUserByEmail(email); ok {
+		return model.User{}, errors.New("a user with that email already exists")
+	}
+	rnd := make([]byte, 32)
+	_, _ = rand.Read(rnd)
+	hash, err := bcrypt.GenerateFromPassword(rnd, bcrypt.DefaultCost)
+	if err != nil {
+		return model.User{}, err
+	}
+	u := model.User{
+		ID: newID("usr"), Email: email, Name: name, Role: role,
+		PasswordHash: string(hash), CreatedAt: time.Now(),
+	}
+	if err := s.store.CreateUser(u); err != nil {
+		return model.User{}, err
+	}
+	return u, nil
+}
+
+// SignState returns a tamper-proof, short-lived state string for the OAuth
+// authorization request (CSRF protection), signed with the JWT secret. It carries
+// the provider name and an expiry; no server-side session storage is needed.
+func (s *Service) SignState(provider string, ttl time.Duration) string {
+	nonce := make([]byte, 12)
+	_, _ = rand.Read(nonce)
+	payload := provider + "|" + strconv.FormatInt(time.Now().Add(ttl).Unix(), 10) + "|" + hex.EncodeToString(nonce)
+	sig := s.sign(payload)
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + sig
+}
+
+// VerifyState validates a state string and returns the provider it was issued for.
+func (s *Service) VerifyState(state string) (string, bool) {
+	parts := strings.SplitN(state, ".", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return "", false
+	}
+	payload := string(raw)
+	if !hmac.Equal([]byte(s.sign(payload)), []byte(parts[1])) {
+		return "", false
+	}
+	fields := strings.Split(payload, "|")
+	if len(fields) != 3 {
+		return "", false
+	}
+	exp, err := strconv.ParseInt(fields[1], 10, 64)
+	if err != nil || time.Now().Unix() > exp {
+		return "", false
+	}
+	return fields[0], true
 }
 
 // CreateUser registers a new user with a bcrypt-hashed password.

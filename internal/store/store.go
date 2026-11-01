@@ -69,6 +69,10 @@ type Store interface {
 	ListUsers() ([]model.User, error)
 	CountUsers() (int, error)
 
+	// External identities (OAuth: google / github).
+	GetUserByIdentity(provider, subject string) (model.User, bool, error)
+	AddUserIdentity(id model.UserIdentity) error
+
 	CreateAPIToken(t model.APIToken) error
 	GetAPITokenByHash(hash string) (model.APIToken, bool, error)
 	ListAPITokens() ([]model.APIToken, error)
@@ -84,34 +88,36 @@ func New() *Mem { return NewMem() }
 
 // Mem is an in-memory, concurrency-safe Store.
 type Mem struct {
-	mu        sync.RWMutex
-	projects  map[string]model.Project
-	members   map[string]model.ProjectMember // key: projectID\x00userID
-	workflows map[string]model.Workflow
-	runs      map[string]*model.Run
-	order     []string                  // run IDs, oldest first
-	claimedBy map[string]string         // runID -> workerID
-	leaseExp  map[string]time.Time      // runID -> lease expiry
-	secrets   map[string][]byte         // key: projectID\x00name
-	users     map[string]model.User     // by ID
-	tokens    map[string]model.APIToken // by ID
-	audit     []model.AuditEntry
-	broker    *Broker
+	mu         sync.RWMutex
+	projects   map[string]model.Project
+	members    map[string]model.ProjectMember // key: projectID\x00userID
+	workflows  map[string]model.Workflow
+	runs       map[string]*model.Run
+	order      []string                      // run IDs, oldest first
+	claimedBy  map[string]string             // runID -> workerID
+	leaseExp   map[string]time.Time          // runID -> lease expiry
+	secrets    map[string][]byte             // key: projectID\x00name
+	users      map[string]model.User         // by ID
+	identities map[string]model.UserIdentity // key: provider\x00subject
+	tokens     map[string]model.APIToken     // by ID
+	audit      []model.AuditEntry
+	broker     *Broker
 }
 
 // NewMem builds an empty in-memory store.
 func NewMem() *Mem {
 	return &Mem{
-		projects:  map[string]model.Project{},
-		members:   map[string]model.ProjectMember{},
-		workflows: map[string]model.Workflow{},
-		runs:      map[string]*model.Run{},
-		claimedBy: map[string]string{},
-		leaseExp:  map[string]time.Time{},
-		secrets:   map[string][]byte{},
-		users:     map[string]model.User{},
-		tokens:    map[string]model.APIToken{},
-		broker:    newBroker(),
+		projects:   map[string]model.Project{},
+		members:    map[string]model.ProjectMember{},
+		workflows:  map[string]model.Workflow{},
+		runs:       map[string]*model.Run{},
+		claimedBy:  map[string]string{},
+		leaseExp:   map[string]time.Time{},
+		secrets:    map[string][]byte{},
+		users:      map[string]model.User{},
+		identities: map[string]model.UserIdentity{},
+		tokens:     map[string]model.APIToken{},
+		broker:     newBroker(),
 	}
 }
 
@@ -232,6 +238,25 @@ func (s *Mem) GetUserByID(id string) (model.User, bool, error) {
 	defer s.mu.RUnlock()
 	u, ok := s.users[id]
 	return u, ok, nil
+}
+
+func (s *Mem) GetUserByIdentity(provider, subject string) (model.User, bool, error) {
+	s.mu.RLock()
+	id, ok := s.identities[provider+"\x00"+subject]
+	if !ok {
+		s.mu.RUnlock()
+		return model.User{}, false, nil
+	}
+	u, uok := s.users[id.UserID]
+	s.mu.RUnlock()
+	return u, uok, nil
+}
+
+func (s *Mem) AddUserIdentity(id model.UserIdentity) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.identities[id.Provider+"\x00"+id.Subject] = id
+	return nil
 }
 
 func (s *Mem) ListUsers() ([]model.User, error) {

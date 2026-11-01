@@ -88,7 +88,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, name, password }),
     }),
-  authConfig: () => req<{ signup_enabled: boolean; methods: string[] }>("/api/auth/config"),
+  authConfig: () =>
+    req<{ signup_enabled: boolean; methods: string[]; providers: string[] }>("/api/auth/config"),
+  // Full-page redirect into the provider's consent screen (OAuth can't be an XHR).
+  oauthStartURL: (provider: string) => `${BASE}/api/auth/oauth/${encodeURIComponent(provider)}/start`,
   me: () => req<{ email: string; name: string; role: string }>("/api/auth/me"),
   listProjects: () => req<{ id: string; name: string }[]>("/api/projects"),
   createProject: (name: string) =>

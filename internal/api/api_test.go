@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -709,4 +710,44 @@ func waitHTTP(t *testing.T, url string, want model.Status) model.Run {
 	}
 	t.Fatalf("run did not reach %s within timeout", want)
 	return model.Run{}
+}
+
+func TestOAuthConfigAndStart(t *testing.T) {
+	st := store.NewMem()
+	authSvc := auth.New(st, "s")
+	providers := api.NewOAuthProviders("gid", "gsecret", "", "") // only google configured
+	srv := &api.Server{Store: st, Engine: engine.New(st), Auth: authSvc, Web: fstest.MapFS{}, AllowSignup: true, OAuth: providers}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	// config advertises only the configured provider.
+	var cfg struct {
+		Providers []string `json:"providers"`
+	}
+	getJSON(t, ts.URL+"/api/auth/config", &cfg)
+	if len(cfg.Providers) != 1 || cfg.Providers[0] != "google" {
+		t.Fatalf("providers = %v, want [google]", cfg.Providers)
+	}
+
+	// start redirects (302) to Google's authorize URL for a configured provider.
+	noRedir := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noRedir.Get(ts.URL + "/api/auth/oauth/google/start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("start status = %d, want 302", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if !strings.Contains(loc, "accounts.google.com") || !strings.Contains(loc, "state=") || !strings.Contains(loc, "client_id=gid") {
+		t.Errorf("unexpected authorize redirect: %s", loc)
+	}
+
+	// an unconfigured provider is 404.
+	resp2, _ := noRedir.Get(ts.URL + "/api/auth/oauth/github/start")
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("github start = %d, want 404", resp2.StatusCode)
+	}
 }

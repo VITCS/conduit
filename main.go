@@ -195,7 +195,21 @@ func run() error {
 	// works out of the box; set CONDUIT_ALLOW_SIGNUP=false to lock it down.
 	allowSignup := !strings.EqualFold(os.Getenv("CONDUIT_ALLOW_SIGNUP"), "false")
 
-	srv := &api.Server{Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Auth: authSvc, Limiter: limiter, Web: ui, AllowSignup: allowSignup}
+	// External sign-in (optional). Providers appear in the UI only when their
+	// client id + secret are set. Redirect URIs are {BASE_URL}/api/auth/oauth/<p>/callback.
+	oauthProviders := api.NewOAuthProviders(
+		os.Getenv("CONDUIT_GOOGLE_CLIENT_ID"), os.Getenv("CONDUIT_GOOGLE_CLIENT_SECRET"),
+		os.Getenv("CONDUIT_GITHUB_CLIENT_ID"), os.Getenv("CONDUIT_GITHUB_CLIENT_SECRET"),
+	)
+	for name := range oauthProviders {
+		log.Printf("auth: %s sign-in enabled", name)
+	}
+
+	srv := &api.Server{
+		Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Auth: authSvc,
+		Limiter: limiter, Web: ui, AllowSignup: allowSignup,
+		OAuth: oauthProviders, BaseURL: os.Getenv("CONDUIT_BASE_URL"),
+	}
 
 	httpSrv := &http.Server{
 		Addr:    addr,

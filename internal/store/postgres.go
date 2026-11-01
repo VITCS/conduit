@@ -88,6 +88,15 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash text NOT NULL,
     created_at    timestamptz NOT NULL
 );
+CREATE TABLE IF NOT EXISTS user_identities (
+    provider   text NOT NULL,
+    subject    text NOT NULL,
+    user_id    text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email      text NOT NULL,
+    created_at timestamptz NOT NULL,
+    PRIMARY KEY (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS user_identities_user_id_idx ON user_identities (user_id);
 CREATE TABLE IF NOT EXISTS api_tokens (
     id           text PRIMARY KEY,
     name         text NOT NULL,
@@ -574,6 +583,26 @@ func (s *Pg) GetUserByID(id string) (model.User, bool, error) {
 		return model.User{}, false, nil
 	}
 	return u, err == nil, err
+}
+
+func (s *Pg) GetUserByIdentity(provider, subject string) (model.User, bool, error) {
+	u, err := scanUser(s.db.QueryRow(
+		`SELECT u.id,u.email,u.name,u.role,u.password_hash,u.created_at
+		   FROM user_identities i JOIN users u ON u.id = i.user_id
+		  WHERE i.provider=$1 AND i.subject=$2`, provider, subject))
+	if err == sql.ErrNoRows {
+		return model.User{}, false, nil
+	}
+	return u, err == nil, err
+}
+
+func (s *Pg) AddUserIdentity(id model.UserIdentity) error {
+	_, err := s.db.Exec(
+		`INSERT INTO user_identities (provider, subject, user_id, email, created_at)
+		 VALUES ($1,$2,$3,$4,$5)
+		 ON CONFLICT (provider, subject) DO UPDATE SET user_id=EXCLUDED.user_id, email=EXCLUDED.email`,
+		id.Provider, id.Subject, id.UserID, id.Email, id.CreatedAt)
+	return err
 }
 
 func (s *Pg) ListUsers() ([]model.User, error) {
