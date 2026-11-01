@@ -193,6 +193,11 @@ func (s *Server) effectiveRole(p principal, project string) (model.Role, bool) {
 // identify resolves the caller from a bearer JWT or API token.
 func (s *Server) identify(r *http.Request) (principal, bool) {
 	tok := bearerToken(r)
+	// The SSE stream is opened with EventSource, which cannot set an Authorization
+	// header, so /api/events accepts the token as a same-origin query parameter.
+	if tok == "" && r.URL.Path == "/api/events" {
+		tok = r.URL.Query().Get("access_token")
+	}
 	if tok == "" {
 		return principal{}, false
 	}

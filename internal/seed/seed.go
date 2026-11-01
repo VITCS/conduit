@@ -47,6 +47,49 @@ func Workflow() model.Workflow {
 	}
 }
 
+// PRProjectID is the project that holds the "Open a real PR" starter workflow.
+const PRProjectID = "github-pr"
+
+// OpenPRWorkflow is a ready-to-use starter that opens a REAL GitHub pull request.
+// It is inert until configured: set a project secret named `github_token` and edit
+// the "Open Pull Request" node's `owner`/`repo` fields. Trigger it with a webhook
+// whose body carries the branch, e.g. {"branch":"feature/login"}; the title/head
+// pull it in via ${input.branch}. The approval gate demonstrates the human-in-the-
+// loop before a real side effect occurs.
+func OpenPRWorkflow() model.Workflow {
+	return model.Workflow{
+		ID:        "wf_open_pr",
+		ProjectID: PRProjectID,
+		Name:      "Open a real PR · GitHub",
+		Nodes: []model.Node{
+			{ID: "t1", Type: "webhook", Icon: "webhook", Kind: model.KindTrigger, Title: "On Webhook", X: 40, Y: 320,
+				Config: []model.Field{f("on", "webhook", "POST /api/hooks/wf_open_pr"), f("body", "file", `{"branch":"feature/login"}`)}},
+			{ID: "a1", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Review & Approve", X: 340, Y: 320,
+				Config: []model.Field{f("approvers", "user", "maintainers"), f("timeout", "clock", "1d")}},
+			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 650, Y: 320,
+				Config: []model.Field{
+					f("owner", "github", "your-org"),
+					f("repo", "github", "your-repo"),
+					f("head", "branch", "${input.branch}"),
+					f("base", "branch", "main"),
+					f("title", "file", "Automated PR: ${input.branch}"),
+					f("body", "file", "Opened automatically by Conduit."),
+					f("token", "key", "${secret:github_token}"),
+				}},
+			{ID: "rec", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record PR", X: 960, Y: 200,
+				Config: []model.Field{f("store", "db", "prs"), f("key", "key", "branch"), f("set", "file", "last_pr_url")}},
+			{ID: "sf", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Mark Failed", X: 960, Y: 460,
+				Config: []model.Field{f("set", "github", "failure"), f("notify", "user", "maintainers")}},
+		},
+		Edges: []model.Edge{
+			{From: "t1", To: "a1"},
+			{From: "a1", To: "pr", Label: "approved"},
+			{From: "pr", To: "rec", Label: "success"},
+			{From: "pr", To: "sf", Label: "failed"},
+		},
+	}
+}
+
 // FactoryProjectID is the project that holds the AI Factory sample workflow.
 const FactoryProjectID = "ai-factory"
 

@@ -104,6 +104,15 @@ func run() error {
 			return err
 		}
 	}
+	// Seed the "Open a real PR" starter in its own project.
+	if _, ok, _ := st.GetProject(seed.PRProjectID); !ok {
+		_ = st.CreateProject(model.Project{ID: seed.PRProjectID, Name: "GitHub PR", CreatedAt: time.Now()})
+	}
+	if _, ok, _ := st.GetWorkflow(seed.OpenPRWorkflow().ID); !ok {
+		if err := st.PutWorkflow(seed.OpenPRWorkflow()); err != nil {
+			return err
+		}
+	}
 
 	ui, err := fs.Sub(webFS, "web/out")
 	if err != nil {

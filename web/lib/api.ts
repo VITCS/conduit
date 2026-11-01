@@ -130,7 +130,10 @@ export const api = {
     }),
   cancelRun: (runId: string) =>
     req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
-  eventsURL: (runId: string) => `${BASE}/api/events?run=${encodeURIComponent(runId)}`,
+  // EventSource cannot send an Authorization header, so the token rides along as a
+  // same-origin query parameter (the server accepts it only for this endpoint).
+  eventsURL: (runId: string) =>
+    `${BASE}/api/events?run=${encodeURIComponent(runId)}&access_token=${encodeURIComponent(getToken())}`,
   listSecrets: () => req<string[]>("/api/secrets"),
   putSecret: (name: string, value: string) =>
     req<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, {

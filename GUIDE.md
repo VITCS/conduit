@@ -169,6 +169,12 @@ at `/api/hooks/{workflowId}?token=…` and every PR drives a run.
 The seeded demo is simulated; this section does something **real** against GitHub,
 end to end. We'll build *"on webhook → open a pull request in my repo."*
 
+> **Shortcut:** a ready-made version ships in the **GitHub PR** project (pick it in
+> the top-bar project switcher) — the *"Open a real PR · GitHub"* workflow, wired
+> `Webhook → Review & Approve → Open Pull Request`. Just set the `github_token`
+> secret and edit the PR node's `owner`/`repo`, then run it. The steps below explain
+> each piece (and how to build it yourself).
+
 **a) Create a GitHub token.** GitHub → *Settings → Developer settings → Personal
 access tokens → Fine-grained tokens*. Give it access to your repo with
 **Pull requests: Read and write** (add **Contents: Read and write** if an earlier
