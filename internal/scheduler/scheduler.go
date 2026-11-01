@@ -103,7 +103,7 @@ func (s *Scheduler) Sync() error {
 			}
 			wf := wf // capture per workflow
 			id, err := s.cron.AddFunc(spec, func() {
-				s.engine.Start(wf, "schedule: "+wf.Name)
+				s.engine.Enqueue(wf, "schedule: "+wf.Name, nil)
 			})
 			if err != nil {
 				log.Printf("scheduler: bad cron %q on %s/%s: %v", spec, wf.ID, n.ID, err)

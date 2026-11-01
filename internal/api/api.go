@@ -655,7 +655,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "workflow not found")
 		return
 	}
-	run := s.Engine.Start(wf, body.Title)
+	run := s.Engine.Enqueue(wf, body.Title, nil)
 	writeJSON(w, http.StatusCreated, run)
 }
 
@@ -717,7 +717,7 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 		// Tolerate an empty or non-JSON body; input is optional.
 		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&input)
 	}
-	run := s.Engine.StartWithInput(wf, "webhook: "+wf.Name, input)
+	run := s.Engine.Enqueue(wf, "webhook: "+wf.Name, input)
 	writeJSON(w, http.StatusCreated, run)
 }
 

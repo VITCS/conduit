@@ -123,6 +123,7 @@ final stage is a distroless, non-root static image containing only the binary.
 | `CONDUIT_ADMIN_EMAIL` | `admin@conduit.local` | bootstrap admin email (created only if there are no users) |
 | `CONDUIT_ADMIN_PASSWORD` | `conduit` | bootstrap admin password — change it after first login |
 | `CONDUIT_RATE_LIMIT` | `20` | per-IP request/second limit on `/api` (0 disables) |
+| `CONDUIT_WORKERS` | `4` | run-executor workers per instance |
 
 ### Production notes
 
@@ -185,12 +186,13 @@ go test ./internal/store/ -run TestPostgresStoreContract -v
 
 ## How a run works
 
-1. `POST /api/runs {workflow_id}` creates a run and kicks off `engine.execute`
-   in a goroutine.
-2. The engine starts at the trigger node and walks the DAG breadth-first. For
-   each node it marks `running`, calls the component executor, records the
-   output, and follows outgoing edges whose label matches the outcome
-   (`success` / `failed` / `approved`).
+1. `POST /api/runs {workflow_id}` (or a webhook/schedule) **enqueues** a run
+   (`queued`). A worker from the pool **claims** it with a lease and executes it;
+   across instances, exactly one worker runs a given run.
+2. The engine starts at the trigger node and walks the DAG, running independent
+   branches concurrently. For each node it marks `running`, calls the component
+   executor, records the output, and follows outgoing edges whose label matches
+   the outcome (`success` / `failed` / `approved`).
 3. Every transition is published to the broker and streamed to the browser over
    `GET /api/events?run=<id>` (SSE), so the canvas, run rail, and console update
    live.
@@ -308,10 +310,17 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
   IDs, and an **audit log** of mutations (`/api/audit`, admin).
 - **Rate limiting** (per-IP token bucket, `CONDUIT_RATE_LIMIT`).
 
-Still ahead (see the roadmap): **Phase 5b** a dedicated worker model (claim/lease
-run execution) + OTel traces; invitations/email + OIDC/SSO; a broader
-connector/OAuth framework; per-node timeouts; true `foreach`/`loop`; and SSRF
-guards on outbound requests.
+**Phase 5b (shipped):** worker model —
+
+- Runs are **enqueued** (`POST /api/runs`, webhooks, schedules) and executed by a
+  **worker pool** that claims each run with a **lease** (Postgres `SKIP LOCKED`),
+  so exactly one worker across all instances runs it; a dead worker's lease
+  expires and the run is reclaimed. Size the pool with `CONDUIT_WORKERS`.
+
+Still ahead (see the roadmap): OTel traces + resumable execution (so a reclaimed
+run resumes rather than re-runs, which also enables cross-instance approval);
+invitations/email + OIDC/SSO; a broader connector/OAuth framework; per-node
+timeouts; true `foreach`/`loop`; and SSRF guards on outbound requests.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

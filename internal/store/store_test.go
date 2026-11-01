@@ -130,6 +130,22 @@ func storeContract(t *testing.T, s Store) {
 		t.Fatalf("ListRuns: n=%d err=%v", len(runs), err)
 	}
 
+	// claim/lease: a queued run is claimed exactly once.
+	if _, err := s.CreateRun(&model.Run{ID: "rq", WorkflowID: "wf1", ProjectID: "default",
+		Status: model.StatusQueued, CreatedAt: time.Now(), Steps: map[string]*model.StepRun{}, Memory: map[string]any{}}); err != nil {
+		t.Fatalf("CreateRun(queued): %v", err)
+	}
+	claimed, ok, err := s.ClaimRun("w1", time.Minute)
+	if err != nil || !ok || claimed.ID != "rq" || claimed.Status != model.StatusRunning {
+		t.Fatalf("ClaimRun: ok=%v err=%v id=%s status=%s", ok, err, claimed.ID, claimed.Status)
+	}
+	if _, ok2, _ := s.ClaimRun("w2", time.Minute); ok2 {
+		t.Error("second ClaimRun returned a run; the lease should prevent double-claim")
+	}
+	if err := s.RenewLease("rq", "w1", time.Minute); err != nil {
+		t.Fatalf("RenewLease: %v", err)
+	}
+
 	// secrets: opaque ciphertext round-trips; list and delete work.
 	if err := s.PutSecret("default", "tok", []byte{1, 2, 3, 4}); err != nil {
 		t.Fatalf("PutSecret: %v", err)

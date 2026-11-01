@@ -9,6 +9,7 @@ type Status string
 
 const (
 	StatusPending   Status = "pending"
+	StatusQueued    Status = "queued"
 	StatusTriggered Status = "triggered"
 	StatusRunning   Status = "running"
 	StatusWaiting   Status = "waiting"

@@ -602,6 +602,28 @@ go test ./internal/store/ -run TestPostgresEventRelay -v   # publishes on one in
 Covered by `go test ./...`: metrics exposition, rate-limit 429, audit record +
 `/api/audit`, the store audit contract, and the gated cross-instance relay.
 
+## 10i. Phase 5b features (worker model)
+
+Runs are now **enqueued** and executed by a worker pool, rather than inline.
+
+```bash
+# enqueue a run — it comes back queued, then a worker picks it up
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"workflow_id":"wf_preview_envs"}' localhost:8080/api/runs
+# -> {"id":"run_...","status":"queued",...}
+# poll GET /api/runs/{id}: status moves queued -> running -> waiting (approval) -> success
+```
+
+- The server logs `worker pool starting` with the pool size (`CONDUIT_WORKERS`,
+  default 4).
+- With Postgres, claims use `SELECT … FOR UPDATE SKIP LOCKED`, so running several
+  instances against one database never double-executes a run; a crashed worker's
+  lease expires and another reclaims it.
+
+Covered by `go test ./...`: the worker executes a queued run (`internal/worker`),
+an expired lease is reclaimable, the store claim/lease contract (Mem + real
+Postgres `SKIP LOCKED`), and the API run lifecycle runs through the worker pool.
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

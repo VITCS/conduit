@@ -33,6 +33,7 @@ import (
 	"conduit/internal/secrets"
 	"conduit/internal/seed"
 	"conduit/internal/store"
+	"conduit/internal/worker"
 )
 
 // The Next.js app is statically exported to web/out at build time and embedded
@@ -139,6 +140,15 @@ func run() error {
 		pg.StartEventRelay(bgCtx)
 		log.Printf("events: Postgres LISTEN/NOTIFY relay enabled (multi-instance)")
 	}
+
+	// Start the worker pool that drains the run queue.
+	workers := 4
+	if v := os.Getenv("CONDUIT_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			workers = n
+		}
+	}
+	worker.New(st, eng, workers).Start(bgCtx)
 
 	// Start the cron scheduler.
 	sched := scheduler.New(st, eng)

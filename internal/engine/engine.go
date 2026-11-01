@@ -83,7 +83,6 @@ func (e *Engine) StartWithInput(wf model.Workflow, title string, input map[strin
 	}
 	snap, _ := e.store.CreateRun(r)
 	metrics.RunsStarted.Inc("")
-	metrics.RunsActive.Add(1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	e.mu.Lock()
@@ -92,6 +91,54 @@ func (e *Engine) StartWithInput(wf model.Workflow, title string, input map[strin
 
 	go e.execute(ctx, r.ID, wf)
 	return snap
+}
+
+// Enqueue creates a run in the queued state for a worker to claim and execute.
+// This is the API/scheduler path in the worker model; Start keeps the immediate
+// in-process path (used by tests).
+func (e *Engine) Enqueue(wf model.Workflow, title string, input map[string]any) model.Run {
+	if title == "" {
+		title = wf.Name
+	}
+	r := &model.Run{
+		ID:         nextRunID(),
+		WorkflowID: wf.ID,
+		ProjectID:  wf.ProjectID,
+		Title:      title,
+		Status:     model.StatusQueued,
+		CreatedAt:  time.Now(),
+		Steps:      map[string]*model.StepRun{},
+		Memory:     map[string]any{},
+		Input:      input,
+	}
+	for _, n := range wf.Nodes {
+		r.Steps[n.ID] = &model.StepRun{NodeID: n.ID, Status: model.StatusPending}
+	}
+	snap, _ := e.store.CreateRun(r)
+	metrics.RunsStarted.Inc("")
+	return snap
+}
+
+// ExecuteClaimed runs a claimed run to completion. The worker calls this after
+// ClaimRun; it loads the run's workflow and runs the DAG. parentCtx is the
+// worker's lifetime; cancellation via Cancel(runID) is also honored.
+func (e *Engine) ExecuteClaimed(parentCtx context.Context, run model.Run) {
+	wf, ok, err := e.store.GetWorkflow(run.WorkflowID)
+	if err != nil || !ok {
+		e.store.MutateRun(run.ID, func(r *model.Run) {
+			r.Status = model.StatusFailed
+			now := time.Now()
+			r.FinishedAt = &now
+		})
+		e.publish(model.Event{Type: "run.finished", RunID: run.ID, Status: model.StatusFailed,
+			Level: "fail", Message: "workflow not found for run"})
+		return
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
+	e.mu.Lock()
+	e.cancels[run.ID] = cancel
+	e.mu.Unlock()
+	e.execute(ctx, run.ID, wf)
 }
 
 // Cancel stops a running or waiting run. Returns false if no such run is active.
@@ -142,6 +189,7 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 		out[ed.From] = append(out[ed.From], ed)
 	}
 
+	metrics.RunsActive.Add(1)
 	e.publish(model.Event{Type: "run.started", RunID: runID, Level: "info",
 		Message: fmt.Sprintf("Run %s started", runID)})
 

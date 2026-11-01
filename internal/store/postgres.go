@@ -50,7 +50,10 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at timestamptz
 );
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT 'default';
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS claimed_by text;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS lease_expires timestamptz;
 CREATE INDEX IF NOT EXISTS runs_created_idx ON runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS runs_claim_idx ON runs (status, lease_expires);
 CREATE INDEX IF NOT EXISTS runs_project_idx ON runs (project_id);
 CREATE INDEX IF NOT EXISTS workflows_project_idx ON workflows (project_id);
 CREATE TABLE IF NOT EXISTS secrets (
@@ -462,6 +465,56 @@ func (s *Pg) ListProjectMembers(projectID string) ([]model.ProjectMember, error)
 
 func (s *Pg) RemoveProjectMember(projectID, userID string) error {
 	_, err := s.db.Exec(`DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID)
+	return err
+}
+
+// ClaimRun atomically leases one claimable run using SELECT ... FOR UPDATE SKIP
+// LOCKED, so concurrent workers across instances never grab the same run.
+func (s *Pg) ClaimRun(workerID string, lease time.Duration) (model.Run, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Run{}, false, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var id string
+	var data []byte
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, data FROM runs
+		WHERE status = 'queued'
+		   OR (status IN ('running','waiting') AND lease_expires IS NOT NULL AND lease_expires < now())
+		ORDER BY created_at
+		FOR UPDATE SKIP LOCKED
+		LIMIT 1`).Scan(&id, &data)
+	if err == sql.ErrNoRows {
+		return model.Run{}, false, nil
+	}
+	if err != nil {
+		return model.Run{}, false, err
+	}
+	var r model.Run
+	if err := json.Unmarshal(data, &r); err != nil {
+		return model.Run{}, false, err
+	}
+	r.Status = model.StatusRunning
+	nb, _ := json.Marshal(&r)
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE runs SET status='running', data=$2, claimed_by=$3, lease_expires=now()+$4::interval WHERE id=$1`,
+		id, nb, workerID, fmt.Sprintf("%d milliseconds", lease.Milliseconds())); err != nil {
+		return model.Run{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Run{}, false, err
+	}
+	return r, true, nil
+}
+
+func (s *Pg) RenewLease(runID, workerID string, lease time.Duration) error {
+	_, err := s.db.Exec(
+		`UPDATE runs SET lease_expires=now()+$3::interval WHERE id=$1 AND claimed_by=$2`,
+		runID, workerID, fmt.Sprintf("%d milliseconds", lease.Milliseconds()))
 	return err
 }
 

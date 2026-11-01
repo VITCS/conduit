@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"conduit/internal/model"
 )
@@ -36,6 +37,13 @@ type Store interface {
 	GetRun(id string) (model.Run, bool, error)
 	// ListRuns returns runs in a project (newest first), or all when projectID is "".
 	ListRuns(projectID string) ([]model.Run, error)
+
+	// ClaimRun atomically leases one claimable run to a worker: a queued run, or a
+	// running/waiting run whose lease has expired (crash recovery). ok is false if
+	// none is available. The claimed run's status is set to running.
+	ClaimRun(workerID string, lease time.Duration) (model.Run, bool, error)
+	// RenewLease extends a run's lease while a worker holds it.
+	RenewLease(runID, workerID string, lease time.Duration) error
 
 	// MutateRun applies fn to the stored run atomically and returns a snapshot
 	// of the result. ok is false if the run does not exist.
@@ -82,6 +90,8 @@ type Mem struct {
 	workflows map[string]model.Workflow
 	runs      map[string]*model.Run
 	order     []string                  // run IDs, oldest first
+	claimedBy map[string]string         // runID -> workerID
+	leaseExp  map[string]time.Time      // runID -> lease expiry
 	secrets   map[string][]byte         // key: projectID\x00name
 	users     map[string]model.User     // by ID
 	tokens    map[string]model.APIToken // by ID
@@ -96,11 +106,46 @@ func NewMem() *Mem {
 		members:   map[string]model.ProjectMember{},
 		workflows: map[string]model.Workflow{},
 		runs:      map[string]*model.Run{},
+		claimedBy: map[string]string{},
+		leaseExp:  map[string]time.Time{},
 		secrets:   map[string][]byte{},
 		users:     map[string]model.User{},
 		tokens:    map[string]model.APIToken{},
 		broker:    newBroker(),
 	}
+}
+
+func (s *Mem) ClaimRun(workerID string, lease time.Duration) (model.Run, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	// Oldest-first scan for a claimable run.
+	for _, id := range s.order {
+		r, ok := s.runs[id]
+		if !ok {
+			continue
+		}
+		exp, leased := s.leaseExp[id]
+		claimable := r.Status == model.StatusQueued ||
+			((r.Status == model.StatusRunning || r.Status == model.StatusWaiting) && leased && exp.Before(now))
+		if !claimable {
+			continue
+		}
+		r.Status = model.StatusRunning
+		s.claimedBy[id] = workerID
+		s.leaseExp[id] = now.Add(lease)
+		return cloneRun(r), true, nil
+	}
+	return model.Run{}, false, nil
+}
+
+func (s *Mem) RenewLease(runID, workerID string, lease time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.claimedBy[runID] == workerID {
+		s.leaseExp[runID] = time.Now().Add(lease)
+	}
+	return nil
 }
 
 func mkey(a, b string) string { return a + "\x00" + b }

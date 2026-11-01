@@ -123,10 +123,21 @@ indicator, and many-workflows-per-project navigation.
 - **Rate limiting**: per-IP token bucket on `/api` (`CONDUIT_RATE_LIMIT`), plus
   the existing request-body size limits.
 
-Deferred to a follow-up (**Phase 5b**): a dedicated **worker model** — separate
-run-executor workers from the API with at-least-once execution via a claim/lease
-on runs — and OTel traces. The engine runs in-process today, which is correct for
-one instance; the worker model is what lets execution scale out independently.
+### Phase 5b — Worker model  ✅ (this release)
+
+- **Durable run queue**: `POST /api/runs`, webhooks, and schedules now *enqueue*
+  runs (`queued`) instead of running them inline.
+- **Claim/lease workers**: a worker pool drains the queue; each run is claimed with
+  a lease (Postgres `SELECT … FOR UPDATE SKIP LOCKED`), so across every instance
+  exactly one worker executes a given run. The lease is renewed while a run
+  executes or waits on approval.
+- **Crash recovery**: if a worker dies, its lease expires and another worker
+  reclaims the run. `CONDUIT_WORKERS` sets the pool size.
+
+Deferred: OTel traces, and resumable execution so a reclaimed run continues from
+its suspension point rather than re-running (today a reclaim re-executes; fine for
+idempotent/simulated steps). Cross-instance approval resolution needs that
+resumable state machine and is tracked with it.
 
 ### Phase 6 — Agents / factory (optional track)
 

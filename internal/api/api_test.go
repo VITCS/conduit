@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -17,7 +18,19 @@ import (
 	"conduit/internal/secrets"
 	"conduit/internal/seed"
 	"conduit/internal/store"
+	"conduit/internal/worker"
 )
+
+// startWorkers runs a worker pool for a test store+engine so enqueued runs
+// execute, stopping it when the test ends.
+func startWorkers(t *testing.T, st store.Store, eng *engine.Engine) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	p := worker.New(st, eng, 2)
+	p.PollInterval = 10 * time.Millisecond
+	p.Start(ctx)
+}
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -28,6 +41,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	eng := engine.New(st)
 	eng.StepDelay = 0
 	eng.TriggerDelay = 0
+	startWorkers(t, st, eng)
 	srv := &api.Server{Store: st, Engine: eng, Web: fstest.MapFS{}}
 	return httptest.NewServer(srv.Routes())
 }
