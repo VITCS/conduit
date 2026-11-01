@@ -9,7 +9,7 @@ function Logo() {
       <defs>
         <linearGradient id="llg" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="var(--accent)" />
-          <stop offset="1" stopColor="var(--wait)" />
+          <stop offset="1" stopColor="var(--accent-deep)" />
         </linearGradient>
       </defs>
       <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent-soft)" />

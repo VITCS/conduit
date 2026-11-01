@@ -8,7 +8,7 @@ function Logo() {
       <defs>
         <linearGradient id="clg" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="var(--accent)" />
-          <stop offset="1" stopColor="var(--wait)" />
+          <stop offset="1" stopColor="var(--accent-deep)" />
         </linearGradient>
       </defs>
       <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent-soft)" />
@@ -40,14 +40,19 @@ export function Topbar(props: {
   onSwitchProject: (id: string) => void;
   onNewProject: () => void;
 }) {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   useEffect(() => {
-    const attr = document.documentElement.getAttribute("data-theme");
-    setDark(attr ? attr === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
+    // The pre-paint script in layout already set data-theme (default dark).
+    setDark(document.documentElement.getAttribute("data-theme") !== "light");
   }, []);
   function toggleTheme() {
     const next = !dark;
     document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
+    try {
+      localStorage.setItem("conduit_theme", next ? "dark" : "light");
+    } catch {
+      /* ignore */
+    }
     setDark(next);
   }
 
