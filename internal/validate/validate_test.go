@@ -18,6 +18,12 @@ func TestSeedWorkflowIsValid(t *testing.T) {
 	}
 }
 
+func TestFactoryWorkflowIsValid(t *testing.T) {
+	if errs := Workflow(seed.FactoryWorkflow()); len(errs) != 0 {
+		t.Fatalf("factory workflow should be valid, got: %v", errs)
+	}
+}
+
 func hasErr(errs []string, substr string) bool {
 	for _, e := range errs {
 		if strings.Contains(e, substr) {

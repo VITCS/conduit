@@ -95,6 +95,15 @@ func run() error {
 			return err
 		}
 	}
+	// Seed the AI Factory sample in its own project.
+	if _, ok, _ := st.GetProject(seed.FactoryProjectID); !ok {
+		_ = st.CreateProject(model.Project{ID: seed.FactoryProjectID, Name: "AI Factory", CreatedAt: time.Now()})
+	}
+	if _, ok, _ := st.GetWorkflow(seed.FactoryWorkflow().ID); !ok {
+		if err := st.PutWorkflow(seed.FactoryWorkflow()); err != nil {
+			return err
+		}
+	}
 
 	ui, err := fs.Sub(webFS, "web/out")
 	if err != nil {

@@ -317,10 +317,19 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
   so exactly one worker across all instances runs it; a dead worker's lease
   expires and the run is reclaimed. Size the pool with `CONDUIT_WORKERS`.
 
+**Phase 6 (shipped):** agents / factory —
+
+- An **`agent`** component that prompts an LLM — **simulated by default** (offline),
+  or **live** against Anthropic / OpenAI / a custom gateway using a project secret
+  for the API key. Prompts template run state via `${input.key}` / `${memory.key}`.
+- A seeded **AI Factory** workflow (in the `ai-factory` project) modeling
+  *issue → refine → implement → verify → review → approve → open PR*.
+
 Still ahead (see the roadmap): OTel traces + resumable execution (so a reclaimed
 run resumes rather than re-runs, which also enables cross-instance approval);
-invitations/email + OIDC/SSO; a broader connector/OAuth framework; per-node
-timeouts; true `foreach`/`loop`; and SSRF guards on outbound requests.
+agent tool-use + a real coding-agent sandbox; invitations/email + OIDC/SSO; a
+broader connector/OAuth framework; per-node timeouts; true `foreach`/`loop`; and
+SSRF guards on outbound requests.
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

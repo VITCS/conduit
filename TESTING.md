@@ -624,6 +624,39 @@ Covered by `go test ./...`: the worker executes a queued run (`internal/worker`)
 an expired lease is reclaimable, the store claim/lease contract (Mem + real
 Postgres `SKIP LOCKED`), and the API run lifecycle runs through the worker pool.
 
+## 10j. Phase 6 features (agents / AI factory)
+
+The `agent` component prompts an LLM. It is **simulated by default** (offline,
+deterministic), so the seeded factory runs without a provider.
+
+The **AI Factory** sample lives in the `ai-factory` project (switch to it in the
+UI's project switcher, or send `X-Conduit-Project: ai-factory`):
+
+```bash
+# run the factory (agent steps simulate: refine -> implement -> verify -> review)
+RID=$(curl -s -X POST -H "Authorization: Bearer $TOK" -H "X-Conduit-Project: ai-factory" \
+  -H 'Content-Type: application/json' -d '{"workflow_id":"wf_factory"}' localhost:8080/api/runs \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+sleep 6
+curl -s -H "Authorization: Bearer $TOK" -H "X-Conduit-Project: ai-factory" localhost:8080/api/runs/$RID \
+  | python3 -c "import sys,json;r=json.load(sys.stdin);print(r['status'], r['steps']['review']['status'])"
+# -> waiting success   (paused at Human Approval)
+
+# approve to finish (opens PR, records delivery)
+curl -s -X POST -H "Authorization: Bearer $TOK" -H "X-Conduit-Project: ai-factory" \
+  -H 'Content-Type: application/json' -d '{"node_id":"appr","decision":"approved"}' \
+  localhost:8080/api/runs/$RID/approve
+```
+
+**Live agent** — to call a real model, add to an agent node's config: `live: true`,
+`provider` (`anthropic` / `openai` / `custom`), `model`, and
+`api_key: ${secret:NAME}` (store the key as a project secret). Prompts may
+reference run state with `${input.key}` and `${memory.key}`.
+
+Covered by `go test ./...`: the simulated agent, live agent via `httptest`
+(Anthropic + OpenAI request/response shapes, failure status), prompt templating,
+and that the seeded factory workflow passes validation.
+
 ## 11. Docker
 
 Full stack with Postgres (the recommended way to run and test):

@@ -46,3 +46,48 @@ func Workflow() model.Workflow {
 		},
 	}
 }
+
+// FactoryProjectID is the project that holds the AI Factory sample workflow.
+const FactoryProjectID = "ai-factory"
+
+// FactoryWorkflow returns an AI "factory" pipeline: an issue is refined, a coding
+// agent implements it, CI verifies, a review agent assesses confidence, a human
+// approves, and a PR is opened. Agent steps are simulated by default (offline);
+// set live:true + an api_key secret on them to call a real model.
+func FactoryWorkflow() model.Workflow {
+	return model.Workflow{
+		ID:        "wf_factory",
+		ProjectID: FactoryProjectID,
+		Name:      "AI Factory · Issue → Reviewed PR",
+		Nodes: []model.Node{
+			{ID: "t1", Type: "github", Icon: "github", Kind: model.KindTrigger, Title: "On Issue Labeled", X: 40, Y: 300,
+				Config: []model.Field{f("repo", "github", "storejs / storefront"), f("on", "webhook", "issues.labeled: agent")}},
+			{ID: "plan", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Refine & Plan", X: 330, Y: 300,
+				Config: []model.Field{f("provider", "agent", "anthropic"), f("prompt", "file", "Refine issue ${input.issue} into a concrete plan")}},
+			{ID: "impl", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Implement (coding agent)", X: 620, Y: 300,
+				Config: []model.Field{f("provider", "agent", "anthropic"), f("prompt", "file", "Implement the plan and open a draft change")}},
+			{ID: "ci", Type: "http", Icon: "heart", Kind: model.KindStep, Title: "Verify (CI)", X: 910, Y: 300,
+				Config: []model.Field{f("url", "globe", "https://ci.example/run"), f("expect", "approve", "200 · tests green")}},
+			{ID: "review", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Review Confidence", X: 1200, Y: 300,
+				Config: []model.Field{f("provider", "agent", "anthropic"), f("prompt", "file", "Assess merge confidence for the change"), f("confidence", "approve", "high")}},
+			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 1490, Y: 300,
+				Config: []model.Field{f("approvers", "user", "maintainers"), f("timeout", "clock", "1d")}},
+			{ID: "pr", Type: "http", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 1780, Y: 300,
+				Config: []model.Field{f("target", "github", "create PR"), f("title", "file", "fix: ${input.issue}")}},
+			{ID: "mem", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record Delivery", X: 1780, Y: 540,
+				Config: []model.Field{f("store", "db", "deliveries"), f("key", "key", "issue"), f("set", "file", "pr_url, confidence")}},
+			{ID: "fail", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Send Back to Agent", X: 910, Y: 540,
+				Config: []model.Field{f("set", "github", "needs-work"), f("notify", "user", "author")}},
+		},
+		Edges: []model.Edge{
+			{From: "t1", To: "plan"},
+			{From: "plan", To: "impl", Label: "success"},
+			{From: "impl", To: "ci", Label: "success"},
+			{From: "ci", To: "review", Label: "success"},
+			{From: "ci", To: "fail", Label: "failed"},
+			{From: "review", To: "appr", Label: "success"},
+			{From: "appr", To: "pr", Label: "approved"},
+			{From: "pr", To: "mem", Label: "success"},
+		},
+	}
+}

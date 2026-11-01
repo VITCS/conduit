@@ -139,10 +139,20 @@ its suspension point rather than re-running (today a reclaim re-executes; fine f
 idempotent/simulated steps). Cross-instance approval resolution needs that
 resumable state machine and is tracked with it.
 
-### Phase 6 — Agents / factory (optional track)
+### Phase 6 — Agents / factory  ✅ (this release)
 
-- LLM + coding-agent components, memory-backed context, and the "turn an issue
-  into a reviewed PR" factory flow, behind the connector/secret framework.
+- **`agent` component**: prompts an LLM. Simulated by default (offline,
+  deterministic); with `live:true` it calls a real provider — adapters for
+  **Anthropic**, **OpenAI**, and a **custom** gateway — using a project-scoped
+  secret for the API key.
+- **Prompt templating**: `${input.key}` and `${memory.key}` resolve from the run,
+  giving agents memory-backed context.
+- **AI Factory sample**: a seeded workflow in the `ai-factory` project modeling
+  the "issue → reviewed PR" flow (refine → implement → verify → review confidence
+  → human approval → open PR → record), reusing agents + approval + the engine.
+
+Deferred: streaming agent output, tool-use/function-calling, and a real
+coding-agent sandbox (the `impl` step is an agent call today).
 
 ### Phase 7 — Release hardening
 

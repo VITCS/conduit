@@ -67,6 +67,7 @@ var registry = map[string]Executor{
 	"http":     execHTTP,
 	"graphql":  execGraphQL,
 	"slack":    execSlack,
+	"agent":    execAgent,
 	"ssh":      execSSH,
 	"if":       execIf,
 	"filter":   execFilter,

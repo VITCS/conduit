@@ -17,6 +17,7 @@ import {
   KeyRound,
   FileText,
   Users,
+  Bot,
   CircleHelp,
   type LucideIcon,
 } from "lucide-react";
@@ -41,6 +42,7 @@ const MAP: Record<string, LucideIcon> = {
   key: KeyRound,
   file: FileText,
   user: Users,
+  agent: Bot,
 };
 
 export function Icon({ name, size = 16 }: { name?: string; size?: number }) {
