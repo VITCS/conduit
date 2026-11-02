@@ -134,6 +134,15 @@ input, select { font-family: inherit; }
 .n-cfg-row .ic { opacity: .75; display: inline-flex; flex: 0 0 auto; }
 .n-cfg-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .n-cfg-row b { color: var(--faint); font-weight: 500; }
+.n-cfg-row { justify-content: flex-start; }
+/* source chip: where a node's value comes from (config / secret / event / run) */
+.src { margin-left: auto; flex: 0 0 auto; font-family: var(--font-mono); font-size: 8.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 9999px; border: 1px solid transparent; }
+.src.config { color: var(--ok-ink); background: var(--ok-bg); }
+.src.secret { color: var(--run-ink); background: var(--run-bg); }
+.src.event { color: var(--wait-ink); background: var(--wait-bg); }
+.src.run { color: var(--idle-ink); background: var(--idle-bg); }
+.src.mixed { color: var(--idle-ink); background: var(--idle-bg); }
+.src.unset { color: var(--fail-ink); background: var(--fail-bg); }
 .n-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 7px 7px; }
 .n-foot .badge { margin-right: auto; }
 .n-ref { font-family: var(--font-mono); font-size: 10.5px; color: var(--faint); }

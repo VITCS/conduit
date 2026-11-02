@@ -3,6 +3,8 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, X, Trash2, Plus } from "lucide-react";
 import { Icon } from "@/lib/icons";
 import { STATUS_META, CATALOG } from "@/lib/catalog";
+import { useEditor } from "@/lib/editorContext";
+import { resolveRef, SOURCE_LABEL } from "@/lib/refs";
 import type { Field, NodeData, Status } from "@/lib/types";
 
 const ICON_KEYS = [
@@ -28,6 +30,7 @@ export function Inspector(props: {
   const { data, output, status, editMode } = props;
   const [tab, setTab] = useState<Tab>("details");
   const meta = STATUS_META[status] ?? STATUS_META.pending;
+  const { vars, secretNames } = useEditor();
 
   function setField(i: number, patch: Partial<Field>) {
     const config = data.config.map((f, idx) => (idx === i ? { ...f, ...patch } : f));
@@ -150,13 +153,31 @@ export function Inspector(props: {
               </div>
             </div>
           ) : (
-            <pre className="code">
-              {JSON.stringify(
-                { component: data.typeName, kind: data.kind, ...Object.fromEntries(data.config.map((f) => [f.key, f.value])) },
-                null,
-                2,
+            <>
+              <p className="hint" style={{ marginBottom: 10 }}>
+                Resolved from the project&apos;s <b>Config</b> &amp; <b>Secrets</b> and the triggering event — set shared values once, every node reads them.
+              </p>
+              {data.config.length === 0 ? (
+                <div className="empty">No configuration.</div>
+              ) : (
+                <dl className="kv">
+                  {data.config.map((f, i) => {
+                    const r = resolveRef(f.value, vars, secretNames);
+                    return (
+                      <div key={i} style={{ display: "contents" }}>
+                        <dt>{f.key}</dt>
+                        <dd>
+                          {r.text}
+                          {r.source !== "literal" && SOURCE_LABEL[r.source] && (
+                            <span className={`src ${r.source}`} style={{ marginLeft: 8 }}>{SOURCE_LABEL[r.source]}</span>
+                          )}
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
               )}
-            </pre>
+            </>
           ))}
       </div>
     </div>

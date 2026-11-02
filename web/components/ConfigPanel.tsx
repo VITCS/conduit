@@ -59,14 +59,19 @@ export function ConfigPanel(props: { onClose: () => void; onToast: (m: string) =
           </button>
         </div>
         <p className="hint" style={{ padding: "0 16px" }}>
-          Shared values for this project. Reference one from any node&apos;s config as{" "}
-          <code>{"${var:NAME}"}</code> (e.g. set <code>owner</code> and <code>repo</code> once,
-          then use <code>{"${var:owner}"}</code> everywhere). For passwords/tokens use Secrets instead.
+          Shared values for this project — set once, every node reads them. Reference one from any
+          node&apos;s config as <code>{"${var:NAME}"}</code>. For tokens/keys use <b>Secrets</b> instead
+          (referenced as <code>{"${secret:NAME}"}</code>).
         </p>
         <div className="modal-body">
+          <div className="hint" style={{ marginTop: -4 }}>
+            For the GitHub workflow, set: <button className="linkbtn" onClick={() => setName("owner")}>owner</button>{" "}
+            <button className="linkbtn" onClick={() => setName("repo")}>repo</button>
+            <span> — plus secrets <code>github_token</code> and <code>llm_key</code>.</span>
+          </div>
           <div className="cfg-row" style={{ gridTemplateColumns: "1fr 1fr auto" }}>
             <input className="inp mono" placeholder="name (e.g. owner)" value={name} onChange={(e) => setName(e.target.value)} />
-            <input className="inp mono" placeholder="value (e.g. your-org)" value={value} onChange={(e) => setValue(e.target.value)} />
+            <input className="inp mono" placeholder="value (e.g. your-github-org)" value={value} onChange={(e) => setValue(e.target.value)} />
             <button className="btn primary" onClick={add}>
               <Plus size={14} /> Add
             </button>

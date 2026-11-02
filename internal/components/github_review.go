@@ -109,8 +109,16 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 	}
 
 	apiKey := secretExpand(project, firstNonEmpty(n.Field("api_key"), n.Field("apikey")))
-	provider := firstNonEmpty(n.Field("provider"), "anthropic")
-	modelName := n.Field("model")
+	// provider/model may also come from project config (${var:…}); default sensibly
+	// and ignore any unresolved reference so a missing var can't become a bad model.
+	provider := ex("provider")
+	if provider == "" || strings.Contains(provider, "${") {
+		provider = "anthropic"
+	}
+	modelName := ex("model")
+	if strings.Contains(modelName, "${") {
+		modelName = ""
+	}
 
 	// No LLM key → a clear, simulated review so the flow is still demonstrable.
 	if apiKey == "" || strings.Contains(apiKey, "${secret:") {

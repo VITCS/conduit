@@ -98,7 +98,23 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [currentProject, setCurrentProject] = useState("default");
+  const [vars, setVars] = useState<Record<string, string>>({});
+  const [secretNames, setSecretNames] = useState<string[]>([]);
   const [toast, setToast] = useState("");
+
+  // Project config (vars + secret names) used to show resolved values on nodes.
+  const loadProjectConfig = useCallback(async () => {
+    try {
+      setVars(await api.listVars());
+    } catch {
+      /* ignore */
+    }
+    try {
+      setSecretNames(await api.listSecrets());
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const esRef = useRef<EventSource | null>(null);
   const seq = useRef(1000);
 
@@ -172,6 +188,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       if (eff !== cur) setProject(eff);
       setCurrentProject(eff);
       await loadWorkflows();
+      loadProjectConfig();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -182,8 +199,9 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       setCurrentProject(id);
       setSelected(null);
       loadWorkflows();
+      loadProjectConfig();
     },
-    [loadWorkflows],
+    [loadWorkflows, loadProjectConfig],
   );
 
   const newProject = useCallback(async () => {
@@ -595,7 +613,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   );
 
   return (
-    <EditorContext.Provider value={{ editMode, setEdgeLabel, deleteEdge }}>
+    <EditorContext.Provider value={{ editMode, setEdgeLabel, deleteEdge, vars, secretNames }}>
       <div className="app">
         <Topbar
           name={name}
@@ -761,8 +779,8 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
 
           <Palette hidden={!editMode} onAdd={addComponent} />
         </div>
-        {showSecrets && <SecretsPanel onClose={() => setShowSecrets(false)} onToast={showToast} />}
-        {showConfig && <ConfigPanel onClose={() => setShowConfig(false)} onToast={showToast} />}
+        {showSecrets && <SecretsPanel onClose={() => { setShowSecrets(false); loadProjectConfig(); }} onToast={showToast} />}
+        {showConfig && <ConfigPanel onClose={() => { setShowConfig(false); loadProjectConfig(); }} onToast={showToast} />}
         {showMembers && <MembersPanel projectId={currentProject} onClose={() => setShowMembers(false)} onToast={showToast} />}
         {toast && <div className="toast">{toast}</div>}
       </div>
