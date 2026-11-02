@@ -127,6 +127,7 @@ final stage is a distroless, non-root static image containing only the binary.
 | `CONDUIT_ADMIN_EMAIL` | `admin@conduit.local` | bootstrap admin email (created only if there are no users) |
 | `CONDUIT_ADMIN_PASSWORD` | `conduit` | bootstrap admin password — change it after first login |
 | `CONDUIT_ALLOW_SIGNUP` | `true` | allow self-serve account creation (`POST /api/auth/register`); set `false` for admin-provisioned accounts only |
+| `CONDUIT_HTTP_PORT` | `8080` | host port the Docker app publishes (set to a free port if 8080 is taken, e.g. behind a reverse proxy); the container always listens on 8080 |
 | `CONDUIT_BASE_URL` | _(derived)_ | public origin used to build OAuth redirect URIs (e.g. `https://conduit.example`) |
 | `CONDUIT_GOOGLE_CLIENT_ID` / `CONDUIT_GOOGLE_CLIENT_SECRET` | — | enable **Sign in with Google**; redirect URI `…/api/auth/oauth/google/callback` |
 | `CONDUIT_GITHUB_CLIENT_ID` / `CONDUIT_GITHUB_CLIENT_SECRET` | — | enable **Sign in with GitHub**; redirect URI `…/api/auth/oauth/github/callback` |

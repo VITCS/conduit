@@ -45,8 +45,15 @@ services:
       CONDUIT_GOOGLE_CLIENT_SECRET: "${CONDUIT_GOOGLE_CLIENT_SECRET:-}"
       CONDUIT_GITHUB_CLIENT_ID: "${CONDUIT_GITHUB_CLIENT_ID:-}"
       CONDUIT_GITHUB_CLIENT_SECRET: "${CONDUIT_GITHUB_CLIENT_SECRET:-}"
+    # Host port is overridable so the app can avoid a port already taken on the
+    # server (e.g. behind Coolify/Traefik). Set CONDUIT_HTTP_PORT to a free host
+    # port; the container always listens on 8080 internally. Behind a reverse
+    # proxy that routes over the Docker network you can drop this block entirely
+    # and use `expose: ["8080"]` instead.
     ports:
-      - "8080:8080"
+      - "${CONDUIT_HTTP_PORT:-8080}:8080"
+    expose:
+      - "8080"
     healthcheck:
       # The binary self-checks over HTTP (the image has no shell/curl).
       test: ["CMD", "/conduitd", "healthcheck"]
