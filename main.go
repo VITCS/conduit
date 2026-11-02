@@ -104,21 +104,12 @@ func run() error {
 			return err
 		}
 	}
-	// Seed the "Open a real PR" starter in its own project.
-	if _, ok, _ := st.GetProject(seed.PRProjectID); !ok {
-		_ = st.CreateProject(model.Project{ID: seed.PRProjectID, Name: "GitHub PR", CreatedAt: time.Now()})
+	// Seed the unified GitHub workflow (open + review + merge) in one project.
+	if _, ok, _ := st.GetProject(seed.GitHubProjectID); !ok {
+		_ = st.CreateProject(model.Project{ID: seed.GitHubProjectID, Name: "GitHub", CreatedAt: time.Now()})
 	}
-	if _, ok, _ := st.GetWorkflow(seed.OpenPRWorkflow().ID); !ok {
-		if err := st.PutWorkflow(seed.OpenPRWorkflow()); err != nil {
-			return err
-		}
-	}
-	// Seed the "PR Review · Agent + Human" workflow in its own project.
-	if _, ok, _ := st.GetProject(seed.PRReviewProjectID); !ok {
-		_ = st.CreateProject(model.Project{ID: seed.PRReviewProjectID, Name: "PR Review", CreatedAt: time.Now()})
-	}
-	if _, ok, _ := st.GetWorkflow(seed.PRReviewWorkflow().ID); !ok {
-		if err := st.PutWorkflow(seed.PRReviewWorkflow()); err != nil {
+	if _, ok, _ := st.GetWorkflow(seed.GitHubWorkflow().ID); !ok {
+		if err := st.PutWorkflow(seed.GitHubWorkflow()); err != nil {
 			return err
 		}
 	}

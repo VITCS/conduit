@@ -729,18 +729,21 @@ have live modes:
 | `github_review` | fetches a PR's **real diff** and has an LLM review it (needs `github_token`; set `api_key` for a real review, else simulated) |
 | `github_merge` | **merges** a real PR (needs `github_token` with Contents: write) |
 
-### Agent PR review → human approval → merge (`PR Review` project)
+### Open + review + merge PRs in one workflow (`GitHub` project)
 
-The **PR Review · Agent + Human** workflow (`wf_pr_review`) is the "an agent
-verifies a PR, a human approves, then it merges" flow, driven by a real GitHub
-`pull_request` webhook: `Webhook → Agent Review → Human Approval → Post Review → Merge`.
+The **GitHub · Open + Review PRs** workflow (`wf_github`) covers the whole PR
+lifecycle in a single graph. One webhook trigger fans out to two branches by
+payload: a manual `{"branch":"…"}` opens a PR; a GitHub `pull_request` event runs
+`Agent Review → Human Approval → Post Review → Merge`. Each branch's filter skips
+the irrelevant payload, so only one path runs.
 
-1. **Secrets** (in the `PR Review` project): add `github_token` (Pull requests:
+1. **Config** (top bar, in the `GitHub` project): set vars `owner` and `repo`
+   (used when opening a PR). **Secrets**: add `github_token` (Pull requests:
    write **and** Contents: write, so it can merge) and, for a real LLM review,
    `llm_key` (an Anthropic/OpenAI key; without it the review step is simulated).
 2. **Point a GitHub webhook at Conduit.** Mint an API token (`POST /api/tokens`,
    role `member`), then in the repo → *Settings → Webhooks → Add webhook*:
-   - Payload URL: `https://<your-host>/api/hooks/wf_pr_review?token=<API_TOKEN>`
+   - Payload URL: `https://<your-host>/api/hooks/wf_github?token=<API_TOKEN>`
    - Content type: `application/json`; events: **Pull requests**.
 3. Open a PR in that repo → a run appears, the **Agent Review** step fetches the
    diff and posts its verdict to run memory, then the run **waits for approval**.

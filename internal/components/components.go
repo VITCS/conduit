@@ -343,10 +343,18 @@ func execIf(n model.Node, _ *model.Run) Result {
 func execFilter(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	value := expandTemplate(run, secretExpand(project, n.Field("value")))
+	// An unresolved reference (e.g. ${input.branch} when the payload has no branch)
+	// stays verbatim; treat that as "absent" so presence/equality checks behave.
+	if strings.Contains(value, "${") {
+		value = ""
+	}
 	pass := true
 	reason := n.Field("expr")
 
 	switch {
+	case strings.EqualFold(n.Field("not_empty"), "true"):
+		reason = fmt.Sprintf("%q is not empty", value)
+		pass = strings.TrimSpace(value) != ""
 	case n.Field("in") != "":
 		reason = fmt.Sprintf("%q in [%s]", value, n.Field("in"))
 		pass = false

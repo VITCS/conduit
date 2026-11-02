@@ -47,26 +47,32 @@ func Workflow() model.Workflow {
 	}
 }
 
-// PRProjectID is the project that holds the "Open a real PR" starter workflow.
-const PRProjectID = "github-pr"
+// GitHubProjectID holds the single, unified GitHub PR workflow.
+const GitHubProjectID = "github"
 
-// OpenPRWorkflow is a ready-to-use starter that opens a REAL GitHub pull request.
-// It is inert until configured: set a project secret named `github_token` and edit
-// the "Open Pull Request" node's `owner`/`repo` fields. Trigger it with a webhook
-// whose body carries the branch, e.g. {"branch":"feature/login"}; the title/head
-// pull it in via ${input.branch}. The approval gate demonstrates the human-in-the-
-// loop before a real side effect occurs.
-func OpenPRWorkflow() model.Workflow {
+// GitHubWorkflow is one workflow covering the whole PR lifecycle, so you never
+// switch projects to open vs. review a PR. A single webhook trigger fans out to two
+// branches, selected by the payload:
+//   - a manual "open" request ({"branch":"..."}) opens a real pull request;
+//   - a GitHub pull_request event (opened/reopened/synchronize) runs an agent
+//     review -> human approval -> posts the review -> merges.
+//
+// Each branch's filter skips the irrelevant payload, so only one path runs.
+// Configure once: project vars `owner`/`repo` (Config panel) and secrets
+// `github_token` (PR + Contents: write) and `llm_key` (for a real LLM review).
+func GitHubWorkflow() model.Workflow {
 	return model.Workflow{
-		ID:        "wf_open_pr",
-		ProjectID: PRProjectID,
-		Name:      "Open a real PR · GitHub",
+		ID:        "wf_github",
+		ProjectID: GitHubProjectID,
+		Name:      "GitHub · Open + Review PRs",
 		Nodes: []model.Node{
-			{ID: "t1", Type: "webhook", Icon: "webhook", Kind: model.KindTrigger, Title: "On Webhook", X: 40, Y: 320,
-				Config: []model.Field{f("on", "webhook", "POST /api/hooks/wf_open_pr"), f("body", "file", `{"branch":"feature/login"}`)}},
-			{ID: "a1", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Review & Approve", X: 340, Y: 320,
-				Config: []model.Field{f("approvers", "user", "maintainers"), f("timeout", "clock", "1d")}},
-			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 650, Y: 320,
+			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "GitHub Event", X: 40, Y: 340,
+				Config: []model.Field{f("on", "github", "pull_request / manual open"), f("hook", "webhook", "POST /api/hooks/wf_github?token=…")}},
+
+			// ── Branch A: open a PR on demand (payload carries a branch) ──
+			{ID: "fo", Type: "filter", Icon: "branch", Kind: model.KindStep, Title: "Open request?", X: 300, Y: 150,
+				Config: []model.Field{f("value", "key", "${input.branch}"), f("not_empty", "branch", "true")}},
+			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 560, Y: 150,
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -76,41 +82,13 @@ func OpenPRWorkflow() model.Workflow {
 					f("body", "file", "Opened automatically by Conduit."),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "rec", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record PR", X: 960, Y: 200,
+			{ID: "rec", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record PR", X: 820, Y: 150,
 				Config: []model.Field{f("store", "db", "prs"), f("key", "key", "branch"), f("set", "file", "last_pr_url")}},
-			{ID: "sf", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Mark Failed", X: 960, Y: 460,
-				Config: []model.Field{f("set", "github", "failure"), f("notify", "user", "maintainers")}},
-		},
-		Edges: []model.Edge{
-			{From: "t1", To: "a1"},
-			{From: "a1", To: "pr", Label: "approved"},
-			{From: "pr", To: "rec", Label: "success"},
-			{From: "pr", To: "sf", Label: "failed"},
-		},
-	}
-}
 
-// PRReviewProjectID holds the agent PR-review + human-approval workflow.
-const PRReviewProjectID = "pr-review"
-
-// PRReviewWorkflow is the "agent reviews a real PR, a human approves, then it
-// merges" flow. It is driven by a GitHub pull_request webhook: the payload's repo
-// and PR number flow into every node via ${input.*}. Inert until configured — set
-// a `github_token` secret (PR read/write + Contents: write to merge) and, for a
-// real LLM review, an `llm_key` secret (otherwise the review step is simulated).
-func PRReviewWorkflow() model.Workflow {
-	return model.Workflow{
-		ID:        "wf_pr_review",
-		ProjectID: PRReviewProjectID,
-		Name:      "PR Review · Agent + Human",
-		Nodes: []model.Node{
-			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "On Pull Request", X: 40, Y: 320,
-				Config: []model.Field{f("on", "github", "pull_request"), f("hook", "webhook", "POST /api/hooks/wf_pr_review?token=…")}},
-			// Only review on opened/reopened/synchronize — so a merge (closed) event
-			// doesn't start yet another run. Other actions skip and the run ends.
-			{ID: "flt", Type: "filter", Icon: "branch", Kind: model.KindStep, Title: "On opened / updated", X: 300, Y: 320,
+			// ── Branch B: review + approve + merge on a pull_request event ──
+			{ID: "fr", Type: "filter", Icon: "branch", Kind: model.KindStep, Title: "On opened / updated", X: 300, Y: 470,
 				Config: []model.Field{f("value", "key", "${input.action}"), f("in", "branch", "opened, reopened, synchronize")}},
-			{ID: "rev", Type: "github_review", Icon: "agent", Kind: model.KindStep, Title: "Agent Review", X: 560, Y: 320,
+			{ID: "rev", Type: "github_review", Icon: "agent", Kind: model.KindStep, Title: "Agent Review", X: 560, Y: 470,
 				Config: []model.Field{
 					f("owner", "github", "${input.repository.owner.login}"),
 					f("repo", "github", "${input.repository.name}"),
@@ -120,9 +98,9 @@ func PRReviewWorkflow() model.Workflow {
 					f("api_key", "key", "${secret:llm_key}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 840, Y: 320,
+			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 840, Y: 470,
 				Config: []model.Field{f("approvers", "user", "maintainers"), f("timeout", "clock", "1d")}},
-			{ID: "cmt", Type: "github_comment", Icon: "github", Kind: model.KindStep, Title: "Post Review", X: 1120, Y: 200,
+			{ID: "cmt", Type: "github_comment", Icon: "github", Kind: model.KindStep, Title: "Post Review", X: 1120, Y: 360,
 				Config: []model.Field{
 					f("owner", "github", "${input.repository.owner.login}"),
 					f("repo", "github", "${input.repository.name}"),
@@ -130,7 +108,7 @@ func PRReviewWorkflow() model.Workflow {
 					f("body", "file", "🤖 Agent review:\n\n${memory.review}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "merge", Type: "github_merge", Icon: "github", Kind: model.KindStep, Title: "Merge PR", X: 1400, Y: 200,
+			{ID: "merge", Type: "github_merge", Icon: "github", Kind: model.KindStep, Title: "Merge PR", X: 1400, Y: 360,
 				Config: []model.Field{
 					f("owner", "github", "${input.repository.owner.login}"),
 					f("repo", "github", "${input.repository.name}"),
@@ -138,12 +116,15 @@ func PRReviewWorkflow() model.Workflow {
 					f("method", "key", "squash"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "sf", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Changes Requested", X: 1120, Y: 460,
+			{ID: "sf", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Changes Requested", X: 1120, Y: 580,
 				Config: []model.Field{f("set", "github", "changes_requested"), f("notify", "user", "author")}},
 		},
 		Edges: []model.Edge{
-			{From: "t1", To: "flt"},
-			{From: "flt", To: "rev", Label: "success"},
+			{From: "t1", To: "fo"},
+			{From: "t1", To: "fr"},
+			{From: "fo", To: "pr", Label: "success"},
+			{From: "pr", To: "rec", Label: "success"},
+			{From: "fr", To: "rev", Label: "success"},
 			{From: "rev", To: "appr", Label: "success"},
 			{From: "rev", To: "sf", Label: "failed"},
 			{From: "appr", To: "cmt", Label: "approved"},

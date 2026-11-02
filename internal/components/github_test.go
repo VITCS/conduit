@@ -119,3 +119,16 @@ func TestVarExpansion(t *testing.T) {
 		t.Fatalf("var expand = %q, want acme/x", got)
 	}
 }
+
+func TestFilterNotEquals(t *testing.T) {
+	// manual-open payload: branch present -> pass
+	r := For("filter")(node("filter", gf("value", "${input.branch}"), gf("not_empty", "true")), &model.Run{Input: map[string]any{"branch": "feature/x"}})
+	if r.Outcome != model.StatusSuccess {
+		t.Fatalf("branch present should pass, got %s", r.Outcome)
+	}
+	// PR-event payload: no branch field -> value empty -> skip
+	r2 := For("filter")(node("filter", gf("value", "${input.branch}"), gf("not_empty", "true")), &model.Run{Input: map[string]any{"action": "opened"}})
+	if r2.Outcome != model.StatusSkipped {
+		t.Fatalf("no branch should skip, got %s", r2.Outcome)
+	}
+}
