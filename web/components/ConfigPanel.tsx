@@ -66,8 +66,9 @@ export function ConfigPanel(props: { onClose: () => void; onToast: (m: string) =
         <div className="modal-body">
           <div className="hint" style={{ marginTop: -4 }}>
             For the GitHub workflow, set: <button className="linkbtn" onClick={() => setName("owner")}>owner</button>{" "}
-            <button className="linkbtn" onClick={() => setName("repo")}>repo</button>
-            <span> — plus secrets <code>github_token</code> and <code>llm_key</code>.</span>
+            <button className="linkbtn" onClick={() => setName("repo")}>repo</button>{" "}
+            <button className="linkbtn" onClick={() => setName("audit_url")}>audit_url</button>
+            <span> — plus secrets <code>github_token</code>, <code>llm_key</code> and <code>scan_token</code> (for the Security Scan gate).</span>
           </div>
           <div className="cfg-row" style={{ gridTemplateColumns: "1fr 1fr auto" }}>
             <input className="inp mono" placeholder="name (e.g. owner)" value={name} onChange={(e) => setName(e.target.value)} />

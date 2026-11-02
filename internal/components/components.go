@@ -133,6 +133,7 @@ var registry = map[string]Executor{
 	"github_comment": execGitHubComment,
 	"github_review":  execGitHubReview,
 	"github_merge":   execGitHubMerge,
+	"security_scan":  execSecurityScan,
 	"agent":          execAgent,
 	"ssh":            execSSH,
 	"if":             execIf,
