@@ -167,7 +167,9 @@ func callCustom(base, apiKey, modelName, prompt string) (string, int, error) {
 
 var tmplRe = regexp.MustCompile(`\$\{(input|memory)\.([A-Za-z0-9_.\-]+)\}`)
 
-// expandTemplate substitutes ${input.KEY} and ${memory.KEY} from the run.
+// expandTemplate substitutes ${input.KEY} and ${memory.KEY} from the run. KEY may
+// be a dotted path into nested objects, so a webhook payload resolves naturally —
+// e.g. ${input.repository.owner.login} or ${input.pull_request.number}.
 func expandTemplate(run *model.Run, s string) string {
 	if run == nil || !strings.Contains(s, "${") {
 		return s
@@ -181,11 +183,35 @@ func expandTemplate(run *model.Run, s string) string {
 		} else {
 			bag = run.Memory
 		}
-		if v, ok := bag[key]; ok {
+		if v, ok := lookupPath(bag, key); ok {
 			return fmt.Sprintf("%v", v)
 		}
 		return tok
 	})
+}
+
+// lookupPath resolves a dotted key against nested map[string]any objects (the
+// shape JSON unmarshals to). A plain key still works as a single lookup.
+func lookupPath(bag map[string]any, key string) (any, bool) {
+	if bag == nil {
+		return nil, false
+	}
+	if v, ok := bag[key]; ok { // exact (also covers keys that contain dots)
+		return v, true
+	}
+	parts := strings.Split(key, ".")
+	var cur any = bag
+	for _, p := range parts {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur, ok = m[p]
+		if !ok {
+			return nil, false
+		}
+	}
+	return cur, true
 }
 
 func summarize(s string) string {

@@ -105,6 +105,8 @@ var registry = map[string]Executor{
 	"slack":          execSlack,
 	"github_pr":      execGitHubPR,
 	"github_comment": execGitHubComment,
+	"github_review":  execGitHubReview,
+	"github_merge":   execGitHubMerge,
 	"agent":          execAgent,
 	"ssh":            execSSH,
 	"if":             execIf,

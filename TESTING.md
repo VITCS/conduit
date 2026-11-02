@@ -726,6 +726,31 @@ have live modes:
 | `agent` | set `live = true`, `provider`, `model`, `api_key = ${secret:...}` |
 | `github_pr` | opens a **real pull request** (always real; needs `github_token`) |
 | `github_comment` | posts a **real** issue/PR comment (needs `github_token`) |
+| `github_review` | fetches a PR's **real diff** and has an LLM review it (needs `github_token`; set `api_key` for a real review, else simulated) |
+| `github_merge` | **merges** a real PR (needs `github_token` with Contents: write) |
+
+### Agent PR review → human approval → merge (`PR Review` project)
+
+The **PR Review · Agent + Human** workflow (`wf_pr_review`) is the "an agent
+verifies a PR, a human approves, then it merges" flow, driven by a real GitHub
+`pull_request` webhook: `Webhook → Agent Review → Human Approval → Post Review → Merge`.
+
+1. **Secrets** (in the `PR Review` project): add `github_token` (Pull requests:
+   write **and** Contents: write, so it can merge) and, for a real LLM review,
+   `llm_key` (an Anthropic/OpenAI key; without it the review step is simulated).
+2. **Point a GitHub webhook at Conduit.** Mint an API token (`POST /api/tokens`,
+   role `member`), then in the repo → *Settings → Webhooks → Add webhook*:
+   - Payload URL: `https://<your-host>/api/hooks/wf_pr_review?token=<API_TOKEN>`
+   - Content type: `application/json`; events: **Pull requests**.
+3. Open a PR in that repo → a run appears, the **Agent Review** step fetches the
+   diff and posts its verdict to run memory, then the run **waits for approval**.
+   Approve it → it comments the review on the PR and **merges** it.
+
+The repo/number flow in from the webhook payload via nested templating
+(`${input.repository.owner.login}`, `${input.repository.name}`, `${input.number}`),
+so the one workflow handles any PR. The **merge only runs after the human approval
+gate** — that gate is the safety control. (Webhook payloads are authenticated by
+the `?token=`; GitHub HMAC-signature verification is a planned hardening.)
 
 ### Open a real GitHub pull request
 

@@ -90,6 +90,64 @@ func OpenPRWorkflow() model.Workflow {
 	}
 }
 
+// PRReviewProjectID holds the agent PR-review + human-approval workflow.
+const PRReviewProjectID = "pr-review"
+
+// PRReviewWorkflow is the "agent reviews a real PR, a human approves, then it
+// merges" flow. It is driven by a GitHub pull_request webhook: the payload's repo
+// and PR number flow into every node via ${input.*}. Inert until configured — set
+// a `github_token` secret (PR read/write + Contents: write to merge) and, for a
+// real LLM review, an `llm_key` secret (otherwise the review step is simulated).
+func PRReviewWorkflow() model.Workflow {
+	return model.Workflow{
+		ID:        "wf_pr_review",
+		ProjectID: PRReviewProjectID,
+		Name:      "PR Review · Agent + Human",
+		Nodes: []model.Node{
+			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "On Pull Request", X: 40, Y: 320,
+				Config: []model.Field{f("on", "github", "pull_request.opened"), f("hook", "webhook", "POST /api/hooks/wf_pr_review?token=…")}},
+			{ID: "rev", Type: "github_review", Icon: "agent", Kind: model.KindStep, Title: "Agent Review", X: 320, Y: 320,
+				Config: []model.Field{
+					f("owner", "github", "${input.repository.owner.login}"),
+					f("repo", "github", "${input.repository.name}"),
+					f("number", "key", "${input.number}"),
+					f("provider", "agent", "anthropic"),
+					f("model", "agent", "claude-3-5-sonnet-latest"),
+					f("api_key", "key", "${secret:llm_key}"),
+					f("token", "key", "${secret:github_token}"),
+				}},
+			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 620, Y: 320,
+				Config: []model.Field{f("approvers", "user", "maintainers"), f("timeout", "clock", "1d")}},
+			{ID: "cmt", Type: "github_comment", Icon: "github", Kind: model.KindStep, Title: "Post Review", X: 910, Y: 200,
+				Config: []model.Field{
+					f("owner", "github", "${input.repository.owner.login}"),
+					f("repo", "github", "${input.repository.name}"),
+					f("number", "key", "${input.number}"),
+					f("body", "file", "🤖 Agent review:\n\n${memory.review}"),
+					f("token", "key", "${secret:github_token}"),
+				}},
+			{ID: "merge", Type: "github_merge", Icon: "github", Kind: model.KindStep, Title: "Merge PR", X: 1200, Y: 200,
+				Config: []model.Field{
+					f("owner", "github", "${input.repository.owner.login}"),
+					f("repo", "github", "${input.repository.name}"),
+					f("number", "key", "${input.number}"),
+					f("method", "key", "squash"),
+					f("token", "key", "${secret:github_token}"),
+				}},
+			{ID: "sf", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Changes Requested", X: 910, Y: 460,
+				Config: []model.Field{f("set", "github", "changes_requested"), f("notify", "user", "author")}},
+		},
+		Edges: []model.Edge{
+			{From: "t1", To: "rev"},
+			{From: "rev", To: "appr", Label: "success"},
+			{From: "rev", To: "sf", Label: "failed"},
+			{From: "appr", To: "cmt", Label: "approved"},
+			{From: "appr", To: "sf", Label: "failed"},
+			{From: "cmt", To: "merge", Label: "success"},
+		},
+	}
+}
+
 // FactoryProjectID is the project that holds the AI Factory sample workflow.
 const FactoryProjectID = "ai-factory"
 

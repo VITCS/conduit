@@ -113,6 +113,15 @@ func run() error {
 			return err
 		}
 	}
+	// Seed the "PR Review · Agent + Human" workflow in its own project.
+	if _, ok, _ := st.GetProject(seed.PRReviewProjectID); !ok {
+		_ = st.CreateProject(model.Project{ID: seed.PRReviewProjectID, Name: "PR Review", CreatedAt: time.Now()})
+	}
+	if _, ok, _ := st.GetWorkflow(seed.PRReviewWorkflow().ID); !ok {
+		if err := st.PutWorkflow(seed.PRReviewWorkflow()); err != nil {
+			return err
+		}
+	}
 
 	ui, err := fs.Sub(webFS, "web/out")
 	if err != nil {
