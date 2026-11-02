@@ -46,7 +46,7 @@ func controlSSRF(_, address string, _ syscall.RawConn) error {
 	return nil
 }
 
-// liveHTTPClient performs real outbound requests for http/slack/agent nodes,
+// liveHTTPClient performs real outbound requests for http/slack/github nodes,
 // with an SSRF guard at dial time.
 var liveHTTPClient = &http.Client{
 	Timeout: 10 * time.Second,
@@ -54,6 +54,18 @@ var liveHTTPClient = &http.Client{
 		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, Control: controlSSRF}).DialContext,
 		TLSHandshakeTimeout: 10 * time.Second,
 		MaxIdleConns:        50,
+	},
+}
+
+// llmHTTPClient is used for LLM provider calls (agent / github_review), which
+// routinely take far longer than a normal API request to return the first byte.
+// Same SSRF guard, but a generous overall timeout.
+var llmHTTPClient = &http.Client{
+	Timeout: 120 * time.Second,
+	Transport: &http.Transport{
+		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, Control: controlSSRF}).DialContext,
+		TLSHandshakeTimeout: 10 * time.Second,
+		MaxIdleConns:        20,
 	},
 }
 

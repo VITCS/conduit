@@ -75,7 +75,14 @@ func callLLM(provider, baseURL, apiKey, modelName, prompt string, maxTokens int)
 	}
 }
 
+// postJSON POSTs JSON using the standard (fast) client — for quick API calls.
 func postJSON(url string, headers map[string]string, body any) ([]byte, int, error) {
+	return postJSONWith(liveHTTPClient, url, headers, body)
+}
+
+// postJSONWith POSTs JSON using a caller-chosen client (LLM calls use the
+// long-timeout llmHTTPClient; completions can take tens of seconds).
+func postJSONWith(client *http.Client, url string, headers map[string]string, body any) ([]byte, int, error) {
 	b, _ := json.Marshal(body)
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(b)))
 	if err != nil {
@@ -85,7 +92,7 @@ func postJSON(url string, headers map[string]string, body any) ([]byte, int, err
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := liveHTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -99,7 +106,7 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 		"model": modelName, "max_tokens": maxTokens,
 		"messages": []map[string]any{{"role": "user", "content": prompt}},
 	}
-	raw, status, err := postJSON(strings.TrimRight(base, "/")+"/v1/messages", map[string]string{
+	raw, status, err := postJSONWith(llmHTTPClient, strings.TrimRight(base, "/")+"/v1/messages", map[string]string{
 		"x-api-key": apiKey, "anthropic-version": "2023-06-01",
 	}, body)
 	if err != nil {
@@ -132,7 +139,7 @@ func callOpenAI(base, apiKey, modelName, prompt string) (string, int, error) {
 		"model":    modelName,
 		"messages": []map[string]any{{"role": "user", "content": prompt}},
 	}
-	raw, status, err := postJSON(strings.TrimRight(base, "/")+"/v1/chat/completions", map[string]string{
+	raw, status, err := postJSONWith(llmHTTPClient, strings.TrimRight(base, "/")+"/v1/chat/completions", map[string]string{
 		"Authorization": "Bearer " + apiKey,
 	}, body)
 	if err != nil {
@@ -161,7 +168,7 @@ func callCustom(base, apiKey, modelName, prompt string) (string, int, error) {
 	if apiKey != "" {
 		headers["Authorization"] = "Bearer " + apiKey
 	}
-	raw, status, err := postJSON(base, headers, map[string]any{"model": modelName, "prompt": prompt})
+	raw, status, err := postJSONWith(llmHTTPClient, base, headers, map[string]any{"model": modelName, "prompt": prompt})
 	if err != nil {
 		return "", status, err
 	}
