@@ -1,0 +1,12 @@
+# Local development overrides, auto-loaded by `docker compose up` / `make up`.
+#
+# This publishes the app on a host port so you can open http://localhost:8080.
+# Managed platforms (Coolify, Dokploy, …) deploy with an explicit
+# `-f docker-compose.yml`, so they do NOT load this file — they route to the
+# container over their own proxy instead, avoiding host-port conflicts.
+#
+# Override the host port if 8080 is busy locally:  CONDUIT_HTTP_PORT=8090 make up
+services:
+  app:
+    ports:
+      - "${CONDUIT_HTTP_PORT:-8080}:8080"

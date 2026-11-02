@@ -116,6 +116,21 @@ docker run --rm -p 8080:8080 conduit
 The image is a multi-stage build — Node builds the UI, Go embeds it, and the
 final stage is a distroless, non-root static image containing only the binary.
 
+### Deploying behind a managed platform / reverse proxy (Coolify, Dokploy, …)
+
+`docker-compose.yml` does **not** publish a host port — the app only `expose`s
+`8080` on the Docker network, so the platform's proxy routes to it and there is no
+"port 8080 already allocated" conflict. In the platform:
+
+1. Point the app service's **domain at container port `8080`**.
+2. Set the usual env vars (`CONDUIT_JWT_SECRET`, `CONDUIT_SECRET_KEY`,
+   `CONDUIT_BASE_URL`, and any OAuth credentials).
+
+Local `make up` still opens on the host via `docker-compose.override.yml` (which
+managed platforms ignore, since they deploy with an explicit `-f
+docker-compose.yml`). If a previous failed deploy left an orphaned container
+holding the port, remove it once: `docker rm -f $(docker ps -aq --filter name=app-)`.
+
 ### Configuration
 
 | Variable | Default | Meaning |
@@ -127,7 +142,7 @@ final stage is a distroless, non-root static image containing only the binary.
 | `CONDUIT_ADMIN_EMAIL` | `admin@conduit.local` | bootstrap admin email (created only if there are no users) |
 | `CONDUIT_ADMIN_PASSWORD` | `conduit` | bootstrap admin password — change it after first login |
 | `CONDUIT_ALLOW_SIGNUP` | `true` | allow self-serve account creation (`POST /api/auth/register`); set `false` for admin-provisioned accounts only |
-| `CONDUIT_HTTP_PORT` | `8080` | host port the Docker app publishes (set to a free port if 8080 is taken, e.g. behind a reverse proxy); the container always listens on 8080 |
+| `CONDUIT_HTTP_PORT` | `8080` | **local only** — host port published by `docker-compose.override.yml` for `make up` (set if 8080 is busy locally). Managed deploys don't publish a host port; they route to container port 8080. |
 | `CONDUIT_BASE_URL` | _(derived)_ | public origin used to build OAuth redirect URIs (e.g. `https://conduit.example`) |
 | `CONDUIT_GOOGLE_CLIENT_ID` / `CONDUIT_GOOGLE_CLIENT_SECRET` | — | enable **Sign in with Google**; redirect URI `…/api/auth/oauth/google/callback` |
 | `CONDUIT_GITHUB_CLIENT_ID` / `CONDUIT_GITHUB_CLIENT_SECRET` | — | enable **Sign in with GitHub**; redirect URI `…/api/auth/oauth/github/callback` |

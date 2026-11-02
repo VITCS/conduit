@@ -45,13 +45,12 @@ services:
       CONDUIT_GOOGLE_CLIENT_SECRET: "${CONDUIT_GOOGLE_CLIENT_SECRET:-}"
       CONDUIT_GITHUB_CLIENT_ID: "${CONDUIT_GITHUB_CLIENT_ID:-}"
       CONDUIT_GITHUB_CLIENT_SECRET: "${CONDUIT_GITHUB_CLIENT_SECRET:-}"
-    # Host port is overridable so the app can avoid a port already taken on the
-    # server (e.g. behind Coolify/Traefik). Set CONDUIT_HTTP_PORT to a free host
-    # port; the container always listens on 8080 internally. Behind a reverse
-    # proxy that routes over the Docker network you can drop this block entirely
-    # and use `expose: ["8080"]` instead.
-    ports:
-      - "${CONDUIT_HTTP_PORT:-8080}:8080"
+    # No host port is published here on purpose: a managed platform (Coolify,
+    # Dokploy, etc.) routes to the container over the Docker network via its own
+    # reverse proxy, so binding a host port only causes "port already allocated".
+    # The container listens on 8080 — point your platform's domain at port 8080.
+    # Local `docker compose up` / `make up` still publishes it via
+    # docker-compose.override.yml (which managed platforms ignore).
     expose:
       - "8080"
     healthcheck:
