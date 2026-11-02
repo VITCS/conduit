@@ -140,6 +140,14 @@ func run() error {
 		log.Printf("secrets: CONDUIT_SECRET_KEY not set — using an ephemeral key (secrets won't survive restart)")
 	}
 	components.ResolveSecret = secretMgr.Lookup
+	// ${var:NAME} resolves to project config variables (non-secret, set once per project).
+	components.ResolveVar = func(projectID, name string) (string, bool) {
+		v, ok, err := st.GetVar(projectID, name)
+		if err != nil {
+			return "", false
+		}
+		return v, ok
+	}
 
 	// SSRF guard: outbound executors (http/slack/agent) may reach only public
 	// addresses unless explicitly allowed (e.g. local testing / trusted network).

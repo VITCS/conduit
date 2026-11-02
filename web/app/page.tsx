@@ -28,6 +28,7 @@ import { Topbar } from "@/components/Topbar";
 import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
 import { SecretsPanel } from "@/components/SecretsPanel";
+import { ConfigPanel } from "@/components/ConfigPanel";
 import { MembersPanel } from "@/components/MembersPanel";
 import { Landing } from "@/components/Landing";
 import { Auth } from "@/components/Auth";
@@ -92,6 +93,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [railHidden, setRailHidden] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
@@ -278,6 +280,9 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       addLog("info", d.message || "awaiting approval");
       showToast("Approval required");
       notifyApproval(d.message || "A run is waiting for your approval.");
+      // Load memory/outputs now so the agent review + diff are visible while the
+      // run waits for a decision (not only after it finishes).
+      api.getRun(runId).then((full) => applyRun(full)).catch(() => {});
     });
     es.addEventListener("run.finished", (ev) => {
       const d: SSEvent = JSON.parse((ev as MessageEvent).data);
@@ -607,6 +612,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           onSave={save}
           onToggleRail={() => setRailHidden((v) => !v)}
           onOpenSecrets={() => setShowSecrets(true)}
+          onOpenConfig={() => setShowConfig(true)}
           onOpenMembers={() => setShowMembers(true)}
           user={user}
           onSignOut={onSignOut}
@@ -622,6 +628,9 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
               <b>Approval required</b> — “{(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "a step"}”
               is waiting for your decision.
             </span>
+            {memory.review != null && (
+              <button className="btn ghost" onClick={() => setTab("memory")}>View review</button>
+            )}
             <button className="btn ok" data-testid="approve-btn" onClick={() => { focusNode(waitingNode); approve("approved"); }}>Approve</button>
             <button className="btn danger" data-testid="reject-btn" onClick={() => { focusNode(waitingNode); approve("rejected"); }}>Reject</button>
             <button className="btn ghost" onClick={() => focusNode(waitingNode)}>View step</button>
@@ -753,6 +762,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           <Palette hidden={!editMode} onAdd={addComponent} />
         </div>
         {showSecrets && <SecretsPanel onClose={() => setShowSecrets(false)} onToast={showToast} />}
+        {showConfig && <ConfigPanel onClose={() => setShowConfig(false)} onToast={showToast} />}
         {showMembers && <MembersPanel projectId={currentProject} onClose={() => setShowMembers(false)} onToast={showToast} />}
         {toast && <div className="toast">{toast}</div>}
       </div>

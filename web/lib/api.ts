@@ -157,4 +157,14 @@ export const api = {
     }),
   deleteSecret: (name: string) =>
     req<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  // Project config variables (${var:NAME}) — plain, non-secret, set once per project.
+  listVars: () => req<Record<string, string>>("/api/vars"),
+  putVar: (name: string, value: string) =>
+    req<{ ok: boolean }>(`/api/vars/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    }),
+  deleteVar: (name: string) =>
+    req<{ ok: boolean }>(`/api/vars/${encodeURIComponent(name)}`, { method: "DELETE" }),
 };

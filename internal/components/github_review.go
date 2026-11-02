@@ -101,6 +101,12 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 		diff = diff[:maxDiffChars]
 		truncated = true
 	}
+	// A bounded preview of the diff, surfaced in the node output + run memory so a
+	// reviewer can see the changes alongside the review at the approval gate.
+	diffPreview := diff
+	if len(diffPreview) > 6000 {
+		diffPreview = diffPreview[:6000] + "\n… (diff truncated)"
+	}
 
 	apiKey := secretExpand(project, firstNonEmpty(n.Field("api_key"), n.Field("apikey")))
 	provider := firstNonEmpty(n.Field("provider"), "anthropic")
@@ -112,10 +118,10 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 			meta.Title, meta.Additions, meta.Deletions, meta.ChangedFiles)
 		return Result{
 			Outcome: model.StatusSuccess,
-			Output:  map[string]any{"simulated": true, "repo": owner + "/" + repo, "number": number, "title": meta.Title, "confidence": "medium", "review": review},
+			Output:  map[string]any{"simulated": true, "repo": owner + "/" + repo, "number": number, "title": meta.Title, "confidence": "medium", "review": review, "diff_preview": diffPreview},
 			Logs:    []string{"github_review: no api_key — produced a simulated review"},
 			MemoryWrites: map[string]any{
-				"review": review, "review_confidence": "medium",
+				"review": review, "review_confidence": "medium", "diff_preview": diffPreview,
 				"pr_repo": owner + "/" + repo, "pr_number": number,
 			},
 		}
@@ -135,10 +141,10 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 	confidence := parseConfidence(text)
 	return Result{
 		Outcome: model.StatusSuccess,
-		Output:  map[string]any{"repo": owner + "/" + repo, "number": number, "title": meta.Title, "confidence": confidence, "review": text},
+		Output:  map[string]any{"repo": owner + "/" + repo, "number": number, "title": meta.Title, "confidence": confidence, "review": text, "diff_preview": diffPreview},
 		Logs:    []string{fmt.Sprintf("github_review: reviewed %s#%s (confidence %s)", owner+"/"+repo, number, confidence)},
 		MemoryWrites: map[string]any{
-			"review": text, "review_confidence": confidence,
+			"review": text, "review_confidence": confidence, "diff_preview": diffPreview,
 			"pr_repo": owner + "/" + repo, "pr_number": number,
 		},
 	}

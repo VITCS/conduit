@@ -94,6 +94,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/secrets", s.listSecrets)
 	mux.HandleFunc("PUT /api/secrets/{name}", s.putSecret)
 	mux.HandleFunc("DELETE /api/secrets/{name}", s.deleteSecret)
+	mux.HandleFunc("GET /api/vars", s.listVars)
+	mux.HandleFunc("PUT /api/vars/{name}", s.putVar)
+	mux.HandleFunc("DELETE /api/vars/{name}", s.deleteVar)
 	mux.HandleFunc("GET /api/runs", s.listRuns)
 	mux.HandleFunc("POST /api/runs", s.createRun)
 	mux.HandleFunc("GET /api/runs/{id}", s.getRun)
@@ -184,7 +187,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 // isProjectScoped reports whether a path's authorization depends on project
 // membership (as opposed to global, account-level routes).
 func isProjectScoped(path string) bool {
-	for _, pre := range []string{"/api/workflows", "/api/runs", "/api/secrets", "/api/schedules"} {
+	for _, pre := range []string{"/api/workflows", "/api/runs", "/api/secrets", "/api/vars", "/api/schedules"} {
 		if path == pre || strings.HasPrefix(path, pre+"/") {
 			return true
 		}
@@ -755,6 +758,43 @@ func (s *Server) deleteSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Secrets.Delete(projectID(r), r.PathValue("name")); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// --- project config variables (${var:NAME}): plain, non-secret, per project ---
+
+func (s *Server) listVars(w http.ResponseWriter, r *http.Request) {
+	vars, err := s.Store.ListVars(projectID(r))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	writeJSON(w, http.StatusOK, vars)
+}
+
+func (s *Server) putVar(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := s.Store.PutVar(projectID(r), r.PathValue("name"), body.Value); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": r.PathValue("name")})
+}
+
+func (s *Server) deleteVar(w http.ResponseWriter, r *http.Request) {
+	if err := s.Store.DeleteVar(projectID(r), r.PathValue("name")); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

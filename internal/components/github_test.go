@@ -92,3 +92,30 @@ func TestExpandTemplateNestedPath(t *testing.T) {
 		t.Errorf("unknown path = %q, want unchanged", v)
 	}
 }
+
+func TestFilterInList(t *testing.T) {
+	run := &model.Run{Input: map[string]any{"action": "opened"}}
+	pass := For("filter")(node("filter", gf("value", "${input.action}"), gf("in", "opened, reopened, synchronize")), run)
+	if pass.Outcome != model.StatusSuccess {
+		t.Fatalf("opened should pass, got %s", pass.Outcome)
+	}
+	run2 := &model.Run{Input: map[string]any{"action": "closed"}}
+	stop := For("filter")(node("filter", gf("value", "${input.action}"), gf("in", "opened, reopened, synchronize")), run2)
+	if stop.Outcome != model.StatusSkipped {
+		t.Fatalf("closed should skip, got %s", stop.Outcome)
+	}
+}
+
+func TestVarExpansion(t *testing.T) {
+	prev := ResolveVar
+	ResolveVar = func(_, name string) (string, bool) {
+		if name == "owner" {
+			return "acme", true
+		}
+		return "", false
+	}
+	defer func() { ResolveVar = prev }()
+	if got := secretExpand("default", "${var:owner}/x"); got != "acme/x" {
+		t.Fatalf("var expand = %q, want acme/x", got)
+	}
+}

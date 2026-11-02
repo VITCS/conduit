@@ -73,11 +73,25 @@ var llmHTTPClient = &http.Client{
 // in a node's config values, within a project. Nil means no secrets are available.
 var ResolveSecret func(projectID, name string) (string, bool)
 
-var secretRefRe = regexp.MustCompile(`\$\{secret:([A-Za-z0-9_.\-]+)\}`)
+// ResolveVar resolves ${var:NAME} references to project-level config variables
+// (non-secret, plain values set once per project to avoid per-node repetition).
+var ResolveVar func(projectID, name string) (string, bool)
 
-// secretExpand replaces ${secret:NAME} tokens using ResolveSecret, scoped to the
-// run's project. Unknown references are left verbatim so failures are visible.
+var secretRefRe = regexp.MustCompile(`\$\{secret:([A-Za-z0-9_.\-]+)\}`)
+var varRefRe = regexp.MustCompile(`\$\{var:([A-Za-z0-9_.\-]+)\}`)
+
+// secretExpand replaces ${secret:NAME} and ${var:NAME} tokens, scoped to the run's
+// project. Unknown references are left verbatim so failures are visible.
 func secretExpand(projectID, s string) string {
+	if strings.Contains(s, "${var:") && ResolveVar != nil {
+		s = varRefRe.ReplaceAllStringFunc(s, func(tok string) string {
+			name := varRefRe.FindStringSubmatch(tok)[1]
+			if v, ok := ResolveVar(projectID, name); ok {
+				return v
+			}
+			return tok
+		})
+	}
 	if ResolveSecret == nil || !strings.Contains(s, "${secret:") {
 		return s
 	}
@@ -319,22 +333,47 @@ func execIf(n model.Node, _ *model.Run) Result {
 	}
 }
 
-// execFilter passes the branch through when its condition is truthy, otherwise
-// returns a skipped outcome that stops the branch WITHOUT failing the run.
-func execFilter(n model.Node, _ *model.Run) Result {
-	pass := !strings.EqualFold(strings.TrimSpace(n.Field("result")), "false")
-	if pass {
-		return Result{
-			Outcome: model.StatusSuccess,
-			Output:  map[string]any{"condition": n.Field("expr"), "passed": true},
-			Logs:    []string{fmt.Sprintf("filter (%s) => pass", n.Field("expr"))},
+// execFilter passes the branch through when its condition holds, otherwise returns
+// a skipped outcome that stops the branch WITHOUT failing the run. Conditions
+// (most specific first), with `value` templated from ${input.*}/${memory.*}/secrets:
+//   - value + in="a,b,c"      → pass if value is one of the list (case-insensitive)
+//   - value + equals=X        → pass if value == X
+//   - value + not_equals=X    → pass if value != X
+//   - result="false"          → stop (literal fallback, back-compat)
+func execFilter(n model.Node, run *model.Run) Result {
+	project := runProject(run)
+	value := expandTemplate(run, secretExpand(project, n.Field("value")))
+	pass := true
+	reason := n.Field("expr")
+
+	switch {
+	case n.Field("in") != "":
+		reason = fmt.Sprintf("%q in [%s]", value, n.Field("in"))
+		pass = false
+		for _, opt := range strings.Split(n.Field("in"), ",") {
+			if strings.EqualFold(strings.TrimSpace(opt), strings.TrimSpace(value)) {
+				pass = true
+				break
+			}
 		}
+	case n.Field("equals") != "":
+		reason = fmt.Sprintf("%q == %q", value, n.Field("equals"))
+		pass = strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(expandTemplate(run, secretExpand(project, n.Field("equals")))))
+	case n.Field("not_equals") != "":
+		reason = fmt.Sprintf("%q != %q", value, n.Field("not_equals"))
+		pass = !strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(expandTemplate(run, secretExpand(project, n.Field("not_equals")))))
+	default:
+		pass = !strings.EqualFold(strings.TrimSpace(n.Field("result")), "false")
 	}
-	return Result{
-		Outcome: model.StatusSkipped,
-		Output:  map[string]any{"condition": n.Field("expr"), "passed": false},
-		Logs:    []string{fmt.Sprintf("filter (%s) => stop", n.Field("expr"))},
+
+	if pass {
+		return Result{Outcome: model.StatusSuccess,
+			Output: map[string]any{"condition": reason, "value": value, "passed": true},
+			Logs:   []string{fmt.Sprintf("filter %s => pass", reason)}}
 	}
+	return Result{Outcome: model.StatusSkipped,
+		Output: map[string]any{"condition": reason, "value": value, "passed": false},
+		Logs:   []string{fmt.Sprintf("filter %s => stop", reason)}}
 }
 
 // execMerge is a pass-through join point. True join semantics (wait for all

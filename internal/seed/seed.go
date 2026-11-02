@@ -68,8 +68,8 @@ func OpenPRWorkflow() model.Workflow {
 				Config: []model.Field{f("approvers", "user", "maintainers"), f("timeout", "clock", "1d")}},
 			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 650, Y: 320,
 				Config: []model.Field{
-					f("owner", "github", "your-org"),
-					f("repo", "github", "your-repo"),
+					f("owner", "github", "${var:owner}"),
+					f("repo", "github", "${var:repo}"),
 					f("head", "branch", "${input.branch}"),
 					f("base", "branch", "main"),
 					f("title", "file", "Automated PR: ${input.branch}"),
@@ -105,8 +105,12 @@ func PRReviewWorkflow() model.Workflow {
 		Name:      "PR Review · Agent + Human",
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "On Pull Request", X: 40, Y: 320,
-				Config: []model.Field{f("on", "github", "pull_request.opened"), f("hook", "webhook", "POST /api/hooks/wf_pr_review?token=…")}},
-			{ID: "rev", Type: "github_review", Icon: "agent", Kind: model.KindStep, Title: "Agent Review", X: 320, Y: 320,
+				Config: []model.Field{f("on", "github", "pull_request"), f("hook", "webhook", "POST /api/hooks/wf_pr_review?token=…")}},
+			// Only review on opened/reopened/synchronize — so a merge (closed) event
+			// doesn't start yet another run. Other actions skip and the run ends.
+			{ID: "flt", Type: "filter", Icon: "branch", Kind: model.KindStep, Title: "On opened / updated", X: 300, Y: 320,
+				Config: []model.Field{f("value", "key", "${input.action}"), f("in", "branch", "opened, reopened, synchronize")}},
+			{ID: "rev", Type: "github_review", Icon: "agent", Kind: model.KindStep, Title: "Agent Review", X: 560, Y: 320,
 				Config: []model.Field{
 					f("owner", "github", "${input.repository.owner.login}"),
 					f("repo", "github", "${input.repository.name}"),
@@ -116,9 +120,9 @@ func PRReviewWorkflow() model.Workflow {
 					f("api_key", "key", "${secret:llm_key}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 620, Y: 320,
+			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 840, Y: 320,
 				Config: []model.Field{f("approvers", "user", "maintainers"), f("timeout", "clock", "1d")}},
-			{ID: "cmt", Type: "github_comment", Icon: "github", Kind: model.KindStep, Title: "Post Review", X: 910, Y: 200,
+			{ID: "cmt", Type: "github_comment", Icon: "github", Kind: model.KindStep, Title: "Post Review", X: 1120, Y: 200,
 				Config: []model.Field{
 					f("owner", "github", "${input.repository.owner.login}"),
 					f("repo", "github", "${input.repository.name}"),
@@ -126,7 +130,7 @@ func PRReviewWorkflow() model.Workflow {
 					f("body", "file", "🤖 Agent review:\n\n${memory.review}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "merge", Type: "github_merge", Icon: "github", Kind: model.KindStep, Title: "Merge PR", X: 1200, Y: 200,
+			{ID: "merge", Type: "github_merge", Icon: "github", Kind: model.KindStep, Title: "Merge PR", X: 1400, Y: 200,
 				Config: []model.Field{
 					f("owner", "github", "${input.repository.owner.login}"),
 					f("repo", "github", "${input.repository.name}"),
@@ -134,11 +138,12 @@ func PRReviewWorkflow() model.Workflow {
 					f("method", "key", "squash"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "sf", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Changes Requested", X: 910, Y: 460,
+			{ID: "sf", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Changes Requested", X: 1120, Y: 460,
 				Config: []model.Field{f("set", "github", "changes_requested"), f("notify", "user", "author")}},
 		},
 		Edges: []model.Edge{
-			{From: "t1", To: "rev"},
+			{From: "t1", To: "flt"},
+			{From: "flt", To: "rev", Label: "success"},
 			{From: "rev", To: "appr", Label: "success"},
 			{From: "rev", To: "sf", Label: "failed"},
 			{From: "appr", To: "cmt", Label: "approved"},

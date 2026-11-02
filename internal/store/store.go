@@ -62,6 +62,13 @@ type Store interface {
 	ListSecretNames(projectID string) ([]string, error)
 	DeleteSecret(projectID, name string) error
 
+	// Project config variables: non-secret, plain key/value set once per project
+	// (e.g. owner/repo/model) and referenced in node config as ${var:NAME}.
+	PutVar(projectID, name, value string) error
+	GetVar(projectID, name string) (string, bool, error)
+	ListVars(projectID string) (map[string]string, error)
+	DeleteVar(projectID, name string) error
+
 	// Users & API tokens (authentication).
 	CreateUser(u model.User) error
 	GetUserByEmail(email string) (model.User, bool, error)
@@ -97,6 +104,7 @@ type Mem struct {
 	claimedBy  map[string]string             // runID -> workerID
 	leaseExp   map[string]time.Time          // runID -> lease expiry
 	secrets    map[string][]byte             // key: projectID\x00name
+	vars       map[string]string             // key: projectID\x00name
 	users      map[string]model.User         // by ID
 	identities map[string]model.UserIdentity // key: provider\x00subject
 	tokens     map[string]model.APIToken     // by ID
@@ -114,6 +122,7 @@ func NewMem() *Mem {
 		claimedBy:  map[string]string{},
 		leaseExp:   map[string]time.Time{},
 		secrets:    map[string][]byte{},
+		vars:       map[string]string{},
 		users:      map[string]model.User{},
 		identities: map[string]model.UserIdentity{},
 		tokens:     map[string]model.APIToken{},
@@ -375,6 +384,40 @@ func (s *Mem) DeleteSecret(projectID, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.secrets, mkey(projectID, name))
+	return nil
+}
+
+func (s *Mem) PutVar(projectID, name, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.vars[mkey(projectID, name)] = value
+	return nil
+}
+
+func (s *Mem) GetVar(projectID, name string) (string, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.vars[mkey(projectID, name)]
+	return v, ok, nil
+}
+
+func (s *Mem) ListVars(projectID string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]string{}
+	prefix := projectID + "\x00"
+	for k, v := range s.vars {
+		if strings.HasPrefix(k, prefix) {
+			out[strings.TrimPrefix(k, prefix)] = v
+		}
+	}
+	return out, nil
+}
+
+func (s *Mem) DeleteVar(projectID, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.vars, mkey(projectID, name))
 	return nil
 }
 

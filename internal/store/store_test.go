@@ -271,3 +271,20 @@ func TestUserIdentityLinking(t *testing.T) {
 		t.Fatalf("GetUserByIdentity = %+v ok=%v, want usr_1", got, ok)
 	}
 }
+
+func TestProjectVars(t *testing.T) {
+	st := NewMem()
+	if err := st.PutVar("p1", "owner", "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok, _ := st.GetVar("p1", "owner"); !ok || v != "acme" {
+		t.Fatalf("GetVar = %q %v", v, ok)
+	}
+	if v, _ := st.ListVars("p1"); v["owner"] != "acme" {
+		t.Fatalf("ListVars = %v", v)
+	}
+	// isolated per project
+	if _, ok, _ := st.GetVar("p2", "owner"); ok {
+		t.Error("var leaked across projects")
+	}
+}

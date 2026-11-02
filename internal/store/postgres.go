@@ -63,6 +63,13 @@ CREATE TABLE IF NOT EXISTS secrets (
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (project_id, name)
 );
+CREATE TABLE IF NOT EXISTS project_vars (
+    project_id text NOT NULL DEFAULT 'default',
+    name       text NOT NULL,
+    value      text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id, name)
+);
 CREATE TABLE IF NOT EXISTS project_members (
     project_id text NOT NULL,
     user_id    text NOT NULL,
@@ -430,6 +437,45 @@ func (s *Pg) ListSecretNames(projectID string) ([]string, error) {
 
 func (s *Pg) DeleteSecret(projectID, name string) error {
 	_, err := s.db.Exec(`DELETE FROM secrets WHERE project_id=$1 AND name=$2`, projectID, name)
+	return err
+}
+
+func (s *Pg) PutVar(projectID, name, value string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO project_vars (project_id, name, value) VALUES ($1,$2,$3)
+		 ON CONFLICT (project_id, name) DO UPDATE SET value=EXCLUDED.value`,
+		projectID, name, value)
+	return err
+}
+
+func (s *Pg) GetVar(projectID, name string) (string, bool, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM project_vars WHERE project_id=$1 AND name=$2`, projectID, name).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	return v, err == nil, err
+}
+
+func (s *Pg) ListVars(projectID string) (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT name, value FROM project_vars WHERE project_id=$1 ORDER BY name`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var n, v string
+		if err := rows.Scan(&n, &v); err != nil {
+			return nil, err
+		}
+		out[n] = v
+	}
+	return out, rows.Err()
+}
+
+func (s *Pg) DeleteVar(projectID, name string) error {
+	_, err := s.db.Exec(`DELETE FROM project_vars WHERE project_id=$1 AND name=$2`, projectID, name)
 	return err
 }
 
