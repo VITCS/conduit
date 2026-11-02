@@ -105,6 +105,9 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 	if err != nil {
 		return "", status, err
 	}
+	if status < 200 || status >= 300 {
+		return "", status, fmt.Errorf("anthropic %d: %s", status, apiErrSnippet(raw))
+	}
 	var r struct {
 		Content []struct {
 			Type string `json:"type"`
@@ -117,6 +120,9 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 		if c.Type == "text" {
 			sb.WriteString(c.Text)
 		}
+	}
+	if sb.Len() == 0 {
+		return "", status, fmt.Errorf("anthropic returned no text: %s", apiErrSnippet(raw))
 	}
 	return sb.String(), status, nil
 }
@@ -132,6 +138,9 @@ func callOpenAI(base, apiKey, modelName, prompt string) (string, int, error) {
 	if err != nil {
 		return "", status, err
 	}
+	if status < 200 || status >= 300 {
+		return "", status, fmt.Errorf("openai %d: %s", status, apiErrSnippet(raw))
+	}
 	var r struct {
 		Choices []struct {
 			Message struct {
@@ -140,10 +149,10 @@ func callOpenAI(base, apiKey, modelName, prompt string) (string, int, error) {
 		} `json:"choices"`
 	}
 	_ = json.Unmarshal(raw, &r)
-	if len(r.Choices) > 0 {
+	if len(r.Choices) > 0 && r.Choices[0].Message.Content != "" {
 		return r.Choices[0].Message.Content, status, nil
 	}
-	return "", status, nil
+	return "", status, fmt.Errorf("openai returned no text: %s", apiErrSnippet(raw))
 }
 
 // callCustom posts {prompt} and expects {text} — for self-hosted/gateway models.
@@ -156,11 +165,30 @@ func callCustom(base, apiKey, modelName, prompt string) (string, int, error) {
 	if err != nil {
 		return "", status, err
 	}
+	if status < 200 || status >= 300 {
+		return "", status, fmt.Errorf("custom llm %d: %s", status, apiErrSnippet(raw))
+	}
 	var r struct {
 		Text string `json:"text"`
 	}
 	_ = json.Unmarshal(raw, &r)
+	if r.Text == "" {
+		return "", status, fmt.Errorf("custom llm returned no text: %s", apiErrSnippet(raw))
+	}
 	return r.Text, status, nil
+}
+
+// apiErrSnippet returns a short, single-line excerpt of an API error body for logs.
+func apiErrSnippet(raw []byte) string {
+	s := strings.TrimSpace(string(raw))
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > 300 {
+		s = s[:300] + "…"
+	}
+	if s == "" {
+		return "(empty body)"
+	}
+	return s
 }
 
 // --- prompt templating ---
