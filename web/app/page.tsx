@@ -240,55 +240,62 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       setRunId(run.id);
       setRunLabel(run.title);
       setRunMeta(run.id);
-      esRef.current?.close();
-      const es = new EventSource(api.eventsURL(run.id));
-      esRef.current = es;
-      setConn("live");
-      const addLog = (level: string, msg: string) =>
-        setLogs((l) => [...l, { t: new Date().toLocaleTimeString("en-GB", { hour12: false }), level, msg }]);
-      es.addEventListener("run.started", () => addLog("info", "Run " + run.id + " started"));
-      es.addEventListener("step.updated", (ev) => {
-        const d: SSEvent = JSON.parse((ev as MessageEvent).data);
-        if (d.node_id && d.status) setStatuses((s) => ({ ...s, [d.node_id!]: d.status! }));
-        if (d.node_id && d.step?.output) setOutputs((o) => ({ ...o, [d.node_id!]: d.step!.output! }));
-      });
-      es.addEventListener("log", (ev) => {
-        const d: SSEvent = JSON.parse((ev as MessageEvent).data);
-        addLog(d.level || "info", d.message || "");
-      });
-      es.addEventListener("run.waiting", (ev) => {
-        const d: SSEvent = JSON.parse((ev as MessageEvent).data);
-        if (d.node_id) {
-          setStatuses((s) => ({ ...s, [d.node_id!]: "waiting" }));
-          setWaitingNode(d.node_id);
-          setSelected(d.node_id);
-        }
-        addLog("info", d.message || "awaiting approval");
-        showToast("Approval required");
-        notifyApproval(d.message || "A run is waiting for your approval.");
-      });
-      es.addEventListener("run.finished", (ev) => {
-        const d: SSEvent = JSON.parse((ev as MessageEvent).data);
-        setRunning(false);
-        setWaitingNode(null);
-        setConn(d.status || "done");
-        es.close();
-        esRef.current = null;
-        addLog(d.status === "failed" ? "fail" : "ok", "Run " + d.status);
-        api.getRun(run.id).then((full) => applyRun(full));
-        showToast("Run " + d.status);
-      });
-      // If the stream drops while a run is still active, reconcile from the
-      // authoritative run state instead of leaving the UI stuck "running".
-      es.onerror = () => {
-        setConn("reconnecting");
-        reconcileRun(run.id);
-      };
+      openStream(run.id);
     } catch (e) {
       setRunning(false);
       showToast("Run failed: " + (e as Error).message);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, wf, nodes, showToast]);
+
+  // openStream subscribes to a run's live events (used by Run and when opening an
+  // in-progress run from history). It drives step statuses, logs, the approval
+  // banner, and finish/reconcile — so a webhook-triggered run can be approved here.
+  const openStream = useCallback((runId: string) => {
+    const addLog = (level: string, msg: string) =>
+      setLogs((l) => [...l, { t: new Date().toLocaleTimeString("en-GB", { hour12: false }), level, msg }]);
+    esRef.current?.close();
+    const es = new EventSource(api.eventsURL(runId));
+    esRef.current = es;
+    setConn("live");
+    es.addEventListener("run.started", () => addLog("info", "Run " + runId + " started"));
+    es.addEventListener("step.updated", (ev) => {
+      const d: SSEvent = JSON.parse((ev as MessageEvent).data);
+      if (d.node_id && d.status) setStatuses((s) => ({ ...s, [d.node_id!]: d.status! }));
+      if (d.node_id && d.step?.output) setOutputs((o) => ({ ...o, [d.node_id!]: d.step!.output! }));
+    });
+    es.addEventListener("log", (ev) => {
+      const d: SSEvent = JSON.parse((ev as MessageEvent).data);
+      addLog(d.level || "info", d.message || "");
+    });
+    es.addEventListener("run.waiting", (ev) => {
+      const d: SSEvent = JSON.parse((ev as MessageEvent).data);
+      if (d.node_id) {
+        setStatuses((s) => ({ ...s, [d.node_id!]: "waiting" }));
+        setWaitingNode(d.node_id);
+        setSelected(d.node_id);
+      }
+      addLog("info", d.message || "awaiting approval");
+      showToast("Approval required");
+      notifyApproval(d.message || "A run is waiting for your approval.");
+    });
+    es.addEventListener("run.finished", (ev) => {
+      const d: SSEvent = JSON.parse((ev as MessageEvent).data);
+      setRunning(false);
+      setWaitingNode(null);
+      setConn(d.status || "done");
+      es.close();
+      esRef.current = null;
+      addLog(d.status === "failed" ? "fail" : "ok", "Run " + d.status);
+      api.getRun(runId).then((full) => applyRun(full));
+      showToast("Run " + d.status);
+    });
+    es.onerror = () => {
+      setConn("reconnecting");
+      reconcileRun(runId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showToast, notifyApproval]);
 
   function applyRun(full: Run) {
     const st: Record<string, Status> = {};
@@ -552,10 +559,23 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         applyRun(full);
         setShowHistory(false);
         setTab("canvas");
+        // If the run is still in flight (e.g. a webhook-triggered run waiting at an
+        // approval gate), re-attach the live stream so the approval banner + Approve
+        // button appear and updates flow. Otherwise leave it as a static replay.
+        if (!TERMINAL.includes(full.status)) {
+          const wn = Object.entries(full.steps || {}).find(([, s]) => s.status === "waiting")?.[0] || null;
+          setRunning(true);
+          if (wn) { setWaitingNode(wn); setSelected(wn); }
+          openStream(id);
+        } else {
+          setRunning(false);
+          setWaitingNode(null);
+        }
       } catch (e) {
         showToast("Could not load run: " + (e as Error).message);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [showToast],
   );
 
