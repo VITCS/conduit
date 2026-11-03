@@ -21,7 +21,12 @@ services:
     # Not published by default; the app reaches it over the compose network.
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Public origin for SEO tags (canonical URL, sitemap, social images).
+        # Set NEXT_PUBLIC_SITE_URL in your shell or .env to your real domain.
+        NEXT_PUBLIC_SITE_URL: "${NEXT_PUBLIC_SITE_URL:-}"
     depends_on:
       db:
         condition: service_healthy

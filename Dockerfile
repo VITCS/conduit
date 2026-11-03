@@ -6,6 +6,11 @@ WORKDIR /app/web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci || npm install
 COPY web/ ./
+# Public origin baked into SEO tags (canonical URL, sitemap, OG/Twitter image
+# URLs). Set it to your deployed domain so Google indexes the right host:
+#   docker build --build-arg NEXT_PUBLIC_SITE_URL=https://conduit.yourco.com .
+ARG NEXT_PUBLIC_SITE_URL
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 RUN npm run build
 
 # ---- Stage 2: build the Go binary with the UI embedded ----
