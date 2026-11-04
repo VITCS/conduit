@@ -71,6 +71,7 @@ export interface SSEvent {
   status?: Status;
   level?: string;
   message?: string;
+  detail?: string;
   step?: StepRun;
   run?: Run;
   time: string;

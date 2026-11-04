@@ -214,6 +214,10 @@ func apiErrSnippet(raw []byte) string {
 
 var tmplRe = regexp.MustCompile(`\$\{(input|memory)\.([A-Za-z0-9_.\-]+)\}`)
 
+// Render substitutes ${input.KEY} / ${memory.KEY} against a run (no secrets). It
+// is the exported form used by the engine to render approval summaries.
+func Render(run *model.Run, s string) string { return expandTemplate(run, s) }
+
 // expandTemplate substitutes ${input.KEY} and ${memory.KEY} from the run. KEY may
 // be a dotted path into nested objects, so a webhook payload resolves naturally —
 // e.g. ${input.repository.owner.login} or ${input.pull_request.number}.

@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -426,11 +427,24 @@ func (e *Engine) runApproval(ctx context.Context, runID string, node model.Node)
 		e.mu.Unlock()
 	}()
 
-	e.setStep(runID, node.ID, model.StatusWaiting, nil)
 	snap, _, _ := e.store.MutateRun(runID, func(r *model.Run) { r.Status = model.StatusWaiting })
+	// Render the agent's suggestion (the node's templated summary) so the approver
+	// sees what they're approving in the notification and banner, not just a title.
+	summaryTmpl := node.Field("summary")
+	if summaryTmpl == "" {
+		summaryTmpl = node.Field("message")
+	}
+	detail := strings.TrimSpace(components.Render(&snap, summaryTmpl))
+	e.setStep(runID, node.ID, model.StatusWaiting, func(s *model.StepRun) {
+		s.Output = map[string]any{"approvers": node.Field("approvers")}
+		if detail != "" {
+			s.Output["summary"] = detail
+		}
+	})
 	e.publish(model.Event{Type: "run.waiting", RunID: runID, NodeID: node.ID,
 		Status: model.StatusWaiting, Level: "info",
 		Message: fmt.Sprintf("%s · awaiting approval from %s", node.Title, node.Field("approvers")),
+		Detail:  detail,
 		Run:     &snap})
 
 	var decision string

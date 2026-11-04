@@ -136,6 +136,7 @@ var registry = map[string]Executor{
 	"security_scan":  execSecurityScan,
 	"jira":           execJira,
 	"notion":         execNotion,
+	"coding_agent":   execCodingAgent,
 	"agent":          execAgent,
 	"ssh":            execSSH,
 	"if":             execIf,

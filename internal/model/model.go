@@ -179,13 +179,16 @@ type AuditEntry struct {
 
 // Event is a message published to live subscribers (the SSE stream).
 type Event struct {
-	Type    string    `json:"type"` // run.started, step.updated, log, run.waiting, run.finished
-	RunID   string    `json:"run_id"`
-	NodeID  string    `json:"node_id,omitempty"`
-	Status  Status    `json:"status,omitempty"`
-	Level   string    `json:"level,omitempty"` // info, run, ok, fail
-	Message string    `json:"message,omitempty"`
-	Step    *StepRun  `json:"step,omitempty"`
-	Run     *Run      `json:"run,omitempty"`
-	Time    time.Time `json:"time"`
+	Type    string `json:"type"` // run.started, step.updated, log, run.waiting, run.finished
+	RunID   string `json:"run_id"`
+	NodeID  string `json:"node_id,omitempty"`
+	Status  Status `json:"status,omitempty"`
+	Level   string `json:"level,omitempty"` // info, run, ok, fail
+	Message string `json:"message,omitempty"`
+	// Detail carries longer human-readable context (e.g. the agent's suggestion
+	// shown at an approval gate), rendered from the node's templated summary.
+	Detail string    `json:"detail,omitempty"`
+	Step   *StepRun  `json:"step,omitempty"`
+	Run    *Run      `json:"run,omitempty"`
+	Time   time.Time `json:"time"`
 }

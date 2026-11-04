@@ -228,13 +228,25 @@ input, select { font-family: inherit; }
 
 /* ---------- persistent approval banner (above the workspace) ---------- */
 .approval-banner {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; flex-direction: column; gap: 8px;
   padding: 10px 16px; z-index: 30;
   background: var(--wait-bg);
   border-bottom: 1px solid color-mix(in srgb, var(--wait) 55%, transparent);
   color: var(--wait-ink); font-size: 13.5px;
 }
+.approval-banner .ab-row { display: flex; align-items: center; gap: 12px; }
 .approval-banner .ab-text { flex: 1 1 auto; }
+.approval-banner .ab-detail { margin: 0; }
+.approval-banner .ab-detail > summary { cursor: pointer; font-weight: 600; opacity: .85; user-select: none; }
+.approval-banner .ab-pre {
+  margin: 8px 0 2px; max-height: 220px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+  padding: 10px 12px; border-radius: 8px;
+  background: color-mix(in srgb, var(--wait) 10%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--wait) 30%, transparent);
+  color: var(--fg);
+}
 .approval-banner .ab-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--wait); flex: 0 0 auto; animation: pulse 1.8s infinite; }
 .approval-banner .btn.ok { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .approval-banner .btn.danger { background: var(--fail); color: #fff; border-color: transparent; }

@@ -24,6 +24,7 @@ export const CATALOG: CatalogItem[] = [
   { type: "github_merge", name: "GitHub merge", icon: "github", kind: "step", desc: "Merge a PR (runs after approval)" },
   { type: "security_scan", name: "Security scan", icon: "approve", kind: "step", desc: "Gate on a security/SQLi scan (blocks merge on High/Critical)" },
   { type: "agent", name: "AI Agent", icon: "agent", kind: "step", desc: "Prompt an LLM (simulated unless live)" },
+  { type: "coding_agent", name: "Coding agent", icon: "code", kind: "step", desc: "Implement a plan on a new branch (needs github_token + llm_key)" },
   { type: "ssh", name: "SSH", icon: "terminal", kind: "step", desc: "Run commands on a host" },
   { type: "if", name: "If", icon: "branch", kind: "step", desc: "Branch on a condition" },
   { type: "filter", name: "Filter", icon: "branch", kind: "step", desc: "Stop a branch unless condition holds" },

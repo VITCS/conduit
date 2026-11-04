@@ -87,6 +87,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [runId, setRunId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [waitingNode, setWaitingNode] = useState<string | null>(null);
+  const [approvalDetail, setApprovalDetail] = useState<string>("");
   const [conn, setConn] = useState("idle");
   const [runLabel, setRunLabel] = useState("No run yet");
   const [runMeta, setRunMeta] = useState("press Run to execute");
@@ -295,9 +296,14 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         setWaitingNode(d.node_id);
         setSelected(d.node_id);
       }
+      setApprovalDetail(d.detail || "");
       addLog("info", d.message || "awaiting approval");
       showToast("Approval required");
-      notifyApproval(d.message || "A run is waiting for your approval.");
+      notifyApproval(
+        d.detail
+          ? `${d.message || "Approval required"}\n\n${d.detail.slice(0, 300)}${d.detail.length > 300 ? "…" : ""}`
+          : d.message || "A run is waiting for your approval.",
+      );
       // Load memory/outputs now so the agent review + diff are visible while the
       // run waits for a decision (not only after it finishes).
       api.getRun(runId).then((full) => applyRun(full)).catch(() => {});
@@ -349,9 +355,12 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           esRef.current?.close();
           esRef.current = null;
         } else if (full.status === "waiting") {
-          const wn = Object.entries(full.steps || {}).find(([, s]) => s.status === "waiting")?.[0] || null;
+          const we = Object.entries(full.steps || {}).find(([, s]) => s.status === "waiting");
+          const wn = we?.[0] || null;
           setRunning(true);
           if (wn) setWaitingNode(wn);
+          const sum = we?.[1]?.output?.summary;
+          setApprovalDetail(typeof sum === "string" ? sum : "");
         } else {
           setRunning(true);
         }
@@ -388,6 +397,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         await api.approve(runId, waitingNode, decision);
         showToast(decision === "approved" ? "Approved" : "Rejected");
         setWaitingNode(null);
+        setApprovalDetail("");
       } catch (e) {
         showToast("Approve failed: " + (e as Error).message);
       }
@@ -586,13 +596,17 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         // approval gate), re-attach the live stream so the approval banner + Approve
         // button appear and updates flow. Otherwise leave it as a static replay.
         if (!TERMINAL.includes(full.status)) {
-          const wn = Object.entries(full.steps || {}).find(([, s]) => s.status === "waiting")?.[0] || null;
+          const we = Object.entries(full.steps || {}).find(([, s]) => s.status === "waiting");
+          const wn = we?.[0] || null;
           setRunning(true);
           if (wn) { setWaitingNode(wn); setSelected(wn); }
+          const sum = we?.[1]?.output?.summary;
+          setApprovalDetail(typeof sum === "string" ? sum : "");
           openStream(id);
         } else {
           setRunning(false);
           setWaitingNode(null);
+          setApprovalDetail("");
         }
       } catch (e) {
         showToast("Could not load run: " + (e as Error).message);
@@ -641,17 +655,25 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         />
         {waitingNode && (
           <div className="approval-banner" role="alert" data-testid="approval-banner">
-            <span className="ab-dot" />
-            <span className="ab-text">
-              <b>Approval required</b> — “{(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "a step"}”
-              is waiting for your decision.
-            </span>
-            {memory.review != null && (
-              <button className="btn ghost" onClick={() => setTab("memory")}>View review</button>
+            <div className="ab-row">
+              <span className="ab-dot" />
+              <span className="ab-text">
+                <b>Approval required</b> — “{(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "a step"}”
+                is waiting for your decision.
+              </span>
+              {(memory.review != null || memory.plan != null) && (
+                <button className="btn ghost" onClick={() => setTab("memory")}>View in memory</button>
+              )}
+              <button className="btn ok" data-testid="approve-btn" onClick={() => { focusNode(waitingNode); approve("approved"); }}>Approve</button>
+              <button className="btn danger" data-testid="reject-btn" onClick={() => { focusNode(waitingNode); approve("rejected"); }}>Reject</button>
+              <button className="btn ghost" onClick={() => focusNode(waitingNode)}>View step</button>
+            </div>
+            {approvalDetail && (
+              <details className="ab-detail" open>
+                <summary>What the agent suggested</summary>
+                <pre className="ab-pre">{approvalDetail}</pre>
+              </details>
             )}
-            <button className="btn ok" data-testid="approve-btn" onClick={() => { focusNode(waitingNode); approve("approved"); }}>Approve</button>
-            <button className="btn danger" data-testid="reject-btn" onClick={() => { focusNode(waitingNode); approve("rejected"); }}>Reject</button>
-            <button className="btn ghost" onClick={() => focusNode(waitingNode)}>View step</button>
           </div>
         )}
         <div className="body">

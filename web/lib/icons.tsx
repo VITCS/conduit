@@ -20,6 +20,7 @@ import {
   Bot,
   Ticket,
   NotebookText,
+  Code2,
   CircleHelp,
   type LucideIcon,
 } from "lucide-react";
@@ -47,6 +48,7 @@ const MAP: Record<string, LucideIcon> = {
   agent: Bot,
   ticket: Ticket,
   notion: NotebookText,
+  code: Code2,
 };
 
 export function Icon({ name, size = 16 }: { name?: string; size?: number }) {
