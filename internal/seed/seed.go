@@ -229,7 +229,7 @@ func FactoryWorkflow() model.Workflow {
 					f("head", "branch", "${memory.work_branch}"),
 					f("base", "branch", "main"),
 					f("title", "file", "feat: ${memory.ticket_key} ${memory.ticket_summary}"),
-					f("body", "file", "Automated by the AI Factory for ${memory.ticket_key}.\n\n${memory.plan}\n\n— Review —\n${memory.review}"),
+					f("body", "file", "Automated by the AI Factory for ${memory.ticket_key}.\n\n— Change plan —\n${memory.change_plan}\n\n— Plan —\n${memory.plan}\n\n— Review —\n${memory.review}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
 			{ID: "post", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Post PR to Ticket", X: 2280, Y: 200,

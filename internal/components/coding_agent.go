@@ -7,10 +7,12 @@
 package components
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	urlpkg "net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -51,42 +53,81 @@ func execCodingAgent(n model.Node, run *model.Run) Result {
 		return failCode("no plan to implement (set plan, e.g. ${memory.plan})")
 	}
 
-	// 1) Ask the model for concrete file changes as strict JSON.
 	provider := strings.ToLower(firstNonEmpty(ex("provider"), "anthropic"))
 	apiKey := secretExpand(project, firstNonEmpty(n.Field("api_key"), n.Field("key")))
+	baseURL := ex("base_url")
+	modelName := ex("model")
 	maxFiles := 10
 	if v, err := strconv.Atoi(n.Field("max_files")); err == nil && v > 0 {
 		maxFiles = v
 	}
-	prompt := fmt.Sprintf(`You are a senior software engineer working in the repo %s/%s.
-Implement the plan below by producing the exact file contents to commit.
-Respond with ONLY a JSON array (no prose, no markdown fences) of objects:
-[{"path":"relative/path.ext","content":"<full file content>"}]
-Include at most %d files. Provide the COMPLETE new content of each file you change.
+	gh := ghClient{base: githubBase(n), owner: owner, repo: repo, headers: githubHeaders(token)}
 
-PLAN:
+	// 1) PLAN: ask the model which files to create vs. modify, with details.
+	planPrompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
+Produce a CHANGE PLAN for the work below: the exact set of files to touch.
+Respond with ONLY a JSON array (no prose, no fences) of objects:
+[{"path":"relative/path.ext","action":"create"|"modify","details":"what changes and why"}]
+List at most %d files. Use "create" only for files that do not exist yet.
+
+WORK:
 %s
 
-IMPLEMENTATION NOTES:
+NOTES:
 %s`, owner, repo, maxFiles, plan, ex("implementation"))
 
-	text, status, err := callLLM(provider, ex("base_url"), apiKey, ex("model"), prompt, 4000)
+	planText, status, err := callLLM(provider, baseURL, apiKey, modelName, planPrompt, 2000)
 	if err != nil || status < 200 || status >= 300 {
-		msg := "request failed"
-		if err != nil {
-			msg = err.Error()
-		}
-		return Result{Outcome: model.StatusFailed,
-			Output: map[string]any{"error": msg, "status_code": status},
-			Logs:   []string{fmt.Sprintf("coding_agent: LLM failed: %s (status %d)", msg, status)}}
+		return llmFail("plan", err, status)
 	}
-	files, perr := parseFileChanges(text, maxFiles)
+	changes, perr := parseChangePlan(planText, maxFiles)
+	if perr != "" {
+		return failCode(perr)
+	}
+	planText = formatChangePlan(changes)
+
+	// 2) CONTEXT: pull current contents of every file marked "modify".
+	var ctxBuf strings.Builder
+	for i := range changes {
+		if !strings.EqualFold(changes[i].Action, "modify") {
+			continue
+		}
+		content, exists := gh.fileContent(changes[i].Path, base)
+		if !exists {
+			changes[i].Action = "create" // listed as modify but absent on base
+			continue
+		}
+		if len(content) > 12000 {
+			content = content[:12000] + "\n… (truncated)"
+		}
+		fmt.Fprintf(&ctxBuf, "\n--- current content of %s ---\n%s\n", changes[i].Path, content)
+	}
+
+	// 3) IMPLEMENT: produce full file contents, given the plan + current contents.
+	implPrompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
+Implement the change plan below. For each file, return its COMPLETE new content —
+for a "modify" file, edit the CURRENT CONTENT shown (do not drop existing code).
+Respond with ONLY a JSON array (no prose, no fences) of objects:
+[{"path":"relative/path.ext","content":"<full file content>"}]
+
+CHANGE PLAN:
+%s
+
+CURRENT FILE CONTENTS:%s
+
+ORIGINAL TASK:
+%s`, owner, repo, planText, firstNonEmpty(ctxBuf.String(), " (all files are new)"), plan)
+
+	implText, status, err := callLLM(provider, baseURL, apiKey, modelName, implPrompt, 4000)
+	if err != nil || status < 200 || status >= 300 {
+		return llmFail("implement", err, status)
+	}
+	files, perr := parseFileChanges(implText, maxFiles)
 	if perr != "" {
 		return failCode(perr)
 	}
 
-	// 2) Commit the files to a fresh branch via the Git Data API.
-	gh := ghClient{base: githubBase(n), owner: owner, repo: repo, headers: githubHeaders(token)}
+	// 4) Commit the files to a fresh branch via the Git Data API.
 	baseSHA, treeSHA, cerr := gh.baseCommit(base)
 	if cerr != "" {
 		return failCode(cerr)
@@ -114,17 +155,86 @@ IMPLEMENTATION NOTES:
 		"base":          base,
 		"commit":        commitSHA,
 		"changed_files": paths,
+		"change_plan":   planText,
 		"repo":          owner + "/" + repo,
 	}
 	return Result{Outcome: model.StatusSuccess, Output: out, MemoryWrites: map[string]any{
 		"work_branch":  branch,
 		"commit_sha":   commitSHA,
 		"changed_list": strings.Join(paths, ", "),
-	}, Logs: []string{fmt.Sprintf("coding_agent: pushed %d file(s) to %s (%s)", len(files), branch, commitSHA[:min(7, len(commitSHA))])}}
+		"change_plan":  planText,
+	}, Logs: []string{
+		"coding_agent: change plan —\n" + planText,
+		fmt.Sprintf("coding_agent: pushed %d file(s) to %s (%s)", len(files), branch, commitSHA[:min(7, len(commitSHA))]),
+	}}
 }
 
 func failCode(msg string) Result {
 	return Result{Outcome: model.StatusFailed, Output: map[string]any{"error": msg}, Logs: []string{"coding_agent: " + msg}}
+}
+
+func llmFail(phase string, err error, status int) Result {
+	msg := "request failed"
+	if err != nil {
+		msg = err.Error()
+	}
+	return Result{Outcome: model.StatusFailed,
+		Output: map[string]any{"error": msg, "status_code": status, "phase": phase},
+		Logs:   []string{fmt.Sprintf("coding_agent: %s LLM failed: %s (status %d)", phase, msg, status)}}
+}
+
+type changeItem struct {
+	Path    string `json:"path"`
+	Action  string `json:"action"`
+	Details string `json:"details"`
+}
+
+// parseChangePlan extracts the JSON array of {path,action,details} describing the
+// files to create/modify, tolerating surrounding prose or ```json fences.
+func parseChangePlan(text string, maxFiles int) ([]changeItem, string) {
+	start := strings.IndexByte(text, '[')
+	end := strings.LastIndexByte(text, ']')
+	if start < 0 || end <= start {
+		return nil, "model did not return a JSON change plan"
+	}
+	var items []changeItem
+	if err := json.Unmarshal([]byte(text[start:end+1]), &items); err != nil {
+		return nil, "could not parse change plan: " + err.Error()
+	}
+	cleaned := items[:0]
+	for _, it := range items {
+		if strings.TrimSpace(it.Path) == "" || strings.Contains(it.Path, "..") || strings.HasPrefix(it.Path, "/") {
+			continue
+		}
+		if !strings.EqualFold(it.Action, "create") && !strings.EqualFold(it.Action, "modify") {
+			it.Action = "modify"
+		}
+		cleaned = append(cleaned, it)
+	}
+	if len(cleaned) == 0 {
+		return nil, "change plan listed no valid files"
+	}
+	if len(cleaned) > maxFiles {
+		cleaned = cleaned[:maxFiles]
+	}
+	return cleaned, ""
+}
+
+// formatChangePlan renders the plan as a readable checklist for memory/logs/PR.
+func formatChangePlan(items []changeItem) string {
+	var b strings.Builder
+	for _, it := range items {
+		verb := "modify"
+		if strings.EqualFold(it.Action, "create") {
+			verb = "create"
+		}
+		fmt.Fprintf(&b, "• [%s] %s", verb, it.Path)
+		if d := strings.TrimSpace(it.Details); d != "" {
+			fmt.Fprintf(&b, " — %s", d)
+		}
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func firstLine(s string) string {
@@ -175,6 +285,34 @@ type ghClient struct {
 
 func (g ghClient) url(path string) string {
 	return fmt.Sprintf("%s/repos/%s/%s/%s", g.base, g.owner, g.repo, path)
+}
+
+// fileContent fetches a file's current content on a ref via the Contents API,
+// base64-decoded. exists is false when the file is absent (404) on that ref.
+func (g ghClient) fileContent(path, ref string) (content string, exists bool) {
+	url := g.url("contents/"+path) + "?ref=" + urlpkg.QueryEscape(ref)
+	raw, status, err := getWithHeader(url, g.headers)
+	if err != nil || status == 404 {
+		return "", false
+	}
+	if status < 200 || status >= 300 {
+		return "", false
+	}
+	var body struct {
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return "", false
+	}
+	if body.Encoding == "base64" {
+		dec, derr := base64.StdEncoding.DecodeString(strings.ReplaceAll(body.Content, "\n", ""))
+		if derr != nil {
+			return "", false
+		}
+		return string(dec), true
+	}
+	return body.Content, true
 }
 
 func (g ghClient) baseCommit(branch string) (commitSHA, treeSHA, errMsg string) {

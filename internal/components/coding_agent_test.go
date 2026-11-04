@@ -2,6 +2,7 @@ package components
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +45,21 @@ func TestParseFileChanges(t *testing.T) {
 	}
 }
 
+func TestParseChangePlan(t *testing.T) {
+	text := "Plan: ```json\n[{\"path\":\"a.go\",\"action\":\"modify\",\"details\":\"add fn\"},{\"path\":\"b.go\",\"action\":\"create\",\"details\":\"new\"},{\"path\":\"../x\",\"action\":\"create\"}]\n```"
+	items, errMsg := parseChangePlan(text, 10)
+	if errMsg != "" {
+		t.Fatalf("unexpected err: %s", errMsg)
+	}
+	if len(items) != 2 {
+		t.Fatalf("want 2 safe items, got %d: %+v", len(items), items)
+	}
+	got := formatChangePlan(items)
+	if !strings.Contains(got, "[modify] a.go — add fn") || !strings.Contains(got, "[create] b.go") {
+		t.Errorf("formatChangePlan = %q", got)
+	}
+}
+
 func TestBranchName(t *testing.T) {
 	if got := branchName("conduit/", "ENG 42: fix!"); got != "conduit/ENG-42-fix" {
 		t.Errorf("branchName = %q", got)
@@ -77,10 +93,17 @@ func TestCodingAgentPushesBranch(t *testing.T) {
 	}))
 	defer gh.Close()
 
-	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Anthropic-shaped response carrying the JSON file array as text.
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		b, _ := io.ReadAll(req.Body)
+		// The plan prompt asks for a CHANGE PLAN; the implement prompt doesn't.
+		var text string
+		if strings.Contains(string(b), "CHANGE PLAN for the work") {
+			text = `[{"path":"README.md","action":"create","details":"add a readme"}]`
+		} else {
+			text = `[{"path":"README.md","content":"# hi"}]`
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"content": []map[string]any{{"type": "text", "text": `[{"path":"README.md","content":"# hi"}]`}},
+			"content": []map[string]any{{"type": "text", "text": text}},
 		})
 	}))
 	defer llm.Close()
