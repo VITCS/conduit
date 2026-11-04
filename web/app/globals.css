@@ -397,6 +397,23 @@ input, select { font-family: inherit; }
 .lx-wf-step { font-family: var(--font-mono); font-size: 11px; color: var(--fg); background: color-mix(in srgb, var(--surface-2) 72%, transparent); border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px; }
 .lx-wf-arrow { color: var(--faint); flex: 0 0 auto; }
 
+/* hero workflow canvas — real node cards on an auto-panning mini graph */
+.hs-box { pointer-events: none; user-select: none; }
+.hs-view { position: relative; height: 362px; overflow: hidden; }
+.hs-view::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(circle, color-mix(in srgb, var(--fg) 7%, transparent) 1px, transparent 1px); background-size: 22px 22px; opacity: .6; }
+.hs-world { position: absolute; top: 50%; left: 0; transform: translate(calc(var(--px,0px) * -1), -50%); transition: transform .9s cubic-bezier(.4,0,.2,1); }
+.hs-edges { position: absolute; top: 0; left: 0; overflow: visible; }
+.hs-edge { stroke: var(--border-strong); stroke-width: 1.6; }
+.hs-edge.flow { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 8; opacity: 0; transition: opacity .45s ease; }
+.hs-edge.flow.on { opacity: .9; animation: cpFlow 1s linear infinite; }
+.hs-elabel { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; transition: fill .3s ease; }
+.hs-elabel.on { fill: var(--ok-bg); stroke: transparent; }
+.hs-elabel.approved.on { fill: var(--wait-bg); }
+.hs-eltext { fill: var(--muted); font-family: var(--font-mono); font-size: 9px; text-anchor: middle; }
+.hs-world .cnode.hs { position: absolute; box-shadow: 0 8px 22px rgba(0,0,0,.4); transition: border-color .2s, box-shadow .2s; }
+.hs-world .cnode.hs .n-cfg { padding-bottom: 8px; }
+@media (max-width: 920px) { .hs-view { height: 320px; } }
+
 /* live log under the graph */
 .cp-log { border-top: 1px solid var(--border); padding: 12px 16px 14px; min-height: 118px; font-family: var(--font-mono); font-size: 12px; line-height: 1.9; background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
 .cp-logline { display: flex; gap: 9px; color: var(--muted); }
@@ -497,8 +514,9 @@ input, select { font-family: inherit; }
 [data-reveal].in { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   [data-reveal] { opacity: 1; transform: none; transition: none; }
-  .lx-grid, .lx-aurora, .lx-track, .cp-flow, .cp-rect, .cp-dot, .cp-ring, .cp-gate .cp-rect, .cp-gate .cp-dot, .lx-live-dot, .lx-ab-dot { animation: none; }
+  .lx-grid, .lx-aurora, .lx-track, .cp-flow, .cp-rect, .cp-dot, .cp-ring, .cp-gate .cp-rect, .cp-gate .cp-dot, .lx-live-dot, .lx-ab-dot, .hs-edge.flow.on { animation: none; }
   .lx-hero-stage, .lx-card { transform: none; }
+  .hs-world { transition: none; }
 }
 
 /* ---------- OAuth sign-in buttons ---------- */

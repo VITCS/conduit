@@ -3,7 +3,8 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import {
   GitBranch, PlayCircle, ShieldCheck, Webhook, KeyRound, Boxes, Activity,
   UserCheck, Github, ArrowRight, Zap, Slack, Bot, Terminal, Check,
-  Ticket, Code2, NotebookText,
+  Ticket, Code2, NotebookText, Globe, FileText, Hash, Database, User, Clock,
+  type LucideIcon,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ helpers */
@@ -92,116 +93,204 @@ function useTilt() {
 }
 
 /* ----------------------------------------------------------- pipelines */
+/* A faithful mini-canvas: the same node cards as the real app, laid out as a
+   graph with curved edges, with a run animating through — the camera auto-pans to
+   follow the active step and the live log stays in sync. */
 
-type PKind = "trigger" | "step" | "gate" | "status";
-interface PNode { id: string; label: string; sub?: string; kind: PKind }
+type NKind = "trigger" | "step" | "gate" | "status";
+type Row = { ic: LucideIcon; k: string; v: string; src?: "config" | "secret" | "event" | "run" };
+interface HNode { id: string; title: string; icon: LucideIcon; kind: NKind; type: string; done?: string; x: number; y: number; rows: Row[] }
+interface HEdge { from: string; to: string; label: string }
+interface HPipe { nodes: HNode[]; edges: HEdge[]; log: { t: string; c: string; s: string }[] }
 
-// The AI Factory: a real ticket becomes a reviewed PR, with two human gates.
-const FACTORY_PIPE: PNode[] = [
-  { id: "tk", label: "Ticket", sub: "Jira · Notion", kind: "trigger" },
-  { id: "ag", label: "Agents", sub: "plan · review", kind: "step" },
-  { id: "a1", label: "Approve", sub: "the plan", kind: "gate" },
-  { id: "co", label: "Coding agent", sub: "writes a branch", kind: "step" },
-  { id: "a2", label: "Approve", sub: "the changes", kind: "gate" },
-  { id: "pr", label: "Open PR", sub: "link to ticket", kind: "status" },
-];
+const CARDW = 212;
+const nodeH = (r: number) => 84 + r * 22;
 
-// The GitHub flow: a PR is reviewed, security-scanned, approved, then merged.
-const GITHUB_PIPE: PNode[] = [
-  { id: "ev", label: "On PR", sub: "webhook", kind: "trigger" },
-  { id: "rv", label: "Agent review", sub: "reads the diff", kind: "step" },
-  { id: "sc", label: "Security scan", sub: "SQLi · high/crit", kind: "gate" },
-  { id: "ap", label: "Approve", sub: "maintainers", kind: "gate" },
-  { id: "mg", label: "Merge", sub: "squash", kind: "status" },
-];
+const FACTORY: HPipe = {
+  nodes: [
+    { id: "tk", title: "Fetch Jira Ticket", icon: Ticket, kind: "trigger", type: "jira", x: 20, y: 120, rows: [
+      { ic: Globe, k: "base_url", v: "acme.atlassian.net", src: "config" },
+      { ic: FileText, k: "jql", v: "status = Ready", src: "config" },
+      { ic: KeyRound, k: "token", v: "••••", src: "secret" },
+    ] },
+    { id: "pl", title: "Refine & Plan", icon: Bot, kind: "step", type: "agent", x: 300, y: 8, rows: [
+      { ic: Bot, k: "provider", v: "anthropic" },
+      { ic: Hash, k: "model", v: "claude-…" },
+      { ic: Database, k: "output", v: "plan", src: "run" },
+    ] },
+    { id: "ap", title: "Approve Changes", icon: UserCheck, kind: "step", type: "approval", x: 580, y: 170, rows: [
+      { ic: User, k: "approvers", v: "maintainers" },
+      { ic: FileText, k: "summary", v: "change plan", src: "run" },
+    ] },
+    { id: "co", title: "Coding Agent", icon: Code2, kind: "step", type: "coding_apply", x: 860, y: 20, rows: [
+      { ic: Github, k: "repo", v: "acme / web", src: "config" },
+      { ic: FileText, k: "changes", v: "change_plan", src: "run" },
+      { ic: KeyRound, k: "token", v: "••••", src: "secret" },
+    ] },
+    { id: "pr", title: "Open Pull Request", icon: Github, kind: "status", type: "github_pr", done: "CREATED", x: 1140, y: 182, rows: [
+      { ic: GitBranch, k: "head", v: "conduit/ENG-482", src: "run" },
+      { ic: GitBranch, k: "base", v: "main" },
+      { ic: KeyRound, k: "token", v: "••••", src: "secret" },
+    ] },
+  ],
+  edges: [
+    { from: "tk", to: "pl", label: "success" }, { from: "pl", to: "ap", label: "success" },
+    { from: "ap", to: "co", label: "approved" }, { from: "co", to: "pr", label: "success" },
+  ],
+  log: [
+    { t: "▶", c: "run", s: "run started · ENG-482 pulled from Jira" },
+    { t: "✓", c: "ok", s: "refine & plan · plan + review drafted" },
+    { t: "⏸", c: "wait", s: "awaiting approval · the changes" },
+    { t: "✓", c: "ok", s: "coding agent · 2 files → conduit/ENG-482" },
+    { t: "✓", c: "ok", s: "PR #129 opened · commented on ENG-482" },
+  ],
+};
 
-function Pipeline({ nodes, animate, label }: { nodes: PNode[]; animate: boolean; label: string }) {
-  const W = 880, Y = 150, RW = 112, RH = 54, margin = 74;
-  const n = nodes.length;
-  const span = W - margin * 2;
-  const laid = nodes.map((nd, i) => ({ ...nd, x: margin + (span * i) / (n - 1), d: i * 1.0 }));
-  const edges = laid.slice(0, -1).map((nd, i) => `M${nd.x + RW / 2},${Y} L${laid[i + 1].x - RW / 2},${Y}`);
-  const tokenPath = `M${laid[0].x},${Y} ` + laid.slice(1).map((p) => `L${p.x},${Y}`).join(" ");
+const GITHUB: HPipe = {
+  nodes: [
+    { id: "ev", title: "GitHub Event", icon: Webhook, kind: "trigger", type: "webhook", x: 20, y: 120, rows: [
+      { ic: Github, k: "on", v: "pull_request", src: "config" },
+      { ic: Webhook, k: "hook", v: "/api/hooks/…" },
+    ] },
+    { id: "rv", title: "Agent Review", icon: Bot, kind: "step", type: "github_review", x: 300, y: 4, rows: [
+      { ic: Github, k: "repo", v: "from event", src: "event" },
+      { ic: Bot, k: "provider", v: "anthropic" },
+      { ic: KeyRound, k: "token", v: "••••", src: "secret" },
+    ] },
+    { id: "sc", title: "Security Scan", icon: ShieldCheck, kind: "step", type: "security_scan", x: 580, y: 170, rows: [
+      { ic: Globe, k: "repo", v: "from event", src: "event" },
+      { ic: KeyRound, k: "token", v: "••••", src: "secret" },
+    ] },
+    { id: "ap", title: "Human Approval", icon: UserCheck, kind: "step", type: "approval", x: 860, y: 28, rows: [
+      { ic: User, k: "approvers", v: "maintainers" },
+      { ic: Clock, k: "timeout", v: "1d" },
+    ] },
+    { id: "mg", title: "Merge PR", icon: Github, kind: "status", type: "github_merge", done: "MERGED", x: 1140, y: 182, rows: [
+      { ic: Hash, k: "number", v: "from event", src: "event" },
+      { ic: GitBranch, k: "method", v: "squash" },
+      { ic: KeyRound, k: "token", v: "••••", src: "secret" },
+    ] },
+  ],
+  edges: [
+    { from: "ev", to: "rv", label: "success" }, { from: "rv", to: "sc", label: "success" },
+    { from: "sc", to: "ap", label: "success" }, { from: "ap", to: "mg", label: "approved" },
+  ],
+  log: [
+    { t: "▶", c: "run", s: "run started · on pull_request #482" },
+    { t: "✓", c: "ok", s: "agent review · posted on #482" },
+    { t: "✓", c: "ok", s: "security scan · 0 critical / 0 high" },
+    { t: "⏸", c: "wait", s: "awaiting approval · maintainers" },
+    { t: "✓", c: "ok", s: "merged · #482 squashed" },
+  ],
+};
 
-  return (
-    <svg className="cp" viewBox={`0 0 ${W} 300`} role="img" aria-label={label}>
-      <defs>
-        <linearGradient id="cp-edge" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="var(--accent)" stopOpacity="0.12" />
-          <stop offset="1" stopColor="var(--accent)" stopOpacity="0.55" />
-        </linearGradient>
-        <filter id="cp-glow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="3.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
+function WorkflowCanvas({ pipe, animate }: { pipe: "factory" | "github"; animate: boolean }) {
+  const data = pipe === "factory" ? FACTORY : GITHUB;
+  const N = data.nodes.length;
+  const viewRef = useRef<HTMLDivElement>(null);
+  const [vw, setVw] = useState(560);
+  const [a, setA] = useState(0);
 
-      {edges.map((d, i) => (
-        <g key={i}>
-          <path d={d} fill="none" stroke="var(--border-strong)" strokeWidth="1.6" />
-          {animate && <path d={d} fill="none" stroke="url(#cp-edge)" strokeWidth="2.2" strokeDasharray="6 10" strokeLinecap="round" className="cp-flow" />}
-        </g>
-      ))}
-
-      {laid.map((nd) => (
-        <g key={nd.id} className={`cp-node cp-${nd.kind} ${nd.kind === "gate" ? "cp-gate" : ""}`} style={{ ["--d" as string]: `${nd.d}s` }}>
-          {nd.kind === "gate" && animate && <circle cx={nd.x} cy={Y} r="26" className="cp-ring" fill="none" />}
-          <rect x={nd.x - RW / 2} y={Y - RH / 2} width={RW} height={RH} rx="11" className="cp-rect" fill="var(--surface)" stroke="var(--border)" />
-          <circle cx={nd.x - RW / 2 + 16} cy={Y - RH / 2 + 15} r="3.5" className="cp-dot" fill="var(--idle)" />
-          <text x={nd.x} y={Y - 2} className="cp-title">{nd.label}</text>
-          {nd.sub && <text x={nd.x} y={Y + 14} className="cp-sub">{nd.sub}</text>}
-        </g>
-      ))}
-
-      {animate && (
-        <circle r="5" fill="var(--accent)" filter="url(#cp-glow)">
-          <animateMotion dur="7s" repeatCount="indefinite" calcMode="linear" path={tokenPath} />
-        </circle>
-      )}
-    </svg>
-  );
-}
-
-/* --------------------------------------------------------------- live log */
-
-type LogLine = { t: string; c: string; s: string };
-
-const FACTORY_LOG: LogLine[] = [
-  { t: "▶", c: "run", s: "run started · ENG-482 pulled from Jira" },
-  { t: "✓", c: "ok", s: "agents · plan + review drafted" },
-  { t: "⏸", c: "wait", s: "awaiting approval · the plan" },
-  { t: "✓", c: "ok", s: "approved · generating changes" },
-  { t: "✓", c: "ok", s: "coding agent · 2 files → conduit/ENG-482" },
-  { t: "⏸", c: "wait", s: "awaiting approval · the changes" },
-  { t: "✓", c: "ok", s: "approved · opening pull request" },
-  { t: "✓", c: "ok", s: "PR #129 opened · commented on ENG-482" },
-];
-
-const GITHUB_LOG: LogLine[] = [
-  { t: "▶", c: "run", s: "run started · on pull_request #482" },
-  { t: "✓", c: "ok", s: "agent review · posted on #482" },
-  { t: "✓", c: "ok", s: "security scan · 0 critical / 0 high" },
-  { t: "⏸", c: "wait", s: "awaiting approval · maintainers" },
-  { t: "✓", c: "ok", s: "approved · merging" },
-  { t: "✓", c: "ok", s: "merged · #482 squashed" },
-];
-
-function LiveLog({ log, animate }: { log: LogLine[]; animate: boolean }) {
-  const [n, setN] = useState(animate ? 1 : log.length);
+  // Reset + drive the run whenever the pipeline or motion pref changes.
   useEffect(() => {
-    setN(animate ? 1 : log.length);
+    setA(animate ? 0 : N - 1);
     if (!animate) return;
-    const id = setInterval(() => setN((v) => (v >= log.length ? 1 : v + 1)), 1100);
+    const id = setInterval(() => setA((v) => (v + 1) % (N + 1)), 1250); // +1 = brief rest at the end
     return () => clearInterval(id);
-  }, [animate, log]);
+  }, [pipe, animate, N]);
+
+  useEffect(() => {
+    const el = viewRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setVw(el.clientWidth));
+    ro.observe(el);
+    setVw(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  const pos = Object.fromEntries(data.nodes.map((n) => [n.id, n]));
+  const worldW = Math.max(...data.nodes.map((n) => n.x + CARDW)) + 40;
+  const worldH = Math.max(...data.nodes.map((n) => n.y + nodeH(n.rows.length))) + 20;
+  const active = Math.min(a, N - 1);
+
+  // Camera pans horizontally so the active node sits near the viewport centre.
+  const focus = data.nodes[animate ? active : 0];
+  const centerX = focus.x + CARDW / 2;
+  const maxPan = Math.max(0, worldW - vw);
+  const panX = Math.min(maxPan, Math.max(0, centerX - vw / 2));
+
+  const status = (i: number): "ok" | "run" | "wait" | "idle" => {
+    if (!animate) return "ok";
+    if (i < active) return "ok";
+    if (i === active) return data.nodes[i].kind === "gate" || data.nodes[i].type === "approval" ? "wait" : "run";
+    return "idle";
+  };
+  const badge = (s: string, n: HNode) =>
+    s === "ok" ? { c: "ok", t: n.done || "DONE" } : s === "run" ? { c: "run", t: "RUNNING" } : s === "wait" ? { c: "wait", t: "WAITING" } : { c: "idle", t: "PENDING" };
+
   return (
-    <div className="cp-log" aria-hidden>
-      {log.slice(0, n).map((l, i) => (
-        <div className="cp-logline" key={i}>
-          <span className={`cp-lt ${l.c}`}>{l.t}</span>
-          <span>{l.s}</span>
-          {animate && i === n - 1 && <span className="cp-cursor" />}
+    <div className="hs-box">
+      <div className="hs-view" ref={viewRef} aria-hidden>
+        <div className="hs-world" style={{ width: worldW, height: worldH, ["--px" as string]: `${panX}px` }}>
+          <svg className="hs-edges" width={worldW} height={worldH} viewBox={`0 0 ${worldW} ${worldH}`}>
+            {data.edges.map((e, i) => {
+              const A = pos[e.from], B = pos[e.to];
+              const sx = A.x + CARDW, sy = A.y + nodeH(A.rows.length) / 2;
+              const tx = B.x, ty = B.y + nodeH(B.rows.length) / 2;
+              const d = `M${sx},${sy} C${sx + 70},${sy} ${tx - 70},${ty} ${tx},${ty}`;
+              const fromIdx = data.nodes.findIndex((n) => n.id === e.from);
+              const on = active > fromIdx;
+              const mx = (sx + tx) / 2, my = (sy + ty) / 2;
+              return (
+                <g key={i}>
+                  <path d={d} className="hs-edge" fill="none" />
+                  <path d={d} className={`hs-edge flow${on ? " on" : ""}`} fill="none" />
+                  <g transform={`translate(${mx},${my})`}>
+                    <rect x={-27} y={-10} width={54} height={20} rx={10} className={`hs-elabel ${e.label}${on ? " on" : ""}`} />
+                    <text x={0} y={4} className="hs-eltext">{e.label}</text>
+                  </g>
+                </g>
+              );
+            })}
+          </svg>
+
+          {data.nodes.map((n, i) => {
+            const s = status(i);
+            const b = badge(s, n);
+            return (
+              <div key={n.id} className={`cnode hs kind-${n.kind}${s === "run" || s === "wait" ? " active" : ""}`} style={{ left: n.x, top: n.y, width: CARDW }}>
+                <div className="n-head">
+                  <span className="n-ico"><n.icon size={14} /></span>
+                  <span className="n-title">{n.title}</span>
+                </div>
+                <div className="n-cfg">
+                  {n.rows.map((r, j) => (
+                    <div className="n-cfg-row" key={j}>
+                      <span className="ic"><r.ic size={11} /></span>
+                      <span><b>{r.k}</b> {r.v}</span>
+                      {r.src && <span className={`src ${r.src}`}>{r.src}</span>}
+                    </div>
+                  ))}
+                </div>
+                <div className="n-foot">
+                  <span className={`badge ${b.c}`}>{b.t}</span>
+                  <span className="n-ref">{n.type}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      ))}
+      </div>
+
+      <div className="cp-log" aria-hidden>
+        {data.log.slice(0, active + 1).map((l, i) => (
+          <div className="cp-logline" key={i}>
+            <span className={`cp-lt ${l.c}`}>{l.t}</span>
+            <span>{l.s}</span>
+            {animate && i === active && <span className="cp-cursor" />}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -252,12 +341,6 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
   const [animate, setAnimate] = useState(true);
   const [pipe, setPipe] = useState<"factory" | "github">("factory");
   const statsRef = useRef<HTMLDivElement>(null);
-  const pipeNodes = pipe === "factory" ? FACTORY_PIPE : GITHUB_PIPE;
-  const pipeLog = pipe === "factory" ? FACTORY_LOG : GITHUB_LOG;
-  const pipeLabel =
-    pipe === "factory"
-      ? "AI Factory pipeline: a Jira or Notion ticket is pulled in, agents plan and review it, a human approves the plan, a coding agent writes a branch, a human approves the changes, and a pull request opens."
-      : "GitHub pipeline: an opened pull request is reviewed by an agent, scanned for security issues, approved by a human, then merged.";
   useReveal();
   useTilt();
   useCountUp(statsRef);
@@ -306,8 +389,7 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
             </div>
             <span className="lx-live"><span className="lx-live-dot" /> live</span>
           </div>
-          <Pipeline nodes={pipeNodes} animate={animate} label={pipeLabel} />
-          <LiveLog log={pipeLog} animate={animate} />
+          <WorkflowCanvas pipe={pipe} animate={animate} />
         </div>
       </section>
 
