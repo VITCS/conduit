@@ -27,44 +27,57 @@ type fileChange struct {
 	Content string `json:"content"`
 }
 
-// execCodingAgent implements the plan on a new branch and returns success with
-// work_branch set in memory. Config: owner, repo, base (default main), token
-// (${secret:github_token}), provider/model/api_key (LLM), plan, implementation,
-// ticket (for branch + commit message), branch_prefix (default conduit/),
-// max_files (default 10), api_base (enterprise).
-func execCodingAgent(n model.Node, run *model.Run) Result {
+// codingCfg is the resolved configuration shared by the coding components.
+type codingCfg struct {
+	owner, repo, base                   string
+	provider, apiKey, baseURL, model    string
+	maxFiles                            int
+	ticket, ticketSummary, branchPrefix string
+	gh                                  ghClient
+	hasToken                            bool
+}
+
+// resolveCoding resolves the common config for a coding node. needToken fails the
+// node when a GitHub token is required (apply/all-in-one) but absent.
+func resolveCoding(n model.Node, run *model.Run, needToken bool) (codingCfg, func(string) string, *Result) {
 	project := runProject(run)
 	ex := func(field string) string { return expandTemplate(run, secretExpand(project, n.Field(field))) }
 
 	owner, repo := ex("owner"), ex("repo")
-	base := firstNonEmpty(ex("base"), "main")
 	if owner == "" || repo == "" || strings.Contains(owner, "${") || strings.Contains(repo, "${") {
-		return failCode("owner and repo are required")
+		r := failCode("owner and repo are required")
+		return codingCfg{}, ex, &r
 	}
-	token, ok := githubToken(n, project)
-	if !ok {
-		return Result{Outcome: model.StatusFailed,
+	cfg := codingCfg{
+		owner: owner, repo: repo,
+		base:          firstNonEmpty(ex("base"), "main"),
+		provider:      strings.ToLower(firstNonEmpty(ex("provider"), "anthropic")),
+		apiKey:        secretExpand(project, firstNonEmpty(n.Field("api_key"), n.Field("key"))),
+		baseURL:       ex("base_url"),
+		model:         ex("model"),
+		maxFiles:      10,
+		ticket:        firstNonEmpty(ex("ticket"), "change"),
+		ticketSummary: ex("ticket_summary"),
+		branchPrefix:  firstNonEmpty(ex("branch_prefix"), "conduit/"),
+	}
+	if v, err := strconv.Atoi(n.Field("max_files")); err == nil && v > 0 {
+		cfg.maxFiles = v
+	}
+	if token, ok := githubToken(n, project); ok {
+		cfg.gh = ghClient{base: githubBase(n), owner: owner, repo: repo, headers: githubHeaders(token)}
+		cfg.hasToken = true
+	} else if needToken {
+		r := Result{Outcome: model.StatusFailed,
 			Output: map[string]any{"error": "no github token", "hint": "store a secret named github_token with contents:write access"},
 			Logs:   []string{"coding_agent: no github token"}}
+		return cfg, ex, &r
 	}
+	return cfg, ex, nil
+}
 
-	plan := ex("plan")
-	if strings.TrimSpace(plan) == "" || strings.Contains(plan, "${memory.") {
-		return failCode("no plan to implement (set plan, e.g. ${memory.plan})")
-	}
-
-	provider := strings.ToLower(firstNonEmpty(ex("provider"), "anthropic"))
-	apiKey := secretExpand(project, firstNonEmpty(n.Field("api_key"), n.Field("key")))
-	baseURL := ex("base_url")
-	modelName := ex("model")
-	maxFiles := 10
-	if v, err := strconv.Atoi(n.Field("max_files")); err == nil && v > 0 {
-		maxFiles = v
-	}
-	gh := ghClient{base: githubBase(n), owner: owner, repo: repo, headers: githubHeaders(token)}
-
-	// 1) PLAN: ask the model which files to create vs. modify, with details.
-	planPrompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
+// planChanges asks the model which files to create vs. modify, with details.
+func (c codingCfg) planChanges(task, notes string) ([]changeItem, *Result) {
+	prompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
 Produce a CHANGE PLAN for the work below: the exact set of files to touch.
 Respond with ONLY a JSON array (no prose, no fences) of objects:
 [{"path":"relative/path.ext","action":"create"|"modify","details":"what changes and why"}]
@@ -74,37 +87,40 @@ WORK:
 %s
 
 NOTES:
-%s`, owner, repo, maxFiles, plan, ex("implementation"))
+%s`, c.owner, c.repo, c.maxFiles, task, notes)
 
-	planText, status, err := callLLM(provider, baseURL, apiKey, modelName, planPrompt, 2000)
+	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, 2000)
 	if err != nil || status < 200 || status >= 300 {
-		return llmFail("plan", err, status)
+		r := llmFail("plan", err, status)
+		return nil, &r
 	}
-	changes, perr := parseChangePlan(planText, maxFiles)
+	items, perr := parseChangePlan(text, c.maxFiles)
 	if perr != "" {
-		return failCode(perr)
+		r := failCode(perr)
+		return nil, &r
 	}
-	planText = formatChangePlan(changes)
+	return items, nil
+}
 
-	// 2) CONTEXT: pull current contents of every file marked "modify".
+// implementChanges pulls current contents for "modify" files (downgrading any
+// that don't exist on base to "create"), then asks the model for full contents.
+func (c codingCfg) implementChanges(items []changeItem, task string) ([]fileChange, *Result) {
 	var ctxBuf strings.Builder
-	for i := range changes {
-		if !strings.EqualFold(changes[i].Action, "modify") {
+	for i := range items {
+		if !strings.EqualFold(items[i].Action, "modify") {
 			continue
 		}
-		content, exists := gh.fileContent(changes[i].Path, base)
+		content, exists := c.gh.fileContent(items[i].Path, c.base)
 		if !exists {
-			changes[i].Action = "create" // listed as modify but absent on base
+			items[i].Action = "create"
 			continue
 		}
 		if len(content) > 12000 {
 			content = content[:12000] + "\n… (truncated)"
 		}
-		fmt.Fprintf(&ctxBuf, "\n--- current content of %s ---\n%s\n", changes[i].Path, content)
+		fmt.Fprintf(&ctxBuf, "\n--- current content of %s ---\n%s\n", items[i].Path, content)
 	}
-
-	// 3) IMPLEMENT: produce full file contents, given the plan + current contents.
-	implPrompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
+	prompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
 Implement the change plan below. For each file, return its COMPLETE new content —
 for a "modify" file, edit the CURRENT CONTENT shown (do not drop existing code).
 Respond with ONLY a JSON array (no prose, no fences) of objects:
@@ -116,47 +132,60 @@ CHANGE PLAN:
 CURRENT FILE CONTENTS:%s
 
 ORIGINAL TASK:
-%s`, owner, repo, planText, firstNonEmpty(ctxBuf.String(), " (all files are new)"), plan)
+%s`, c.owner, c.repo, formatChangePlan(items), firstNonEmpty(ctxBuf.String(), " (all files are new)"), task)
 
-	implText, status, err := callLLM(provider, baseURL, apiKey, modelName, implPrompt, 4000)
+	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, 4000)
 	if err != nil || status < 200 || status >= 300 {
-		return llmFail("implement", err, status)
+		r := llmFail("implement", err, status)
+		return nil, &r
 	}
-	files, perr := parseFileChanges(implText, maxFiles)
+	files, perr := parseFileChanges(text, c.maxFiles)
 	if perr != "" {
-		return failCode(perr)
+		r := failCode(perr)
+		return nil, &r
 	}
+	return files, nil
+}
 
-	// 4) Commit the files to a fresh branch via the Git Data API.
-	baseSHA, treeSHA, cerr := gh.baseCommit(base)
+// commitBranch commits the files to a fresh branch via the Git Data API.
+func (c codingCfg) commitBranch(files []fileChange) (branch, commitSHA string, errRes *Result) {
+	baseSHA, treeSHA, cerr := c.gh.baseCommit(c.base)
 	if cerr != "" {
-		return failCode(cerr)
+		r := failCode(cerr)
+		return "", "", &r
 	}
-	branch := branchName(firstNonEmpty(ex("branch_prefix"), "conduit/"), firstNonEmpty(ex("ticket"), "change"))
-	newTree, cerr := gh.makeTree(treeSHA, files)
+	branch = branchName(c.branchPrefix, c.ticket)
+	newTree, cerr := c.gh.makeTree(treeSHA, files)
 	if cerr != "" {
-		return failCode(cerr)
+		r := failCode(cerr)
+		return "", "", &r
 	}
-	msg := fmt.Sprintf("%s: %s", firstNonEmpty(ex("ticket"), "change"), firstLine(firstNonEmpty(ex("ticket_summary"), "automated change")))
-	commitSHA, cerr := gh.makeCommit(msg, newTree, baseSHA)
+	msg := fmt.Sprintf("%s: %s", c.ticket, firstLine(firstNonEmpty(c.ticketSummary, "automated change")))
+	commitSHA, cerr = c.gh.makeCommit(msg, newTree, baseSHA)
 	if cerr != "" {
-		return failCode(cerr)
+		r := failCode(cerr)
+		return "", "", &r
 	}
-	if cerr := gh.upsertBranch(branch, commitSHA); cerr != "" {
-		return failCode(cerr)
+	if cerr := c.gh.upsertBranch(branch, commitSHA); cerr != "" {
+		r := failCode(cerr)
+		return "", "", &r
 	}
+	return branch, commitSHA, nil
+}
 
+// applyResult builds the common success Result for a committed branch.
+func (c codingCfg) applyResult(branch, commitSHA, planText string, files []fileChange) Result {
 	paths := make([]string, len(files))
 	for i, f := range files {
 		paths[i] = f.Path
 	}
 	out := map[string]any{
 		"work_branch":   branch,
-		"base":          base,
+		"base":          c.base,
 		"commit":        commitSHA,
 		"changed_files": paths,
 		"change_plan":   planText,
-		"repo":          owner + "/" + repo,
+		"repo":          c.owner + "/" + c.repo,
 	}
 	return Result{Outcome: model.StatusSuccess, Output: out, MemoryWrites: map[string]any{
 		"work_branch":  branch,
@@ -164,9 +193,93 @@ ORIGINAL TASK:
 		"changed_list": strings.Join(paths, ", "),
 		"change_plan":  planText,
 	}, Logs: []string{
-		"coding_agent: change plan —\n" + planText,
-		fmt.Sprintf("coding_agent: pushed %d file(s) to %s (%s)", len(files), branch, commitSHA[:min(7, len(commitSHA))]),
+		"coding: change plan —\n" + planText,
+		fmt.Sprintf("coding: pushed %d file(s) to %s (%s)", len(files), branch, commitSHA[:min(7, len(commitSHA))]),
 	}}
+}
+
+// execCodingPlan (coding_plan) runs ONLY the planning phase: it produces the
+// file-level change plan and writes it to memory (change_plan for display,
+// change_plan_json for a downstream coding_apply node) without touching the repo.
+// Put a Human Approval after it to approve the exact file list before any branch.
+func execCodingPlan(n model.Node, run *model.Run) Result {
+	cfg, ex, fail := resolveCoding(n, run, false)
+	if fail != nil {
+		return *fail
+	}
+	task := ex("plan")
+	if strings.TrimSpace(task) == "" || strings.Contains(task, "${memory.") {
+		return failCode("no plan to work from (set plan, e.g. ${memory.plan})")
+	}
+	items, r := cfg.planChanges(task, ex("implementation"))
+	if r != nil {
+		return *r
+	}
+	formatted := formatChangePlan(items)
+	rawJSON, _ := json.Marshal(items)
+	return Result{Outcome: model.StatusSuccess,
+		Output: map[string]any{"change_plan": formatted, "files": len(items), "repo": cfg.owner + "/" + cfg.repo},
+		MemoryWrites: map[string]any{
+			"change_plan":      formatted,
+			"change_plan_json": string(rawJSON),
+		},
+		Logs: []string{"coding_plan: proposed changes —\n" + formatted}}
+}
+
+// execCodingApply (coding_apply) runs the apply phase on an already-approved plan:
+// it reads the structured change plan from memory (change_plan_json), pulls current
+// contents for modified files, has the model produce full file contents, and
+// commits them to a new branch. Config `changes` should be ${memory.change_plan_json}.
+func execCodingApply(n model.Node, run *model.Run) Result {
+	cfg, ex, fail := resolveCoding(n, run, true)
+	if fail != nil {
+		return *fail
+	}
+	changesJSON := firstNonEmpty(ex("changes"), ex("change_plan_json"))
+	if strings.TrimSpace(changesJSON) == "" || strings.Contains(changesJSON, "${memory.") {
+		return failCode("no approved change plan (set changes to ${memory.change_plan_json} from a coding_plan node)")
+	}
+	items, perr := parseChangePlan(changesJSON, cfg.maxFiles)
+	if perr != "" {
+		return failCode("could not read approved change plan: " + perr)
+	}
+	files, r := cfg.implementChanges(items, ex("plan"))
+	if r != nil {
+		return *r
+	}
+	branch, commitSHA, r := cfg.commitBranch(files)
+	if r != nil {
+		return *r
+	}
+	return cfg.applyResult(branch, commitSHA, formatChangePlan(items), files)
+}
+
+// execCodingAgent (coding_agent) is the all-in-one: plan -> pull contents ->
+// implement -> commit, with no intermediate approval. Config: owner, repo, base
+// (default main), token (${secret:github_token}), provider/model/api_key (LLM),
+// plan, implementation, ticket, branch_prefix (default conduit/), max_files.
+func execCodingAgent(n model.Node, run *model.Run) Result {
+	cfg, ex, fail := resolveCoding(n, run, true)
+	if fail != nil {
+		return *fail
+	}
+	task := ex("plan")
+	if strings.TrimSpace(task) == "" || strings.Contains(task, "${memory.") {
+		return failCode("no plan to implement (set plan, e.g. ${memory.plan})")
+	}
+	items, r := cfg.planChanges(task, ex("implementation"))
+	if r != nil {
+		return *r
+	}
+	files, r := cfg.implementChanges(items, task)
+	if r != nil {
+		return *r
+	}
+	branch, commitSHA, r := cfg.commitBranch(files)
+	if r != nil {
+		return *r
+	}
+	return cfg.applyResult(branch, commitSHA, formatChangePlan(items), files)
 }
 
 func failCode(msg string) Result {
