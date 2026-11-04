@@ -70,6 +70,14 @@ export function ConfigPanel(props: { onClose: () => void; onToast: (m: string) =
             <button className="linkbtn" onClick={() => setName("audit_url")}>audit_url</button>
             <span> — plus secrets <code>github_token</code>, <code>llm_key</code> and <code>scan_token</code> (for the Security Scan gate).</span>
           </div>
+          <div className="hint" style={{ marginTop: -4 }}>
+            For the AI Factory, set: <button className="linkbtn" onClick={() => setName("jira_base")}>jira_base</button>{" "}
+            <button className="linkbtn" onClick={() => setName("jira_email")}>jira_email</button>{" "}
+            <button className="linkbtn" onClick={() => setName("jira_jql")}>jira_jql</button>{" "}
+            <button className="linkbtn" onClick={() => setName("llm_provider")}>llm_provider</button>{" "}
+            <button className="linkbtn" onClick={() => setName("llm_model")}>llm_model</button>
+            <span> — plus secrets <code>jira_token</code>, <code>llm_key</code> (or <code>notion_token</code> for a Notion source).</span>
+          </div>
           <div className="cfg-row" style={{ gridTemplateColumns: "1fr 1fr auto" }}>
             <input className="inp mono" placeholder="name (e.g. owner)" value={name} onChange={(e) => setName(e.target.value)} />
             <input className="inp mono" placeholder="value (e.g. your-github-org)" value={value} onChange={(e) => setValue(e.target.value)} />

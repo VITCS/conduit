@@ -24,6 +24,16 @@ func execAgent(n model.Node, run *model.Run) Result {
 	modelName := n.Field("model")
 	prompt := expandTemplate(run, secretExpand(project, firstNonEmpty(n.Field("prompt"), n.Field("instruction"))))
 
+	// An optional `output` field names a memory key to store the agent's text in,
+	// so steps chain: Refine -> ${memory.plan} -> Implement, etc.
+	outKey := strings.TrimSpace(n.Field("output"))
+	mem := func(text string) map[string]any {
+		if outKey == "" {
+			return nil
+		}
+		return map[string]any{outKey: text}
+	}
+
 	if !strings.EqualFold(n.Field("live"), "true") {
 		// Simulated agent — deterministic structured response.
 		conf := firstNonEmpty(n.Field("confidence"), "high")
@@ -34,7 +44,8 @@ func execAgent(n model.Node, run *model.Run) Result {
 				"provider": provider, "model": firstNonEmpty(modelName, "(default)"),
 				"text": text, "confidence": conf, "simulated": true,
 			},
-			Logs: []string{fmt.Sprintf("agent(%s) simulated response", provider)},
+			MemoryWrites: mem(text),
+			Logs:         []string{fmt.Sprintf("agent(%s) simulated response", provider)},
 		}
 	}
 
@@ -57,9 +68,10 @@ func execAgent(n model.Node, run *model.Run) Result {
 		}
 	}
 	return Result{
-		Outcome: model.StatusSuccess,
-		Output:  map[string]any{"provider": provider, "model": modelName, "status_code": status, "text": text},
-		Logs:    []string{fmt.Sprintf("agent(%s) ok (%d chars)", provider, len(text))},
+		Outcome:      model.StatusSuccess,
+		Output:       map[string]any{"provider": provider, "model": modelName, "status_code": status, "text": text},
+		MemoryWrites: mem(text),
+		Logs:         []string{fmt.Sprintf("agent(%s) ok (%d chars)", provider, len(text))},
 	}
 }
 

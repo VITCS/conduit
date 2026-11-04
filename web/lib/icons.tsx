@@ -18,6 +18,8 @@ import {
   FileText,
   Users,
   Bot,
+  Ticket,
+  NotebookText,
   CircleHelp,
   type LucideIcon,
 } from "lucide-react";
@@ -43,6 +45,8 @@ const MAP: Record<string, LucideIcon> = {
   file: FileText,
   user: Users,
   agent: Bot,
+  ticket: Ticket,
+  notion: NotebookText,
 };
 
 export function Icon({ name, size = 16 }: { name?: string; size?: number }) {
