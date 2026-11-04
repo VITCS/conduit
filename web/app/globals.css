@@ -374,6 +374,28 @@ input, select { font-family: inherit; }
 @keyframes cpGateDot { 0%,45% { fill: var(--idle); } 50%,72% { fill: var(--run); } 78%,100% { fill: var(--accent); } }
 .cp-ring { stroke: var(--run); stroke-width: 1.5; opacity: 0; animation: cpRing 7s ease-out infinite; }
 @keyframes cpRing { 0%,45% { opacity: 0; r: 24px; } 50% { opacity: .8; r: 24px; } 72% { opacity: 0; r: 40px; } 100% { opacity: 0; } }
+/* pipeline node cards (title + sub) */
+.cp-title { fill: var(--fg); font-family: var(--font-ui); font-size: 11.5px; font-weight: 650; text-anchor: middle; }
+.cp-sub { fill: var(--faint); font-family: var(--font-mono); font-size: 8.5px; text-anchor: middle; letter-spacing: .02em; }
+.cp-trigger .cp-title, .cp-status .cp-title { fill: var(--accent); }
+
+/* hero pipeline toggle */
+.pl-toggle { margin-left: 10px; display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 9999px; background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.pl-tog { font-family: var(--font-ui); font-size: 11px; font-weight: 600; color: var(--muted); padding: 3px 11px; border-radius: 9999px; border: 0; background: transparent; cursor: pointer; transition: color .15s, background .15s; }
+.pl-tog.on { color: var(--accent-ink); background: var(--accent); }
+.pl-tog:hover:not(.on) { color: var(--fg); }
+
+/* two flagship workflow cards */
+.lx-wf { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 1000px; margin: 10px auto 0; }
+.lx-wf-card { border: 1px solid var(--border); border-radius: 14px; padding: 22px; background: color-mix(in srgb, var(--surface) 70%, transparent); transition: transform .2s ease, border-color .2s ease; transform: perspective(1000px) rotateX(var(--rx,0)) rotateY(var(--ry,0)); }
+.lx-wf-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.lx-wf-head { display: flex; align-items: center; gap: 12px; margin-bottom: 13px; }
+.lx-wf-head b { font-size: 16px; display: block; line-height: 1.2; }
+.lx-wf-kick { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); }
+.lx-wf-card p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 16px; }
+.lx-wf-chain { display: flex; flex-wrap: wrap; gap: 7px 3px; align-items: center; }
+.lx-wf-step { font-family: var(--font-mono); font-size: 11px; color: var(--fg); background: color-mix(in srgb, var(--surface-2) 72%, transparent); border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px; }
+.lx-wf-arrow { color: var(--faint); flex: 0 0 auto; }
 
 /* live log under the graph */
 .cp-log { border-top: 1px solid var(--border); padding: 12px 16px 14px; min-height: 118px; font-family: var(--font-mono); font-size: 12px; line-height: 1.9; background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
@@ -463,6 +485,7 @@ input, select { font-family: inherit; }
   .lx-bento { grid-template-columns: repeat(2, 1fr); }
   .lx-card.big { grid-column: span 2; }
   .lx-stats { grid-template-columns: repeat(2, 1fr); gap: 28px 16px; }
+  .lx-wf { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
   .lx-bento { grid-template-columns: 1fr; }

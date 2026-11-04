@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   GitBranch, PlayCircle, ShieldCheck, Webhook, KeyRound, Boxes, Activity,
   UserCheck, Github, ArrowRight, Zap, Slack, Bot, Terminal, Check,
+  Ticket, Code2, NotebookText,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ helpers */
@@ -90,30 +91,40 @@ function useTilt() {
   }, []);
 }
 
-/* ----------------------------------------------------------- control plane */
+/* ----------------------------------------------------------- pipelines */
 
-function ControlPlane({ animate }: { animate: boolean }) {
-  const nodes = [
-    { id: "trig", x: 72, y: 150, label: "On PR", kind: "trigger", d: 0 },
-    { id: "build", x: 250, y: 80, label: "Build", kind: "step", d: 0.6 },
-    { id: "test", x: 250, y: 220, label: "Test", kind: "step", d: 0.9 },
-    { id: "merge", x: 428, y: 150, label: "Merge", kind: "step", d: 1.6 },
-    { id: "appr", x: 568, y: 150, label: "Approve", kind: "gate", d: 2.4 },
-    { id: "ship", x: 700, y: 150, label: "Ship", kind: "status", d: 3.2 },
-  ];
-  const E = [
-    "M72,150 C160,150 175,80 250,80",
-    "M72,150 C160,150 175,220 250,220",
-    "M250,80 C340,80 355,150 428,150",
-    "M250,220 C340,220 355,150 428,150",
-    "M428,150 L568,150",
-    "M568,150 L700,150",
-  ];
-  const tokenTop = "M72,150 C160,150 175,80 250,80 C340,80 355,150 428,150 L568,150 L700,150";
-  const tokenBot = "M72,150 C160,150 175,220 250,220 C340,220 355,150 428,150";
+type PKind = "trigger" | "step" | "gate" | "status";
+interface PNode { id: string; label: string; sub?: string; kind: PKind }
+
+// The AI Factory: a real ticket becomes a reviewed PR, with two human gates.
+const FACTORY_PIPE: PNode[] = [
+  { id: "tk", label: "Ticket", sub: "Jira · Notion", kind: "trigger" },
+  { id: "ag", label: "Agents", sub: "plan · review", kind: "step" },
+  { id: "a1", label: "Approve", sub: "the plan", kind: "gate" },
+  { id: "co", label: "Coding agent", sub: "writes a branch", kind: "step" },
+  { id: "a2", label: "Approve", sub: "the changes", kind: "gate" },
+  { id: "pr", label: "Open PR", sub: "link to ticket", kind: "status" },
+];
+
+// The GitHub flow: a PR is reviewed, security-scanned, approved, then merged.
+const GITHUB_PIPE: PNode[] = [
+  { id: "ev", label: "On PR", sub: "webhook", kind: "trigger" },
+  { id: "rv", label: "Agent review", sub: "reads the diff", kind: "step" },
+  { id: "sc", label: "Security scan", sub: "SQLi · high/crit", kind: "gate" },
+  { id: "ap", label: "Approve", sub: "maintainers", kind: "gate" },
+  { id: "mg", label: "Merge", sub: "squash", kind: "status" },
+];
+
+function Pipeline({ nodes, animate, label }: { nodes: PNode[]; animate: boolean; label: string }) {
+  const W = 880, Y = 150, RW = 112, RH = 54, margin = 74;
+  const n = nodes.length;
+  const span = W - margin * 2;
+  const laid = nodes.map((nd, i) => ({ ...nd, x: margin + (span * i) / (n - 1), d: i * 1.0 }));
+  const edges = laid.slice(0, -1).map((nd, i) => `M${nd.x + RW / 2},${Y} L${laid[i + 1].x - RW / 2},${Y}`);
+  const tokenPath = `M${laid[0].x},${Y} ` + laid.slice(1).map((p) => `L${p.x},${Y}`).join(" ");
 
   return (
-    <svg className="cp" viewBox="0 0 760 300" role="img" aria-label="A control plane executing a workflow: an opened PR triggers parallel build and test, they merge, a human approves, then it ships.">
+    <svg className="cp" viewBox={`0 0 ${W} 300`} role="img" aria-label={label}>
       <defs>
         <linearGradient id="cp-edge" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor="var(--accent)" stopOpacity="0.12" />
@@ -124,32 +135,27 @@ function ControlPlane({ animate }: { animate: boolean }) {
         </filter>
       </defs>
 
-      {E.map((d, i) => (
+      {edges.map((d, i) => (
         <g key={i}>
           <path d={d} fill="none" stroke="var(--border-strong)" strokeWidth="1.6" />
           {animate && <path d={d} fill="none" stroke="url(#cp-edge)" strokeWidth="2.2" strokeDasharray="6 10" strokeLinecap="round" className="cp-flow" />}
         </g>
       ))}
 
-      {nodes.map((n) => (
-        <g key={n.id} className={`cp-node ${n.kind === "gate" ? "cp-gate" : ""}`} style={{ ["--d" as string]: `${n.d}s` }}>
-          {n.kind === "gate" && animate && <circle cx={n.x} cy={n.y} r="30" className="cp-ring" fill="none" />}
-          <rect x={n.x - 46} y={n.y - 22} width="92" height="44" rx="9" className="cp-rect" fill="var(--surface)" stroke="var(--border)" />
-          <circle cx={n.x - 30} cy={n.y} r="4.5" className="cp-dot" fill="var(--idle)" />
-          <text x={n.x - 18} y={n.y + 4} className="cp-label">{n.label}</text>
+      {laid.map((nd) => (
+        <g key={nd.id} className={`cp-node cp-${nd.kind} ${nd.kind === "gate" ? "cp-gate" : ""}`} style={{ ["--d" as string]: `${nd.d}s` }}>
+          {nd.kind === "gate" && animate && <circle cx={nd.x} cy={Y} r="26" className="cp-ring" fill="none" />}
+          <rect x={nd.x - RW / 2} y={Y - RH / 2} width={RW} height={RH} rx="11" className="cp-rect" fill="var(--surface)" stroke="var(--border)" />
+          <circle cx={nd.x - RW / 2 + 16} cy={Y - RH / 2 + 15} r="3.5" className="cp-dot" fill="var(--idle)" />
+          <text x={nd.x} y={Y - 2} className="cp-title">{nd.label}</text>
+          {nd.sub && <text x={nd.x} y={Y + 14} className="cp-sub">{nd.sub}</text>}
         </g>
       ))}
 
       {animate && (
-        <>
-          <circle r="5" fill="var(--accent)" filter="url(#cp-glow)">
-            <animateMotion dur="6.5s" repeatCount="indefinite" calcMode="linear"
-              keyPoints="0;0.34;0.5;0.5;0.66;0.82;1" keyTimes="0;0.26;0.42;0.60;0.74;0.88;1" path={tokenTop} />
-          </circle>
-          <circle r="4" fill="var(--accent-deep)" filter="url(#cp-glow)">
-            <animateMotion dur="3.1s" repeatCount="indefinite" path={tokenBot} />
-          </circle>
-        </>
+        <circle r="5" fill="var(--accent)" filter="url(#cp-glow)">
+          <animateMotion dur="7s" repeatCount="indefinite" calcMode="linear" path={tokenPath} />
+        </circle>
       )}
     </svg>
   );
@@ -157,25 +163,39 @@ function ControlPlane({ animate }: { animate: boolean }) {
 
 /* --------------------------------------------------------------- live log */
 
-const LOG = [
+type LogLine = { t: string; c: string; s: string };
+
+const FACTORY_LOG: LogLine[] = [
+  { t: "▶", c: "run", s: "run started · ENG-482 pulled from Jira" },
+  { t: "✓", c: "ok", s: "agents · plan + review drafted" },
+  { t: "⏸", c: "wait", s: "awaiting approval · the plan" },
+  { t: "✓", c: "ok", s: "approved · generating changes" },
+  { t: "✓", c: "ok", s: "coding agent · 2 files → conduit/ENG-482" },
+  { t: "⏸", c: "wait", s: "awaiting approval · the changes" },
+  { t: "✓", c: "ok", s: "approved · opening pull request" },
+  { t: "✓", c: "ok", s: "PR #129 opened · commented on ENG-482" },
+];
+
+const GITHUB_LOG: LogLine[] = [
   { t: "▶", c: "run", s: "run started · on pull_request #482" },
-  { t: "✓", c: "ok", s: "build · passed (1m24s)" },
-  { t: "✓", c: "ok", s: "test · 128 passed" },
-  { t: "✓", c: "ok", s: "merge · fast-forward clean" },
+  { t: "✓", c: "ok", s: "agent review · posted on #482" },
+  { t: "✓", c: "ok", s: "security scan · 0 critical / 0 high" },
   { t: "⏸", c: "wait", s: "awaiting approval · maintainers" },
-  { t: "✓", c: "ok", s: "approved · shipping" },
+  { t: "✓", c: "ok", s: "approved · merging" },
   { t: "✓", c: "ok", s: "merged · #482 squashed" },
 ];
-function LiveLog({ animate }: { animate: boolean }) {
-  const [n, setN] = useState(animate ? 1 : LOG.length);
+
+function LiveLog({ log, animate }: { log: LogLine[]; animate: boolean }) {
+  const [n, setN] = useState(animate ? 1 : log.length);
   useEffect(() => {
+    setN(animate ? 1 : log.length);
     if (!animate) return;
-    const id = setInterval(() => setN((v) => (v >= LOG.length ? 1 : v + 1)), 1100);
+    const id = setInterval(() => setN((v) => (v >= log.length ? 1 : v + 1)), 1100);
     return () => clearInterval(id);
-  }, [animate]);
+  }, [animate, log]);
   return (
     <div className="cp-log" aria-hidden>
-      {LOG.slice(0, n).map((l, i) => (
+      {log.slice(0, n).map((l, i) => (
         <div className="cp-logline" key={i}>
           <span className={`cp-lt ${l.c}`}>{l.t}</span>
           <span>{l.s}</span>
@@ -200,19 +220,44 @@ const FEATURES = [
 ];
 
 const ACTIONS = [
+  { icon: Ticket, title: "Pull tickets from Jira", body: "Fetch a ticket by JQL and inject its summary + description into the run. Comment the result back when it's done." },
+  { icon: NotebookText, title: "…or a Notion database", body: "Query a Notion board for the next task. Same downstream pipeline — the source is swappable." },
+  { icon: Code2, title: "Write code on a branch", body: "A coding agent plans the files, pulls current contents, edits them, and pushes a branch via the Git Data API." },
   { icon: Github, title: "Open & merge PRs", body: "Open a pull request, comment, or merge — real GitHub API calls after a human approves." },
   { icon: Bot, title: "Review with an agent", body: "An agent reads a PR's real diff and posts a review. Anthropic, OpenAI, or a custom model." },
+  { icon: ShieldCheck, title: "Gate on a security scan", body: "Block a merge until a vulnerability + SQL-injection scan passes. High/Critical findings stop the run." },
   { icon: Slack, title: "Notify Slack", body: "Post run results to a Slack webhook, with the message templated from run state." },
-  { icon: Terminal, title: "Call any HTTP API", body: "Live HTTP / GraphQL steps with auth headers and bodies; the outcome routes on the status code." },
+  { icon: Terminal, title: "Call any HTTP API", body: "Live HTTP steps with auth headers and bodies; the outcome routes on the status code." },
 ];
 
-const COMPONENTS = ["webhook", "schedule", "http", "graphql", "slack", "github_pr", "github_comment", "github_review", "github_merge", "agent", "ssh", "if", "filter", "merge", "timegate", "approval", "memory"];
+// The two flagship workflows seeded with every install.
+const WORKFLOWS = [
+  {
+    icon: Ticket, tag: "AI Factory", kicker: "Ticket → reviewed PR",
+    body: "Pull a ticket from Jira or Notion, let agents refine it into a plan and review it, approve the plan, let a coding agent write the branch, approve the exact file changes, and open a pull request — two human gates, zero blind automation.",
+    chain: ["Jira / Notion", "Plan & review", "Approve", "Coding agent", "Approve changes", "Open PR"],
+  },
+  {
+    icon: Github, tag: "GitHub PR review", kicker: "PR → scanned, approved, merged",
+    body: "On every pull request an agent reads the real diff and posts a review, a security scan gates on vulnerabilities and SQL injection, a human approves, and Conduit merges — all real GitHub API calls.",
+    chain: ["On PR", "Agent review", "Security scan", "Approve", "Merge"],
+  },
+];
+
+const COMPONENTS = ["webhook", "schedule", "jira", "notion", "agent", "coding_plan", "coding_apply", "github_pr", "github_review", "github_merge", "security_scan", "http", "slack", "if", "filter", "approval", "memory"];
 
 /* ------------------------------------------------------------------- page */
 
 export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGetStarted: () => void }) {
   const [animate, setAnimate] = useState(true);
+  const [pipe, setPipe] = useState<"factory" | "github">("factory");
   const statsRef = useRef<HTMLDivElement>(null);
+  const pipeNodes = pipe === "factory" ? FACTORY_PIPE : GITHUB_PIPE;
+  const pipeLog = pipe === "factory" ? FACTORY_LOG : GITHUB_LOG;
+  const pipeLabel =
+    pipe === "factory"
+      ? "AI Factory pipeline: a Jira or Notion ticket is pulled in, agents plan and review it, a human approves the plan, a coding agent writes a branch, a human approves the changes, and a pull request opens."
+      : "GitHub pipeline: an opened pull request is reviewed by an agent, scanned for security issues, approved by a human, then merged.";
   useReveal();
   useTilt();
   useCountUp(statsRef);
@@ -235,15 +280,15 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
 
       <section className="lx-hero">
         <div className="lx-hero-copy">
-          <span className="lx-eyebrow" data-reveal><Zap size={13} /> Event-driven automation control plane</span>
+          <span className="lx-eyebrow" data-reveal><Zap size={13} /> Human-in-the-loop automation control plane</span>
           <h1 data-reveal>
-            Automate the work that<br />needs a <span className="lx-grad">human in the loop</span>.
+            Turn a ticket into a reviewed PR —<br />with a <span className="lx-grad">human in the loop</span>.
           </h1>
           <p className="lx-lead" data-reveal>
-            Conduit Agent turns a visual graph of components into a live workflow. Trigger it from a
-            webhook or a schedule, watch every step run in real time, and pause for human approval
-            before anything risky — then open a real pull request, review it with an agent, post to
-            Slack, or merge. One self-hosted binary.
+            Conduit Agent turns a visual graph of components into a live workflow. Pull a ticket from
+            Jira or Notion, let agents plan and review it, approve the plan, let a coding agent open a
+            real pull request — or review, security-scan and merge the PRs you already have. Every run
+            streams live and pauses for a human before anything risky. One self-hosted binary.
           </p>
           <div className="lx-cta" data-reveal>
             <button className="btn primary lg" onClick={onGetStarted} data-testid="hero-getstarted">Create an account <ArrowRight size={17} /></button>
@@ -255,11 +300,14 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
         <div className="lx-hero-stage" data-reveal data-tilt>
           <div className="lx-stage-bar">
             <span className="lx-dot r" /><span className="lx-dot y" /><span className="lx-dot g" />
-            <span className="lx-stage-title">pr-review · live run</span>
+            <div className="pl-toggle" role="tablist" aria-label="Choose a workflow">
+              <button role="tab" aria-selected={pipe === "factory"} className={`pl-tog${pipe === "factory" ? " on" : ""}`} onClick={() => setPipe("factory")}>AI Factory</button>
+              <button role="tab" aria-selected={pipe === "github"} className={`pl-tog${pipe === "github" ? " on" : ""}`} onClick={() => setPipe("github")}>GitHub</button>
+            </div>
             <span className="lx-live"><span className="lx-live-dot" /> live</span>
           </div>
-          <ControlPlane animate={animate} />
-          <LiveLog animate={animate} />
+          <Pipeline nodes={pipeNodes} animate={animate} label={pipeLabel} />
+          <LiveLog log={pipeLog} animate={animate} />
         </div>
       </section>
 
@@ -289,6 +337,30 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
           <li data-reveal style={{ ["--i" as string]: "1" }}><span className="lx-step-n">2</span><div><b>Run</b><p>Press Run, fire a webhook, or let a schedule start it. A worker executes the graph and streams progress back live.</p></div></li>
           <li data-reveal style={{ ["--i" as string]: "2" }}><span className="lx-step-n">3</span><div><b>Approve &amp; act</b><p>At an approval gate the run waits for you. Approve it and the real actions — PR, review, Slack, merge — run.</p></div></li>
         </ol>
+      </section>
+
+      <section className="lx-section">
+        <h2 className="lx-h2c" data-reveal>Two workflows, ready the moment you sign in</h2>
+        <p className="lx-sub" data-reveal>Seeded with every install — connect your tools and run them for real. Flip between them in the hero above.</p>
+        <div className="lx-wf">
+          {WORKFLOWS.map((w, i) => (
+            <div className="lx-wf-card" key={w.tag} data-reveal data-tilt style={{ ["--i" as string]: String(i) }}>
+              <div className="lx-wf-head">
+                <span className="lx-ico"><w.icon size={18} /></span>
+                <div><b>{w.tag}</b><span className="lx-wf-kick">{w.kicker}</span></div>
+              </div>
+              <p>{w.body}</p>
+              <div className="lx-wf-chain">
+                {w.chain.map((c, j) => (
+                  <Fragment key={c}>
+                    <span className="lx-wf-step">{c}</span>
+                    {j < w.chain.length - 1 && <ArrowRight size={12} className="lx-wf-arrow" />}
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="lx-section">
@@ -329,8 +401,8 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
       </section>
 
       <section className="lx-stats" ref={statsRef} data-reveal>
-        <div className="lx-stat"><div className="lx-num"><span data-count="17">0</span></div><div className="lx-stat-l">component types</div></div>
-        <div className="lx-stat"><div className="lx-num"><span data-count="4">0</span></div><div className="lx-stat-l">trigger kinds</div></div>
+        <div className="lx-stat"><div className="lx-num"><span data-count="26">0</span></div><div className="lx-stat-l">component types</div></div>
+        <div className="lx-stat"><div className="lx-num"><span data-count="2">0</span></div><div className="lx-stat-l">workflows out of the box</div></div>
         <div className="lx-stat"><div className="lx-num"><span data-count="1">0</span></div><div className="lx-stat-l">binary to run it all</div></div>
         <div className="lx-stat"><div className="lx-num"><span data-count="0">0</span></div><div className="lx-stat-l">extra services required</div></div>
       </section>
@@ -338,11 +410,13 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
       <section className="lx-section lx-honest">
         <h2 className="lx-h2c" data-reveal>Straight about the demo</h2>
         <p data-reveal>
-          The seeded example workflows <b>simulate</b> their side effects so they run offline and
-          deterministically. Components that perform real side effects — <b>GitHub PR / review / merge / comment</b>,
-          <b> live HTTP</b>, <b>Slack</b>, and the <b>AI Agent</b> — act for real once you configure a secret
-          (and set <code>live: true</code> for HTTP / agent). A few components (GraphQL, SSH) are simulated
-          today. You can sign in with email, or with Google / GitHub when the server has those providers configured.
+          Components that perform real side effects act against the real thing once you add a secret:
+          <b> Jira</b> and <b>Notion</b> (fetch tickets, comment back), the <b>coding agent</b> (commits a
+          branch via the GitHub Git Data API), <b>GitHub PR / review / merge / comment</b>, the
+          <b> security scan</b> gate, <b>live HTTP</b>, <b>Slack</b>, and the <b>AI Agent</b> (set
+          <code> live: true</code>). A few components (GraphQL, SSH) are still simulated today, and private-repo
+          scans need the token plumbed through. You can sign in with email, or with Google / GitHub when the
+          server has those providers configured.
         </p>
       </section>
 
