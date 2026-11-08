@@ -27,8 +27,7 @@ import { Inspector } from "@/components/Inspector";
 import { Topbar } from "@/components/Topbar";
 import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
-import { SecretsPanel } from "@/components/SecretsPanel";
-import { ConfigPanel } from "@/components/ConfigPanel";
+import { SettingsPanel } from "@/components/SettingsPanel";
 import { MembersPanel } from "@/components/MembersPanel";
 import { Landing } from "@/components/Landing";
 import { Auth } from "@/components/Auth";
@@ -93,8 +92,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [runMeta, setRunMeta] = useState("press Run to execute");
   const [railHidden, setRailHidden] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showSecrets, setShowSecrets] = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
@@ -643,8 +641,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           dirty={dirty}
           onSave={save}
           onToggleRail={() => setRailHidden((v) => !v)}
-          onOpenSecrets={() => setShowSecrets(true)}
-          onOpenConfig={() => setShowConfig(true)}
+          onOpenSettings={() => setShowSettings(true)}
           onOpenMembers={() => setShowMembers(true)}
           user={user}
           onSignOut={onSignOut}
@@ -801,8 +798,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
 
           <Palette hidden={!editMode} onAdd={addComponent} />
         </div>
-        {showSecrets && <SecretsPanel onClose={() => { setShowSecrets(false); loadProjectConfig(); }} onToast={showToast} />}
-        {showConfig && <ConfigPanel onClose={() => { setShowConfig(false); loadProjectConfig(); }} onToast={showToast} />}
+        {showSettings && <SettingsPanel onClose={() => { setShowSettings(false); loadProjectConfig(); }} onToast={showToast} />}
         {showMembers && <MembersPanel projectId={currentProject} onClose={() => setShowMembers(false)} onToast={showToast} />}
         {toast && <div className="toast">{toast}</div>}
       </div>

@@ -283,6 +283,10 @@ input, select { font-family: inherit; }
 .modal-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--border); }
 .modal-head .modal-title { font-weight: 600; font-size: 15px; flex: 1 1 auto; }
 .modal-body { padding: 14px 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.set-tabs { display: flex; gap: 4px; padding: 10px 16px 0; }
+.set-tab { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 7px 10px; cursor: pointer; }
+.set-tab:hover { color: var(--fg); }
+.set-tab.on { color: var(--accent); border-bottom-color: var(--accent); }
 .secret-list { display: flex; flex-direction: column; gap: 7px; }
 .secret-row { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; color: var(--muted); }
 .secret-row .sname { font-family: var(--font-mono); font-size: 13px; color: var(--fg); flex: 1 1 auto; }

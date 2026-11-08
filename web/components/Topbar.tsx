@@ -1,5 +1,5 @@
 "use client";
-import { Menu, Play, Square, Save, Pencil, Sun, Moon, KeyRound, LogOut, Users, Sliders } from "lucide-react";
+import { Menu, Play, Square, Save, Pencil, Sun, Moon, LogOut, Users, Sliders } from "lucide-react";
 import { useEffect, useState } from "react";
 
 function Logo() {
@@ -31,8 +31,7 @@ export function Topbar(props: {
   dirty: boolean;
   onSave: () => void;
   onToggleRail: () => void;
-  onOpenSecrets: () => void;
-  onOpenConfig: () => void;
+  onOpenSettings: () => void;
   onOpenMembers: () => void;
   user: { name: string; email: string; role: string } | null;
   onSignOut: () => void;
@@ -106,11 +105,8 @@ export function Topbar(props: {
         <button className="btn" onClick={props.onOpenMembers} title="Manage members">
           <Users size={15} /> Members
         </button>
-        <button className="btn" onClick={props.onOpenSecrets} title="Manage secrets">
-          <KeyRound size={15} /> Secrets
-        </button>
-        <button className="btn" onClick={props.onOpenConfig} title="Project config variables">
-          <Sliders size={15} /> Config
+        <button className="btn" onClick={props.onOpenSettings} title="Variables & secrets">
+          <Sliders size={15} /> Settings
         </button>
         <button className="btn" onClick={toggleTheme} aria-label="Toggle theme" title="Toggle theme">
           {dark ? <Sun size={15} /> : <Moon size={15} />}
