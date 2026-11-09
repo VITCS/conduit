@@ -22,6 +22,7 @@ export const CATALOG: CatalogItem[] = [
   { type: "github_comment", name: "GitHub comment", icon: "github", kind: "step", desc: "Comment on a real issue/PR" },
   { type: "github_review", name: "GitHub PR review", icon: "agent", kind: "step", desc: "Agent reviews a real PR diff (needs github_token + api_key)" },
   { type: "github_merge", name: "GitHub merge", icon: "github", kind: "step", desc: "Merge a PR (runs after approval)" },
+  { type: "github_checks", name: "Verify checks (CI)", icon: "heart", kind: "step", desc: "Wait for the repo's CI / check-runs on a branch; fail if any check fails" },
   { type: "security_scan", name: "Security scan", icon: "approve", kind: "step", desc: "Gate on a security/SQLi scan (blocks merge on High/Critical)" },
   { type: "agent", name: "AI Agent", icon: "agent", kind: "step", desc: "Prompt an LLM (simulated unless live)" },
   { type: "coding_agent", name: "Coding agent", icon: "code", kind: "step", desc: "Plan + implement on a new branch in one step (needs github_token + llm_key)" },
