@@ -34,7 +34,7 @@ import { Auth } from "@/components/Auth";
 import { EditorContext } from "@/lib/editorContext";
 import { api, getToken, setToken, setOnUnauthorized, getProject, setProject } from "@/lib/api";
 import { type CatalogItem } from "@/lib/catalog";
-import type { EdgeData, NodeData, Run, SSEvent, Status, Workflow, WFNode } from "@/lib/types";
+import type { EdgeData, NodeData, Run, SSEvent, Status, Workflow, WFNode, WFEdge } from "@/lib/types";
 
 const nodeTypes: NodeTypes = { conduit: ConduitNode };
 const edgeTypes: EdgeTypes = { conduit: ConduitEdge };
@@ -56,7 +56,7 @@ function wfToEdges(wf: Workflow): Edge[] {
     source: e.from,
     target: e.to,
     type: "conduit",
-    data: { label: e.label ?? "" } as EdgeData,
+    data: { label: e.label ?? "", maxAttempts: e.max_attempts } as EdgeData,
     markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
   }));
 }
@@ -506,8 +506,11 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         };
       }),
       edges: edges.map((e) => {
-        const label = (e.data as EdgeData | undefined)?.label;
-        return label ? { from: e.source, to: e.target, label } : { from: e.source, to: e.target };
+        const d = e.data as EdgeData | undefined;
+        const out: WFEdge = { from: e.source, to: e.target };
+        if (d?.label) out.label = d.label;
+        if (d?.maxAttempts && d.maxAttempts > 0) out.max_attempts = d.maxAttempts;
+        return out;
       }),
     };
     try {

@@ -13,7 +13,10 @@ function labelClass(label: string): string {
 export function ConduitEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, selected, data } = props;
   const { editMode, setEdgeLabel, deleteEdge } = useEditor();
-  const label = ((data as EdgeData | undefined)?.label ?? "").toString();
+  const ed = data as EdgeData | undefined;
+  const label = (ed?.label ?? "").toString();
+  const retry = typeof ed?.maxAttempts === "number" && ed.maxAttempts > 0 ? ed.maxAttempts : 0;
+  const display = retry ? `retry ×${retry}` : label;
 
   const [path, labelX, labelY] = getBezierPath({
     sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
@@ -46,8 +49,8 @@ export function ConduitEdge(props: EdgeProps) {
                 ✕
               </button>
             </div>
-          ) : label ? (
-            <span className={`elabel ${labelClass(label)}`}>{label}</span>
+          ) : display ? (
+            <span className={`elabel ${retry ? "retry" : labelClass(label)}`}>{display}</span>
           ) : editMode ? (
             <span className="elabel none">any</span>
           ) : null}

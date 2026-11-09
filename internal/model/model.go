@@ -59,10 +59,16 @@ func (n Node) Field(key string) string {
 
 // Edge connects two nodes. Label gates which successor runs after an outcome
 // ("success", "failed", "approved", or "" for unconditional).
+//
+// MaxAttempts marks a bounded retry back-edge: when set (> 0) on a "failed" edge,
+// a failing source re-enters the loop body at To up to MaxAttempts times (carrying
+// the failure context forward) before the failure is routed terminally. It is the
+// only kind of back-edge the validator permits.
 type Edge struct {
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Label string `json:"label,omitempty"`
+	From        string `json:"from"`
+	To          string `json:"to"`
+	Label       string `json:"label,omitempty"`
+	MaxAttempts int    `json:"max_attempts,omitempty"`
 }
 
 // Project is a tenancy boundary: workflows and runs belong to exactly one.
@@ -116,6 +122,9 @@ type Run struct {
 	FinishedAt *time.Time          `json:"finished_at,omitempty"`
 	Steps      map[string]*StepRun `json:"steps"`
 	Memory     map[string]any      `json:"memory"`
+	// Loops tracks how many times each retry back-edge (keyed "from\x00to") has
+	// fired, so a bounded recovery loop survives restarts.
+	Loops map[string]int `json:"loops,omitempty"`
 	// Input is the payload a run was started with (e.g. a webhook body); the
 	// trigger node exposes it to downstream steps.
 	Input map[string]any `json:"input,omitempty"`

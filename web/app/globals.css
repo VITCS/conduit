@@ -167,6 +167,7 @@ input, select { font-family: inherit; }
 .elabel.ok { color: var(--ok-ink); background: var(--ok-bg); border-color: transparent; }
 .elabel.fail { color: var(--fail-ink); background: var(--fail-bg); border-color: transparent; }
 .elabel.none { color: var(--faint); border-style: dashed; }
+.elabel.retry { color: var(--run-ink); background: var(--run-bg); border-color: transparent; }
 .epick { display: flex; gap: 3px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 4px; box-shadow: var(--shadow); pointer-events: all; }
 .epick button { border: 0; background: transparent; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; font-family: var(--font-mono); color: var(--muted); }
 .epick button:hover { background: var(--surface-2); }

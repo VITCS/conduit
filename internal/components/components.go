@@ -156,6 +156,10 @@ var registry = map[string]Executor{
 // than through an executor in the registry (e.g. approval blocks for a decision).
 var engineHandled = map[string]bool{"approval": true}
 
+// Register adds or replaces an executor for a type. Intended for tests and
+// out-of-tree extensions; the built-in set is registered at init in `registry`.
+func Register(typ string, e Executor) { registry[typ] = e }
+
 // For returns the executor for a type, falling back to noop.
 func For(typ string) Executor {
 	if e, ok := registry[typ]; ok {

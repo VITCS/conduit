@@ -104,18 +104,45 @@ func execGitHubPR(n model.Node, run *model.Run) Result {
 			Output: map[string]any{"error": err.Error(), "repo": owner + "/" + repo},
 			Logs:   []string{fmt.Sprintf("github_pr: POST %s -> error: %v", url, err)}}
 	}
+	// Idempotent: a PR already open for this head (422) is not an error — fetch and
+	// return it, so re-running (e.g. inside a recovery loop) is safe.
+	if status == 422 {
+		if existing, ok := findOpenPR(githubBase(n), owner, repo, base, head, token); ok {
+			return prResult(owner, repo, head, base, existing, "github_pr: PR already open")
+		}
+	}
 	if status != 201 {
 		return Result{Outcome: model.StatusFailed,
 			Output: map[string]any{"status_code": status, "error": githubError(raw, status), "repo": owner + "/" + repo},
 			Logs:   []string{fmt.Sprintf("github_pr: %s#%s -> %d: %s", owner+"/"+repo, head, status, githubError(raw, status))}}
 	}
 
-	var pr struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-		State   string `json:"state"`
-	}
+	var pr prInfo
 	_ = json.Unmarshal(raw, &pr)
+	return prResult(owner, repo, head, base, pr, "github_pr: opened")
+}
+
+type prInfo struct {
+	Number  int    `json:"number"`
+	HTMLURL string `json:"html_url"`
+	State   string `json:"state"`
+}
+
+// findOpenPR returns the open PR for owner:head → base, if one exists.
+func findOpenPR(apiBase, owner, repo, base, head, token string) (prInfo, bool) {
+	q := fmt.Sprintf("%s/repos/%s/%s/pulls?state=open&head=%s:%s&base=%s", apiBase, owner, repo, owner, head, base)
+	raw, status, err := getWithHeader(q, githubHeaders(token))
+	if err != nil || status != 200 {
+		return prInfo{}, false
+	}
+	var prs []prInfo
+	if err := json.Unmarshal(raw, &prs); err != nil || len(prs) == 0 {
+		return prInfo{}, false
+	}
+	return prs[0], true
+}
+
+func prResult(owner, repo, head, base string, pr prInfo, logPrefix string) Result {
 	out := map[string]any{
 		"number":   pr.Number,
 		"html_url": pr.HTMLURL,
@@ -127,7 +154,7 @@ func execGitHubPR(n model.Node, run *model.Run) Result {
 	return Result{
 		Outcome: model.StatusCreated,
 		Output:  out,
-		Logs:    []string{fmt.Sprintf("github_pr: opened %s#%d — %s", owner+"/"+repo, pr.Number, pr.HTMLURL)},
+		Logs:    []string{fmt.Sprintf("%s %s#%d — %s", logPrefix, owner+"/"+repo, pr.Number, pr.HTMLURL)},
 		MemoryWrites: map[string]any{
 			fmt.Sprintf("pr/%s/%s", owner, repo): out,
 			"last_pr_url":                        pr.HTMLURL,

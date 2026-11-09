@@ -104,7 +104,7 @@ NOTES:
 
 // implementChanges pulls current contents for "modify" files (downgrading any
 // that don't exist on base to "create"), then asks the model for full contents.
-func (c codingCfg) implementChanges(items []changeItem, task string) ([]fileChange, *Result) {
+func (c codingCfg) implementChanges(items []changeItem, task, feedback string) ([]fileChange, *Result) {
 	var ctxBuf strings.Builder
 	for i := range items {
 		if !strings.EqualFold(items[i].Action, "modify") {
@@ -132,7 +132,7 @@ CHANGE PLAN:
 CURRENT FILE CONTENTS:%s
 
 ORIGINAL TASK:
-%s`, c.owner, c.repo, formatChangePlan(items), firstNonEmpty(ctxBuf.String(), " (all files are new)"), task)
+%s%s`, c.owner, c.repo, formatChangePlan(items), firstNonEmpty(ctxBuf.String(), " (all files are new)"), task, feedbackBlock(feedback))
 
 	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, 4000)
 	if err != nil || status < 200 || status >= 300 {
@@ -243,7 +243,9 @@ func execCodingApply(n model.Node, run *model.Run) Result {
 	if perr != "" {
 		return failCode("could not read approved change plan: " + perr)
 	}
-	files, r := cfg.implementChanges(items, ex("plan"))
+	// On a recovery-loop retry, prior CI feedback (e.g. ${memory.checks_summary})
+	// is passed in via the `feedback` field so the re-run fixes what failed.
+	files, r := cfg.implementChanges(items, ex("plan"), ex("feedback"))
 	if r != nil {
 		return *r
 	}
@@ -271,7 +273,7 @@ func execCodingAgent(n model.Node, run *model.Run) Result {
 	if r != nil {
 		return *r
 	}
-	files, r := cfg.implementChanges(items, task)
+	files, r := cfg.implementChanges(items, task, ex("feedback"))
 	if r != nil {
 		return *r
 	}
@@ -280,6 +282,16 @@ func execCodingAgent(n model.Node, run *model.Run) Result {
 		return *r
 	}
 	return cfg.applyResult(branch, commitSHA, formatChangePlan(items), files)
+}
+
+// feedbackBlock renders prior failure context (e.g. failing CI checks from an
+// earlier attempt) into the implement prompt, or "" when there is none.
+func feedbackBlock(feedback string) string {
+	feedback = strings.TrimSpace(feedback)
+	if feedback == "" || strings.Contains(feedback, "${memory.") {
+		return ""
+	}
+	return "\n\nA PREVIOUS ATTEMPT FAILED VERIFICATION — fix these and keep the rest working:\n" + feedback
 }
 
 func failCode(msg string) Result {

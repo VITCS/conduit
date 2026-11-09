@@ -247,8 +247,19 @@ func FactoryWorkflow() model.Workflow {
 					f("ticket", "key", "${memory.ticket_key}"),
 					f("ticket_summary", "file", "${memory.ticket_summary}"),
 					f("branch_prefix", "branch", "conduit/"),
+					// On a recovery-loop retry, the prior CI failures are fed back in.
+					f("feedback", "file", "${memory.checks_summary}"),
 				}},
-			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 2680, Y: 300,
+			{ID: "vchk", Type: "github_checks", Icon: "heart", Kind: model.KindStep, Title: "Verify Checks (CI)", X: 2720, Y: 300,
+				Config: []model.Field{
+					f("owner", "github", "${var:owner}"),
+					f("repo", "github", "${var:repo}"),
+					f("ref", "branch", "${memory.commit_sha}"),
+					f("timeout_s", "clock", "600"),
+					f("require_checks", "approve", "false"),
+					f("token", "key", "${secret:github_token}"),
+				}},
+			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 3000, Y: 300,
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -258,16 +269,7 @@ func FactoryWorkflow() model.Workflow {
 					f("body", "file", "Automated by the AI Factory for ${memory.ticket_key}.\n\n— Change plan —\n${memory.change_plan}\n\n— Plan —\n${memory.plan}\n\n— Review —\n${memory.review}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "vchk", Type: "github_checks", Icon: "heart", Kind: model.KindStep, Title: "Verify Checks (CI)", X: 2960, Y: 300,
-				Config: []model.Field{
-					f("owner", "github", "${var:owner}"),
-					f("repo", "github", "${var:repo}"),
-					f("ref", "branch", "${memory.commit_sha}"),
-					f("timeout_s", "clock", "600"),
-					f("require_checks", "approve", "false"),
-					f("token", "key", "${secret:github_token}"),
-				}},
-			{ID: "post", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Post PR to Ticket", X: 3240, Y: 200,
+			{ID: "post", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Post PR to Ticket", X: 3280, Y: 200,
 				Config: []model.Field{
 					f("action", "agent", "comment"),
 					f("base_url", "globe", "${var:jira_base}"),
@@ -276,7 +278,7 @@ func FactoryWorkflow() model.Workflow {
 					f("api_token", "key", "${secret:jira_token}"),
 					f("body", "file", "🤖 AI Factory opened a PR: ${memory.last_pr_url}\n\nChecks: ${memory.checks_summary}\n\n— Plan —\n${memory.plan}"),
 				}},
-			{ID: "mem", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record Delivery", X: 3240, Y: 420,
+			{ID: "mem", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record Delivery", X: 3280, Y: 420,
 				Config: []model.Field{f("store", "db", "deliveries"), f("key", "key", "ticket_key"), f("set", "file", "work_branch, last_pr_url, checks_summary")}},
 			{ID: "clar", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs clarification", X: 600, Y: 540,
 				Config: []model.Field{f("set", "github", "needs_clarification"), f("notify", "user", "author")}},
@@ -298,11 +300,15 @@ func FactoryWorkflow() model.Workflow {
 			{From: "cplan", To: "fail", Label: "failed"},
 			{From: "appr2", To: "apply", Label: "approved"},
 			{From: "appr2", To: "fail", Label: "failed"},
-			{From: "apply", To: "pr", Label: "success"},
+			{From: "apply", To: "vchk", Label: "success"},
 			{From: "apply", To: "fail", Label: "failed"},
-			{From: "pr", To: "vchk", Label: "success"},
-			{From: "vchk", To: "post", Label: "success"},
+			// Verify the pushed commit's CI before opening the PR. On failure, loop
+			// back to the coding agent up to twice (carrying the failing checks as
+			// feedback); only after the budget is spent does it go to a human.
+			{From: "vchk", To: "apply", Label: "failed", MaxAttempts: 2},
+			{From: "vchk", To: "pr", Label: "success"},
 			{From: "vchk", To: "fail", Label: "failed"},
+			{From: "pr", To: "post", Label: "success"},
 			{From: "post", To: "mem", Label: "success"},
 		},
 	}

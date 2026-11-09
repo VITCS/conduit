@@ -1,6 +1,12 @@
 # Engine change: bounded Verify → Implement recovery loop
 
-**Status:** proposed · **Scope owner:** engine · **Est:** ~1–1.5 days
+**Status:** implemented · **Scope owner:** engine
+
+> Shipped: `Edge.MaxAttempts` + `Run.Loops`, validator back-edge rules, the
+> scheduler's `tryRetry` / `computeLoopBodies`, non-sticky `failed`, an exec-count
+> backstop, idempotent `github_pr`, verify feedback into `coding_apply`, the
+> factory rewired to `apply → verify(commit) → pr` with a `verify → apply` retry
+> (×2), and engine/validator tests. UI shows retry edges as `retry ×N`.
 
 ## Goal
 

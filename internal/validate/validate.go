@@ -72,13 +72,56 @@ func Workflow(wf model.Workflow) []string {
 	}
 
 	// Cycle check (only over edges whose endpoints both exist, to avoid noise
-	// when dangling edges were already reported).
+	// when dangling edges were already reported). Retry back-edges are excluded.
 	if cyc := findCycle(ids, wf.Edges); len(cyc) > 0 {
 		errs = append(errs, "workflow has a cycle: "+strings.Join(cyc, " → "))
 	}
 
+	// Retry back-edges: must fire on failure, be bounded, and genuinely loop back
+	// (the target must be able to reach the source over the normal subgraph).
+	for _, e := range wf.Edges {
+		if e.MaxAttempts == 0 || !ids[e.From] || !ids[e.To] {
+			continue
+		}
+		if e.Label != "failed" {
+			errs = append(errs, fmt.Sprintf("retry edge %s→%s must have label \"failed\"", e.From, e.To))
+		}
+		if e.MaxAttempts < 1 || e.MaxAttempts > 10 {
+			errs = append(errs, fmt.Sprintf("retry edge %s→%s has max_attempts %d (must be 1–10)", e.From, e.To, e.MaxAttempts))
+		}
+		if !reaches(ids, wf.Edges, e.To, e.From) {
+			errs = append(errs, fmt.Sprintf("retry edge %s→%s is not a back-edge (%s cannot reach %s)", e.From, e.To, e.To, e.From))
+		}
+	}
+
 	sort.Strings(errs)
 	return errs
+}
+
+// reaches reports whether `to` is reachable from `from` over the non-retry edges.
+func reaches(ids map[string]bool, edges []model.Edge, from, to string) bool {
+	adj := make(map[string][]string, len(ids))
+	for _, e := range edges {
+		if ids[e.From] && ids[e.To] && e.MaxAttempts == 0 {
+			adj[e.From] = append(adj[e.From], e.To)
+		}
+	}
+	seen := map[string]bool{from: true}
+	stack := []string{from}
+	for len(stack) > 0 {
+		u := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, v := range adj[u] {
+			if v == to {
+				return true
+			}
+			if !seen[v] {
+				seen[v] = true
+				stack = append(stack, v)
+			}
+		}
+	}
+	return false
 }
 
 // findCycle returns one cycle's node sequence, or nil if the graph is acyclic.
@@ -86,7 +129,9 @@ func Workflow(wf model.Workflow) []string {
 func findCycle(ids map[string]bool, edges []model.Edge) []string {
 	adj := make(map[string][]string, len(ids))
 	for _, e := range edges {
-		if ids[e.From] && ids[e.To] && e.From != e.To {
+		// Retry back-edges (MaxAttempts > 0) are intentional bounded loops; they
+		// are validated separately and excluded from the DAG cycle check.
+		if ids[e.From] && ids[e.To] && e.From != e.To && e.MaxAttempts == 0 {
 			adj[e.From] = append(adj[e.From], e.To)
 		}
 	}

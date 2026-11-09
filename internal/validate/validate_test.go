@@ -24,6 +24,56 @@ func TestFactoryWorkflowIsValid(t *testing.T) {
 	}
 }
 
+func TestRetryBackEdgeAccepted(t *testing.T) {
+	// a → b → c, with a bounded retry back-edge c→a on failure.
+	wf := model.Workflow{
+		ID: "w", ProjectID: "default", Name: "retry",
+		Nodes: []model.Node{
+			node("a", model.KindStep, "noop"),
+			node("b", model.KindStep, "noop"),
+			node("c", model.KindStep, "noop"),
+		},
+		Edges: []model.Edge{
+			{From: "a", To: "b", Label: "success"},
+			{From: "b", To: "c", Label: "success"},
+			{From: "c", To: "a", Label: "failed", MaxAttempts: 2},
+		},
+	}
+	if errs := Workflow(wf); len(errs) != 0 {
+		t.Fatalf("retry back-edge should be valid, got: %v", errs)
+	}
+}
+
+func TestRetryEdgeRejections(t *testing.T) {
+	base := func(e model.Edge) model.Workflow {
+		return model.Workflow{ID: "w", ProjectID: "default", Name: "r",
+			Nodes: []model.Node{node("a", model.KindStep, "noop"), node("b", model.KindStep, "noop")},
+			Edges: []model.Edge{{From: "a", To: "b", Label: "success"}, e}}
+	}
+	// retry edge must be a real back-edge (b cannot reach a here)
+	if errs := Workflow(base(model.Edge{From: "a", To: "b", Label: "failed", MaxAttempts: 2})); !hasErr(errs, "not a back-edge") {
+		t.Errorf("expected back-edge error, got %v", errs)
+	}
+	// wrong label
+	if errs := Workflow(base(model.Edge{From: "b", To: "a", Label: "success", MaxAttempts: 2})); !hasErr(errs, `must have label "failed"`) {
+		t.Errorf("expected label error, got %v", errs)
+	}
+	// out-of-range budget
+	if errs := Workflow(base(model.Edge{From: "b", To: "a", Label: "failed", MaxAttempts: 99})); !hasErr(errs, "max_attempts") {
+		t.Errorf("expected max_attempts error, got %v", errs)
+	}
+}
+
+func TestPlainCycleStillRejected(t *testing.T) {
+	// A non-retry cycle is still an error.
+	wf := model.Workflow{ID: "w", ProjectID: "default", Name: "c",
+		Nodes: []model.Node{node("a", model.KindStep, "noop"), node("b", model.KindStep, "noop")},
+		Edges: []model.Edge{{From: "a", To: "b", Label: "success"}, {From: "b", To: "a", Label: "success"}}}
+	if errs := Workflow(wf); !hasErr(errs, "cycle") {
+		t.Errorf("expected cycle error, got %v", errs)
+	}
+}
+
 func hasErr(errs []string, substr string) bool {
 	for _, e := range errs {
 		if strings.Contains(e, substr) {

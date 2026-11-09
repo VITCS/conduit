@@ -34,6 +34,7 @@ export interface WFEdge {
   from: string;
   to: string;
   label?: string;
+  max_attempts?: number; // > 0 marks a bounded retry back-edge
 }
 
 export interface Workflow {
@@ -91,5 +92,6 @@ export interface NodeData {
 // Data carried on a React Flow edge.
 export interface EdgeData {
   label: string;
+  maxAttempts?: number; // mirrors WFEdge.max_attempts for a retry back-edge
   [key: string]: unknown;
 }

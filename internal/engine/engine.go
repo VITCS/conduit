@@ -249,6 +249,10 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 	for _, ed := range wf.Edges {
 		out[ed.From] = append(out[ed.From], ed)
 	}
+	// Bounded recovery loops: for each retry back-edge, the set of nodes to reset
+	// and re-run on a retry (the nodes on a path from the edge target back to its
+	// source). Keyed "from\x00to" to match Run.Loops.
+	loopBodies := computeLoopBodies(wf)
 
 	metrics.RunsActive.Add(1)
 	e.publish(model.Event{Type: "run.started", RunID: runID, Level: "info",
@@ -259,12 +263,14 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 	// branches run concurrently in their own goroutines. (A true join — waiting
 	// for all predecessors — is a later addition; "merge" is a pass-through today.)
 	var (
-		mu       sync.Mutex
-		started  = map[string]bool{}
-		wg       sync.WaitGroup
-		failed   bool
-		canceled bool
+		mu        sync.Mutex
+		started   = map[string]bool{}
+		wg        sync.WaitGroup
+		failed    bool
+		canceled  bool
+		execCount int
 	)
+	const execCap = 500 // backstop against a pathological loop misconfiguration
 
 	var activate func(id string)
 	activate = func(id string) {
@@ -284,19 +290,43 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			outcome := e.runNode(ctx, runID, node)
+
 			mu.Lock()
-			switch outcome {
-			case model.StatusCanceled:
-				canceled = true
-			case model.StatusFailed:
+			execCount++
+			over := execCount > execCap
+			if over {
 				failed = true
 			}
 			mu.Unlock()
+			if over {
+				e.publish(model.Event{Type: "log", RunID: runID, NodeID: id, Level: "fail",
+					Message: fmt.Sprintf("execution cap (%d) exceeded — stopping to prevent a runaway loop", execCap)})
+				return
+			}
+
+			outcome := e.runNode(ctx, runID, node)
 			if outcome == model.StatusCanceled {
+				mu.Lock()
+				canceled = true
+				mu.Unlock()
 				return // stop propagating this branch
 			}
+
+			// Bounded recovery loop: a failing node with a retry back-edge that still
+			// has budget re-enters the loop body (carrying its failure context in
+			// memory) instead of being treated as a terminal failure.
+			if outcome == model.StatusFailed && e.tryRetry(runID, node, out[id], loopBodies, &mu, started, activate) {
+				return
+			}
+			if outcome == model.StatusFailed {
+				mu.Lock()
+				failed = true
+				mu.Unlock()
+			}
 			for _, ed := range out[id] {
+				if ed.MaxAttempts > 0 {
+					continue // retry back-edges are handled by tryRetry
+				}
 				if edgeMatches(ed.Label, outcome) {
 					activate(ed.To)
 				}
@@ -341,6 +371,101 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 	e.publish(model.Event{Type: "run.finished", RunID: runID, Status: final,
 		Level: levelFor(final), Message: fmt.Sprintf("Run %s %s", runID, final),
 		Run: &snap})
+}
+
+// tryRetry handles a failing node's bounded recovery loop. If one of its outgoing
+// edges is a retry back-edge with budget remaining, it bumps the durable attempt
+// counter, resets the loop body (started flags + step records) and re-activates the
+// loop entry, returning true. The failure context the node wrote to memory (e.g.
+// checks_summary) is already in the run, so the re-run is informed. Returns false
+// when there is no retry edge or its budget is exhausted — the caller then routes
+// the failure normally.
+func (e *Engine) tryRetry(runID string, node model.Node, edges []model.Edge, loopBodies map[string][]string, mu *sync.Mutex, started map[string]bool, activate func(string)) bool {
+	for _, ed := range edges {
+		if ed.MaxAttempts <= 0 || ed.Label != "failed" {
+			continue
+		}
+		k := ed.From + "\x00" + ed.To
+		attempts := -1
+		e.store.MutateRun(runID, func(r *model.Run) {
+			if r.Loops == nil {
+				r.Loops = map[string]int{}
+			}
+			if r.Loops[k] < ed.MaxAttempts {
+				r.Loops[k]++
+				attempts = r.Loops[k]
+			}
+		}) //nolint:errcheck
+		if attempts < 0 {
+			continue // budget exhausted — let the normal failed edge handle it
+		}
+		body := loopBodies[k]
+		mu.Lock()
+		for _, nid := range body {
+			started[nid] = false
+		}
+		mu.Unlock()
+		e.store.MutateRun(runID, func(r *model.Run) {
+			for _, nid := range body {
+				if st := r.Steps[nid]; st != nil {
+					st.Status = model.StatusPending
+					st.StartedAt = nil
+					st.EndedAt = nil
+				}
+			}
+		}) //nolint:errcheck
+		e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
+			Message: fmt.Sprintf("%s · failed — retry %d/%d, re-running from %q with feedback", node.Title, attempts, ed.MaxAttempts, ed.To)})
+		activate(ed.To)
+		return true
+	}
+	return false
+}
+
+// computeLoopBodies maps each retry back-edge ("from\x00to") to the nodes on a
+// path from its target back to its source over the normal (non-retry) edges.
+func computeLoopBodies(wf model.Workflow) map[string][]string {
+	fwd := map[string][]string{}
+	bwd := map[string][]string{}
+	for _, ed := range wf.Edges {
+		if ed.MaxAttempts > 0 {
+			continue
+		}
+		fwd[ed.From] = append(fwd[ed.From], ed.To)
+		bwd[ed.To] = append(bwd[ed.To], ed.From)
+	}
+	bodies := map[string][]string{}
+	for _, ed := range wf.Edges {
+		if ed.MaxAttempts <= 0 {
+			continue
+		}
+		forward := reachSet(fwd, ed.To)    // reachable from the loop entry
+		backward := reachSet(bwd, ed.From) // can reach the loop-back node
+		var body []string
+		for n := range forward {
+			if backward[n] {
+				body = append(body, n)
+			}
+		}
+		bodies[ed.From+"\x00"+ed.To] = body
+	}
+	return bodies
+}
+
+func reachSet(adj map[string][]string, start string) map[string]bool {
+	seen := map[string]bool{start: true}
+	stack := []string{start}
+	for len(stack) > 0 {
+		u := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, v := range adj[u] {
+			if !seen[v] {
+				seen[v] = true
+				stack = append(stack, v)
+			}
+		}
+	}
+	return seen
 }
 
 // runNode executes one node and returns its outcome. It retries a failed
