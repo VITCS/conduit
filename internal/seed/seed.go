@@ -165,12 +165,14 @@ func FactoryWorkflow() model.Workflow {
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "webhook", Kind: model.KindTrigger, Title: "Ticket Event", X: 40, Y: 300,
 				Config: []model.Field{f("on", "webhook", "jira / notion / manual run"), f("hook", "webhook", "POST /api/hooks/wf_factory?token=…")}},
-			{ID: "src", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Fetch Jira Ticket", X: 320, Y: 300,
+			{ID: "src", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Fetch Jira Ticket", X: 320, Y: 300, Stage: "implement",
 				Config: []model.Field{
 					f("base_url", "globe", "${var:jira_base}"),
 					f("email", "user", "${var:jira_email}"),
 					f("jql", "file", "${var:jira_jql}"),
 					f("api_token", "key", "${secret:jira_token}"),
+					// When started from a board task, use the task's ticket, not a fresh fetch.
+					f("prefer_memory", "approve", "true"),
 				}},
 			{ID: "triage", Type: "triage", Icon: "gauge", Kind: model.KindStep, Title: "Triage · Confidence", X: 600, Y: 300,
 				Config: []model.Field{
@@ -233,7 +235,7 @@ func FactoryWorkflow() model.Workflow {
 					// The exact file-level change plan, approved before any branch exists.
 					f("summary", "file", "Proposed file changes for ${memory.ticket_key}:\n\n${memory.change_plan}"),
 				}},
-			{ID: "apply", Type: "coding_apply", Icon: "code", Kind: model.KindStep, Title: "Apply Changes", X: 2440, Y: 300,
+			{ID: "apply", Type: "coding_apply", Icon: "code", Kind: model.KindStep, Title: "Apply Changes", X: 2440, Y: 300, Stage: "implement",
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -250,7 +252,7 @@ func FactoryWorkflow() model.Workflow {
 					// On a recovery-loop retry, the prior CI failures are fed back in.
 					f("feedback", "file", "${memory.checks_summary}"),
 				}},
-			{ID: "vchk", Type: "github_checks", Icon: "heart", Kind: model.KindStep, Title: "Verify Checks (CI)", X: 2720, Y: 300,
+			{ID: "vchk", Type: "github_checks", Icon: "heart", Kind: model.KindStep, Title: "Verify Checks (CI)", X: 2720, Y: 300, Stage: "verify",
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -259,7 +261,7 @@ func FactoryWorkflow() model.Workflow {
 					f("require_checks", "approve", "false"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 3000, Y: 300,
+			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 3000, Y: 300, Stage: "done",
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -280,9 +282,9 @@ func FactoryWorkflow() model.Workflow {
 				}},
 			{ID: "mem", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record Delivery", X: 3280, Y: 420,
 				Config: []model.Field{f("store", "db", "deliveries"), f("key", "key", "ticket_key"), f("set", "file", "work_branch, last_pr_url, checks_summary")}},
-			{ID: "clar", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs clarification", X: 600, Y: 540,
+			{ID: "clar", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs clarification", X: 600, Y: 540, Stage: "blocked",
 				Config: []model.Field{f("set", "github", "needs_clarification"), f("notify", "user", "author")}},
-			{ID: "fail", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs attention", X: 320, Y: 540,
+			{ID: "fail", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs attention", X: 320, Y: 540, Stage: "blocked",
 				Config: []model.Field{f("set", "github", "needs_attention"), f("notify", "user", "author")}},
 		},
 		Edges: []model.Edge{

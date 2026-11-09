@@ -122,6 +122,40 @@ func (e *Engine) Enqueue(wf model.Workflow, title string, input map[string]any) 
 	return snap
 }
 
+// EnqueueForTask queues a run bound to a board task, seeding the task's ticket
+// context into run memory so the factory works on this task's issue (its fetch
+// node can skip re-fetching). The run's TaskID links it back for stage projection.
+func (e *Engine) EnqueueForTask(wf model.Workflow, t model.Task) model.Run {
+	summary := t.Summary
+	if summary == "" {
+		summary = t.Title
+	}
+	r := &model.Run{
+		ID:         nextRunID(),
+		WorkflowID: wf.ID,
+		ProjectID:  wf.ProjectID,
+		Title:      "task: " + t.Title,
+		Status:     model.StatusQueued,
+		CreatedAt:  time.Now(),
+		Steps:      map[string]*model.StepRun{},
+		Memory: map[string]any{
+			"ticket_key":         t.SourceRef,
+			"ticket_summary":     summary,
+			"ticket_description": t.Description,
+			"ticket_url":         t.SourceURL,
+			"ticket_source":      t.Source,
+		},
+		Input:  map[string]any{"task_id": t.ID},
+		TaskID: t.ID,
+	}
+	for _, n := range wf.Nodes {
+		r.Steps[n.ID] = &model.StepRun{NodeID: n.ID, Status: model.StatusPending}
+	}
+	snap, _ := e.store.CreateRun(r)
+	metrics.RunsStarted.Inc("")
+	return snap
+}
+
 // ExecuteClaimed runs a claimed run to completion. The worker calls this after
 // ClaimRun; it loads the run's workflow and runs the DAG. parentCtx is the
 // worker's lifetime; cancellation via Cancel(runID) is also honored.
@@ -368,9 +402,75 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 	})
 	metrics.RunsActive.Add(-1)
 	metrics.RunsFinished.Inc(metrics.Labels("status", string(final)))
+	e.finalizeTask(&snap, final)
 	e.publish(model.Event{Type: "run.finished", RunID: runID, Status: final,
 		Level: levelFor(final), Message: fmt.Sprintf("Run %s %s", runID, final),
 		Run: &snap})
+}
+
+// projectTaskStage advances a bound task's board stage as its run enters a node
+// that declares a Stage. No-op for runs that aren't bound to a task.
+func (e *Engine) projectTaskStage(runID string, node model.Node) {
+	if node.Stage == "" {
+		return
+	}
+	run, ok, _ := e.store.GetRun(runID)
+	if !ok || run.TaskID == "" {
+		return
+	}
+	stage := model.TaskStage(node.Stage)
+	snap, ok, _ := e.store.MutateTask(run.TaskID, func(t *model.Task) {
+		t.CurrentRunID = runID
+		if t.Stage != stage {
+			t.Stage = stage
+			t.StageChangedAt = time.Now()
+		}
+		t.UpdatedAt = time.Now()
+	})
+	if ok {
+		e.publish(model.Event{Type: "task.updated", RunID: runID, Task: &snap, Time: time.Now()})
+	}
+}
+
+// finalizeTask projects the run's terminal outcome onto its task (Done on success,
+// Blocked otherwise) and copies the produced artifacts (PR, branch, confidence).
+func (e *Engine) finalizeTask(run *model.Run, final model.Status) {
+	if run == nil || run.TaskID == "" {
+		return
+	}
+	stage := model.StageDone
+	if final != model.StatusSuccess {
+		stage = model.StageBlocked
+	}
+	snap, ok, _ := e.store.MutateTask(run.TaskID, func(t *model.Task) {
+		t.Stage = stage
+		t.StageChangedAt = time.Now()
+		t.UpdatedAt = time.Now()
+		if v, ok := run.Memory["last_pr_url"].(string); ok && v != "" {
+			t.PRURL = v
+		}
+		if v, ok := run.Memory["work_branch"].(string); ok && v != "" {
+			t.Branch = v
+		}
+		if c := memInt(run.Memory["confidence_score"]); c > 0 {
+			t.Confidence = c
+		}
+	})
+	if ok {
+		e.publish(model.Event{Type: "task.updated", RunID: run.ID, Task: &snap, Time: time.Now()})
+	}
+}
+
+func memInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
 }
 
 // tryRetry handles a failing node's bounded recovery loop. If one of its outgoing
@@ -478,6 +578,7 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 	})
 	e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
 		Message: fmt.Sprintf("%s · running", node.Title)})
+	e.projectTaskStage(runID, node)
 
 	if node.Type == "approval" {
 		return e.runApproval(ctx, runID, node)

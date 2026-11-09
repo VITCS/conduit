@@ -49,6 +49,20 @@ type Store interface {
 	// of the result. ok is false if the run does not exist.
 	MutateRun(id string, fn func(*model.Run)) (snap model.Run, ok bool, err error)
 
+	// Tasks are the durable board units (Backlog/Implement/Verify/Done/Blocked).
+	// A run links to its task via Run.TaskID; the task's stage is a projection the
+	// engine advances as the run progresses.
+	CreateTask(t model.Task) (model.Task, error)
+	GetTask(id string) (model.Task, bool, error)
+	// ListTasks returns a project's tasks (newest first), filtered by stage when
+	// non-empty; projectID "" returns all projects.
+	ListTasks(projectID string, stage model.TaskStage) ([]model.Task, error)
+	// MutateTask applies fn to the stored task atomically and returns a snapshot.
+	MutateTask(id string, fn func(*model.Task)) (snap model.Task, ok bool, err error)
+	DeleteTask(id string) error
+	// ListRunsByTask returns a task's runs, newest first (its execution history).
+	ListRunsByTask(taskID string) ([]model.Run, error)
+
 	// Project membership (per-project roles).
 	AddProjectMember(m model.ProjectMember) error
 	GetProjectMember(projectID, userID string) (model.ProjectMember, bool, error)
@@ -101,6 +115,8 @@ type Mem struct {
 	workflows  map[string]model.Workflow
 	runs       map[string]*model.Run
 	order      []string                      // run IDs, oldest first
+	tasks      map[string]*model.Task        // by ID
+	taskOrder  []string                      // task IDs, oldest first
 	claimedBy  map[string]string             // runID -> workerID
 	leaseExp   map[string]time.Time          // runID -> lease expiry
 	secrets    map[string][]byte             // key: projectID\x00name
@@ -119,6 +135,7 @@ func NewMem() *Mem {
 		members:    map[string]model.ProjectMember{},
 		workflows:  map[string]model.Workflow{},
 		runs:       map[string]*model.Run{},
+		tasks:      map[string]*model.Task{},
 		claimedBy:  map[string]string{},
 		leaseExp:   map[string]time.Time{},
 		secrets:    map[string][]byte{},
@@ -499,6 +516,77 @@ func cloneRun(r *model.Run) model.Run {
 	var c model.Run
 	_ = json.Unmarshal(b, &c)
 	return c
+}
+
+// --- Tasks ---
+
+func (s *Mem) CreateTask(t model.Task) (model.Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tt := t
+	s.tasks[t.ID] = &tt
+	s.taskOrder = append(s.taskOrder, t.ID)
+	return tt, nil
+}
+
+func (s *Mem) GetTask(id string) (model.Task, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return model.Task{}, false, nil
+	}
+	return *t, true, nil
+}
+
+func (s *Mem) ListTasks(projectID string, stage model.TaskStage) ([]model.Task, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.Task, 0, len(s.taskOrder))
+	for i := len(s.taskOrder) - 1; i >= 0; i-- { // newest first
+		if t, ok := s.tasks[s.taskOrder[i]]; ok {
+			if (projectID == "" || t.ProjectID == projectID) && (stage == "" || t.Stage == stage) {
+				out = append(out, *t)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *Mem) MutateTask(id string, fn func(*model.Task)) (model.Task, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return model.Task{}, false, nil
+	}
+	fn(t)
+	return *t, true, nil
+}
+
+func (s *Mem) DeleteTask(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.tasks, id)
+	for i, tid := range s.taskOrder {
+		if tid == id {
+			s.taskOrder = append(s.taskOrder[:i], s.taskOrder[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+func (s *Mem) ListRunsByTask(taskID string) ([]model.Run, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []model.Run{}
+	for i := len(s.order) - 1; i >= 0; i-- { // newest first
+		if r, ok := s.runs[s.order[i]]; ok && r.TaskID == taskID {
+			out = append(out, cloneRun(r))
+		}
+	}
+	return out, nil
 }
 
 // Compile-time assurance that Mem satisfies Store.

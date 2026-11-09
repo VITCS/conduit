@@ -45,6 +45,16 @@ func execJira(n model.Node, run *model.Run) Result {
 	if strings.EqualFold(n.Field("action"), "comment") {
 		return jiraComment(n, ex, project)
 	}
+	// Board tasks seed the ticket into memory; prefer it over a fresh JQL fetch so
+	// the run works on the task's own issue (and manual tasks need no Jira at all).
+	if strings.EqualFold(n.Field("prefer_memory"), "true") && run != nil {
+		if sum, ok := run.Memory["ticket_summary"].(string); ok && strings.TrimSpace(sum) != "" {
+			key, _ := run.Memory["ticket_key"].(string)
+			return Result{Outcome: model.StatusSuccess,
+				Output: map[string]any{"ticket_key": key, "ticket_summary": sum, "source": "task"},
+				Logs:   []string{"jira: using task-provided ticket " + firstNonEmpty(key, "(manual)")}}
+		}
+	}
 	return jiraFetch(n, ex, project)
 }
 

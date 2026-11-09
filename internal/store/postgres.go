@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"conduit/internal/model"
@@ -55,6 +56,19 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS lease_expires timestamptz;
 CREATE INDEX IF NOT EXISTS runs_created_idx ON runs (created_at DESC);
 CREATE INDEX IF NOT EXISTS runs_claim_idx ON runs (status, lease_expires);
 CREATE INDEX IF NOT EXISTS runs_project_idx ON runs (project_id);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS task_id text;
+CREATE INDEX IF NOT EXISTS runs_task_idx ON runs (task_id);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id          text PRIMARY KEY,
+    project_id  text NOT NULL DEFAULT 'default',
+    stage       text NOT NULL,
+    data        jsonb NOT NULL,
+    created_at  timestamptz NOT NULL,
+    updated_at  timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tasks_project_stage_idx ON tasks (project_id, stage);
+CREATE INDEX IF NOT EXISTS tasks_created_idx ON tasks (created_at DESC);
 CREATE INDEX IF NOT EXISTS workflows_project_idx ON workflows (project_id);
 CREATE TABLE IF NOT EXISTS secrets (
     project_id text NOT NULL DEFAULT 'default',
@@ -302,10 +316,14 @@ func (s *Pg) CreateRun(r *model.Run) (model.Run, error) {
 	if pid == "" {
 		pid = model.DefaultProjectID
 	}
+	var taskID any
+	if r.TaskID != "" {
+		taskID = r.TaskID
+	}
 	_, err = s.db.Exec(
-		`INSERT INTO runs (id, workflow_id, project_id, status, data, created_at, finished_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		r.ID, r.WorkflowID, pid, string(r.Status), b, r.CreatedAt, r.FinishedAt)
+		`INSERT INTO runs (id, workflow_id, project_id, status, data, created_at, finished_at, task_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		r.ID, r.WorkflowID, pid, string(r.Status), b, r.CreatedAt, r.FinishedAt, taskID)
 	if err != nil {
 		return model.Run{}, err
 	}
@@ -396,6 +414,141 @@ func (s *Pg) MutateRun(id string, fn func(*model.Run)) (model.Run, bool, error) 
 		return model.Run{}, false, err
 	}
 	return r, true, nil
+}
+
+// --- Tasks ---
+
+func (s *Pg) CreateTask(t model.Task) (model.Task, error) {
+	b, err := json.Marshal(&t)
+	if err != nil {
+		return model.Task{}, err
+	}
+	pid := t.ProjectID
+	if pid == "" {
+		pid = model.DefaultProjectID
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO tasks (id, project_id, stage, data, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6)`,
+		t.ID, pid, string(t.Stage), b, t.CreatedAt, t.UpdatedAt)
+	if err != nil {
+		return model.Task{}, err
+	}
+	return t, nil
+}
+
+func (s *Pg) GetTask(id string) (model.Task, bool, error) {
+	var b []byte
+	err := s.db.QueryRow(`SELECT data FROM tasks WHERE id=$1`, id).Scan(&b)
+	if err == sql.ErrNoRows {
+		return model.Task{}, false, nil
+	}
+	if err != nil {
+		return model.Task{}, false, err
+	}
+	var t model.Task
+	if err := json.Unmarshal(b, &t); err != nil {
+		return model.Task{}, false, err
+	}
+	return t, true, nil
+}
+
+func (s *Pg) ListTasks(projectID string, stage model.TaskStage) ([]model.Task, error) {
+	q := `SELECT data FROM tasks`
+	var conds []string
+	var args []any
+	if projectID != "" {
+		args = append(args, projectID)
+		conds = append(conds, fmt.Sprintf("project_id=$%d", len(args)))
+	}
+	if stage != "" {
+		args = append(args, string(stage))
+		conds = append(conds, fmt.Sprintf("stage=$%d", len(args)))
+	}
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	q += ` ORDER BY created_at DESC`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Task{}
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var t model.Task
+		if err := json.Unmarshal(b, &t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *Pg) MutateTask(id string, fn func(*model.Task)) (model.Task, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Task{}, false, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	var b []byte
+	err = tx.QueryRowContext(ctx, `SELECT data FROM tasks WHERE id=$1 FOR UPDATE`, id).Scan(&b)
+	if err == sql.ErrNoRows {
+		return model.Task{}, false, nil
+	}
+	if err != nil {
+		return model.Task{}, false, err
+	}
+	var t model.Task
+	if err := json.Unmarshal(b, &t); err != nil {
+		return model.Task{}, false, err
+	}
+	fn(&t)
+	nb, err := json.Marshal(&t)
+	if err != nil {
+		return model.Task{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE tasks SET stage=$2, data=$3, updated_at=$4 WHERE id=$1`,
+		id, string(t.Stage), nb, t.UpdatedAt); err != nil {
+		return model.Task{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Task{}, false, err
+	}
+	return t, true, nil
+}
+
+func (s *Pg) DeleteTask(id string) error {
+	_, err := s.db.Exec(`DELETE FROM tasks WHERE id=$1`, id)
+	return err
+}
+
+func (s *Pg) ListRunsByTask(taskID string) ([]model.Run, error) {
+	rows, err := s.db.Query(`SELECT data FROM runs WHERE task_id=$1 ORDER BY created_at DESC`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Run{}
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var r model.Run
+		if err := json.Unmarshal(b, &r); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func (s *Pg) PutSecret(projectID, name string, ciphertext []byte) error {

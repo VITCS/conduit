@@ -75,6 +75,7 @@ export interface SSEvent {
   detail?: string;
   step?: StepRun;
   run?: Run;
+  task?: Task;
   time: string;
 }
 
@@ -87,6 +88,28 @@ export interface NodeData {
   config: Field[];
   status: Status;
   [key: string]: unknown;
+}
+
+export type TaskStage = "backlog" | "implement" | "verify" | "done" | "blocked";
+
+export interface Task {
+  id: string;
+  project_id: string;
+  workflow_id?: string;
+  title: string;
+  source?: string;
+  source_ref?: string;
+  source_url?: string;
+  summary?: string;
+  description?: string;
+  stage: TaskStage;
+  confidence?: number;
+  current_run_id?: string;
+  branch?: string;
+  pr_url?: string;
+  created_at: string;
+  updated_at: string;
+  stage_changed_at: string;
 }
 
 // Data carried on a React Flow edge.

@@ -28,6 +28,7 @@ import { Topbar } from "@/components/Topbar";
 import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { Board } from "@/components/Board";
 import { MembersPanel } from "@/components/MembersPanel";
 import { Landing } from "@/components/Landing";
 import { Auth } from "@/components/Auth";
@@ -87,6 +88,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [running, setRunning] = useState(false);
   const [waitingNode, setWaitingNode] = useState<string | null>(null);
   const [approvalDetail, setApprovalDetail] = useState<string>("");
+  const [appView, setAppView] = useState<"editor" | "board">("editor");
   const [conn, setConn] = useState("idle");
   const [runLabel, setRunLabel] = useState("No run yet");
   const [runMeta, setRunMeta] = useState("press Run to execute");
@@ -676,6 +678,13 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
             )}
           </div>
         )}
+        <div className="viewbar">
+          <button className={`vbtn${appView === "editor" ? " on" : ""}`} onClick={() => setAppView("editor")} data-testid="view-editor">Editor</button>
+          <button className={`vbtn${appView === "board" ? " on" : ""}`} onClick={() => setAppView("board")} data-testid="view-board">Board</button>
+        </div>
+        {appView === "board" ? (
+          <Board onOpenRun={(id) => { setAppView("editor"); pickRun(id); }} onToast={showToast} />
+        ) : (
         <div className="body">
           <RunRail
             hidden={railHidden}
@@ -801,6 +810,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
 
           <Palette hidden={!editMode} onAdd={addComponent} />
         </div>
+        )}
         {showSettings && <SettingsPanel onClose={() => { setShowSettings(false); loadProjectConfig(); }} onToast={showToast} />}
         {showMembers && <MembersPanel projectId={currentProject} onClose={() => setShowMembers(false)} onToast={showToast} />}
         {toast && <div className="toast">{toast}</div>}

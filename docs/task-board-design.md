@@ -1,6 +1,14 @@
 # Task board: Backlog → Implement → Verify → Done
 
-**Status:** proposed · **Scope owner:** full-stack · **Est:** Phase 1 ~3–4 days · full ~1.5–2 weeks
+**Status:** Phase 1 implemented · **Scope owner:** full-stack · **Est:** full ~1.5–2 weeks
+
+> Phase 1 shipped: `model.Task` + `Run.TaskID` + `Node.Stage`; Store task methods
+> (mem + postgres `tasks` table); the engine stage-projection hook
+> (`projectTaskStage` / `finalizeTask`) + `EnqueueForTask`; `task.*` SSE events;
+> the tasks API (`/api/tasks` CRUD + `/start` + `/stage`, `/api/intake/{project}`);
+> factory `Node.Stage` wiring + a fetch that prefers the task's ticket; and the
+> Board UI (Editor/Board toggle, five live columns, New task, Start, View run, PR).
+> Phases 2–3 (auto-intake webhooks, confidence-at-intake, metrics dashboard) remain.
 
 ## Goal
 

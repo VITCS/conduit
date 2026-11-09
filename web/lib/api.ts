@@ -1,4 +1,4 @@
-import type { Run, Workflow } from "./types";
+import type { Run, Workflow, Task } from "./types";
 
 // Same-origin by default (the Go server serves both UI and API). For `next dev`
 // against a separately-running server, set NEXT_PUBLIC_API_BASE.
@@ -148,6 +148,27 @@ export const api = {
   // same-origin query parameter (the server accepts it only for this endpoint).
   eventsURL: (runId: string) =>
     `${BASE}/api/events?run=${encodeURIComponent(runId)}&access_token=${encodeURIComponent(getToken())}`,
+  // Project-wide stream (no run filter) — used by the board for task.* events.
+  eventsAllURL: () => `${BASE}/api/events?access_token=${encodeURIComponent(getToken())}`,
+
+  listTasks: () => req<Task[]>("/api/tasks"),
+  getTask: (id: string) => req<{ task: Task; runs: Run[] }>(`/api/tasks/${encodeURIComponent(id)}`),
+  createTask: (body: Partial<Task>) =>
+    req<Task>("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  startTask: (id: string) =>
+    req<{ task: Task; run: Run }>(`/api/tasks/${encodeURIComponent(id)}/start`, { method: "POST" }),
+  setTaskStage: (id: string, stage: string) =>
+    req<Task>(`/api/tasks/${encodeURIComponent(id)}/stage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+    }),
+  deleteTask: (id: string) =>
+    req<void>(`/api/tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listSecrets: () => req<string[]>("/api/secrets"),
   putSecret: (name: string, value: string) =>
     req<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, {

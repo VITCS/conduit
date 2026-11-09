@@ -45,6 +45,9 @@ type Node struct {
 	X      int     `json:"x"`
 	Y      int     `json:"y"`
 	Config []Field `json:"config"`
+	// Stage, when set, is the board stage this node belongs to. As a task's run
+	// enters the node, the engine projects this onto the task (see model.TaskStage).
+	Stage string `json:"stage,omitempty"`
 }
 
 // Field returns the configured value for a key, or "" if absent.
@@ -128,6 +131,8 @@ type Run struct {
 	// Input is the payload a run was started with (e.g. a webhook body); the
 	// trigger node exposes it to downstream steps.
 	Input map[string]any `json:"input,omitempty"`
+	// TaskID links this run to a board task, when it was started for one.
+	TaskID string `json:"task_id,omitempty"`
 }
 
 // Role is a user's or token's permission level.
@@ -196,8 +201,10 @@ type Event struct {
 	Message string `json:"message,omitempty"`
 	// Detail carries longer human-readable context (e.g. the agent's suggestion
 	// shown at an approval gate), rendered from the node's templated summary.
-	Detail string    `json:"detail,omitempty"`
-	Step   *StepRun  `json:"step,omitempty"`
-	Run    *Run      `json:"run,omitempty"`
-	Time   time.Time `json:"time"`
+	Detail string   `json:"detail,omitempty"`
+	Step   *StepRun `json:"step,omitempty"`
+	Run    *Run     `json:"run,omitempty"`
+	// Task carries board-task changes on "task.created" / "task.updated" events.
+	Task *Task     `json:"task,omitempty"`
+	Time time.Time `json:"time"`
 }
