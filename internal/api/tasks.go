@@ -77,6 +77,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		Title: body.Title, Summary: body.Summary, Description: body.Description,
 		Source: pickStr(body.Source, "manual"), SourceRef: body.SourceRef, SourceURL: body.SourceURL,
 		Stage: model.StageBacklog, CreatedAt: now, UpdatedAt: now, StageChangedAt: now,
+		History: []model.StageEvent{{Stage: model.StageBacklog, At: now}},
 	}
 	created, err := s.Store.CreateTask(t)
 	if err != nil {
@@ -126,9 +127,7 @@ func (s *Server) startTask(w http.ResponseWriter, r *http.Request) {
 	snap, _, _ := s.Store.MutateTask(t.ID, func(tt *model.Task) {
 		tt.CurrentRunID = run.ID
 		tt.WorkflowID = wf.ID
-		tt.Stage = model.StageImplement
-		tt.StageChangedAt = now
-		tt.UpdatedAt = now
+		tt.SetStage(model.StageImplement, now)
 	})
 	s.Store.Broker().Publish(model.Event{Type: "task.updated", RunID: run.ID, Task: &snap, Time: now})
 	writeJSON(w, http.StatusCreated, map[string]any{"task": snap, "run": run})
@@ -152,9 +151,7 @@ func (s *Server) setTaskStage(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	snap, _, err := s.Store.MutateTask(t.ID, func(tt *model.Task) {
-		tt.Stage = stage
-		tt.StageChangedAt = now
-		tt.UpdatedAt = now
+		tt.SetStage(stage, now)
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -162,6 +159,38 @@ func (s *Server) setTaskStage(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Store.Broker().Publish(model.Event{Type: "task.updated", Task: &snap, Time: now})
 	writeJSON(w, http.StatusOK, snap)
+}
+
+// POST /api/tasks/{id}/notes — add a comment to a task.
+func (s *Server) addTaskNote(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Text string `json:"text"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if strings.TrimSpace(body.Text) == "" {
+		writeErr(w, http.StatusBadRequest, "text is required")
+		return
+	}
+	t, ok, _ := s.Store.GetTask(r.PathValue("id"))
+	if !ok || t.ProjectID != projectID(r) {
+		writeErr(w, http.StatusNotFound, "task not found")
+		return
+	}
+	author := ""
+	if p, ok := r.Context().Value(principalKey).(principal); ok {
+		author = p.email
+	}
+	now := time.Now()
+	snap, _, err := s.Store.MutateTask(t.ID, func(tt *model.Task) {
+		tt.Notes = append(tt.Notes, model.TaskNote{Author: author, Text: body.Text, At: now})
+		tt.UpdatedAt = now
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.Store.Broker().Publish(model.Event{Type: "task.updated", Task: &snap, Time: now})
+	writeJSON(w, http.StatusCreated, snap)
 }
 
 // DELETE /api/tasks/{id}
@@ -203,6 +232,7 @@ func (s *Server) intake(w http.ResponseWriter, r *http.Request) {
 		Source: pickStr(nt.Source, "intake"), SourceRef: nt.SourceRef, SourceURL: nt.SourceURL,
 		Confidence: score,
 		Stage:      model.StageBacklog, CreatedAt: now, UpdatedAt: now, StageChangedAt: now,
+		History: []model.StageEvent{{Stage: model.StageBacklog, At: now}},
 	}
 	created, err := s.Store.CreateTask(t)
 	if err != nil {
@@ -219,9 +249,7 @@ func (s *Server) intake(w http.ResponseWriter, r *http.Request) {
 			snap, _, _ := s.Store.MutateTask(created.ID, func(tt *model.Task) {
 				tt.CurrentRunID = run.ID
 				tt.WorkflowID = wf.ID
-				tt.Stage = model.StageImplement
-				tt.StageChangedAt = time.Now()
-				tt.UpdatedAt = time.Now()
+				tt.SetStage(model.StageImplement, time.Now())
 			})
 			s.Store.Broker().Publish(model.Event{Type: "task.updated", RunID: run.ID, Task: &snap, Time: time.Now()})
 			created = snap

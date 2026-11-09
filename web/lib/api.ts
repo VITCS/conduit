@@ -1,4 +1,4 @@
-import type { Run, Workflow, Task } from "./types";
+import type { Run, Workflow, Task, BoardMetrics } from "./types";
 
 // Same-origin by default (the Go server serves both UI and API). For `next dev`
 // against a separately-running server, set NEXT_PUBLIC_API_BASE.
@@ -169,6 +169,13 @@ export const api = {
     }),
   deleteTask: (id: string) =>
     req<void>(`/api/tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  addTaskNote: (id: string, text: string) =>
+    req<Task>(`/api/tasks/${encodeURIComponent(id)}/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }),
+  getMetrics: () => req<BoardMetrics>("/api/metrics"),
   listSecrets: () => req<string[]>("/api/secrets"),
   putSecret: (name: string, value: string) =>
     req<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, {

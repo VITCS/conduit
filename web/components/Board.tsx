@@ -181,12 +181,17 @@ function TaskDrawer({ task, onClose, onStart, onOpenRun, onDelete, onToast }: {
   onDelete: (t: Task) => void; onToast: (m: string) => void;
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
+  const [note, setNote] = useState("");
   useEffect(() => {
     api.getTask(task.id).then((d) => setRuns(d.runs || [])).catch(() => {});
   }, [task.id]);
 
   async function moveStage(stage: string) {
     try { await api.setTaskStage(task.id, stage); } catch (e) { onToast("Move failed: " + (e as Error).message); }
+  }
+  async function addNote() {
+    if (!note.trim()) return;
+    try { await api.addTaskNote(task.id, note.trim()); setNote(""); } catch (e) { onToast("Note failed: " + (e as Error).message); }
   }
 
   return (
@@ -231,6 +236,21 @@ function TaskDrawer({ task, onClose, onStart, onOpenRun, onDelete, onToast }: {
               ))}
             </div>
           )}
+
+          <h3 className="drawer-h3">Notes</h3>
+          <div className="drawer-notes">
+            {(task.notes || []).map((n, i) => (
+              <div className="dnote" key={i}>
+                <div className="dnote-meta">{n.author || "someone"} · {new Date(n.at).toLocaleString()}</div>
+                <div className="dnote-text">{n.text}</div>
+              </div>
+            ))}
+            <div className="dnote-add">
+              <input placeholder="Add a note…" value={note} onChange={(e) => setNote(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addNote(); }} />
+              <button className="btn sm" onClick={addNote}>Add</button>
+            </div>
+          </div>
 
           <h3 className="drawer-h3">Actions</h3>
           <div className="drawer-actions">

@@ -1,6 +1,14 @@
 # Task board: Backlog → Implement → Verify → Done
 
-**Status:** Phase 1 implemented · **Scope owner:** full-stack · **Est:** full ~1.5–2 weeks
+**Status:** Phases 1–3 implemented · **Scope owner:** full-stack
+
+> Phase 3 shipped: stage-transition history on the task (`Task.History` via
+> `SetStage`); a factory-performance metrics API (`GET /api/metrics`) — delivered
+> count, avg lead time (created→done), per-stage dwell, a stage-flow funnel, the
+> auto-recovery (retry) rate and the human-intervention rate; a live **Metrics**
+> view (third toggle) with KPI tiles + bars; and task comments (`Task.Notes`,
+> `POST /api/tasks/{id}/notes`) shown in the detail drawer. Deferred: multiple
+> workflows per board (the board already resolves a per-task workflow).
 
 > Phase 1 shipped: `model.Task` + `Run.TaskID` + `Node.Stage`; Store task methods
 > (mem + postgres `tasks` table); the engine stage-projection hook

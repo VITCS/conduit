@@ -110,6 +110,23 @@ export interface Task {
   created_at: string;
   updated_at: string;
   stage_changed_at: string;
+  history?: { stage: TaskStage; at: string }[];
+  notes?: { author?: string; text: string; at: string }[];
+}
+
+export interface BoardMetrics {
+  tasks: number;
+  by_stage: Record<string, number>;
+  done: number;
+  blocked: number;
+  started: number;
+  avg_lead_ms: number;
+  stage_avg_ms: Record<string, number>;
+  stage_inflow: Record<string, number>;
+  runs: number;
+  retry_runs: number;
+  retry_rate: number;
+  intervention_pct: number;
 }
 
 // Data carried on a React Flow edge.

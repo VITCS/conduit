@@ -24,6 +24,20 @@ func ValidStage(s TaskStage) bool {
 	return false
 }
 
+// StageEvent records a task entering a stage — the raw material for time-in-stage
+// and lead-time metrics.
+type StageEvent struct {
+	Stage TaskStage `json:"stage"`
+	At    time.Time `json:"at"`
+}
+
+// TaskNote is a human comment on a task.
+type TaskNote struct {
+	Author string    `json:"author,omitempty"`
+	Text   string    `json:"text"`
+	At     time.Time `json:"at"`
+}
+
 // Task is the durable unit of work on the board. It spans runs: one execution of
 // the factory workflow for this task is a Run (Run.TaskID), and the task carries
 // the source issue, the current stage, confidence and the produced artifacts.
@@ -47,4 +61,20 @@ type Task struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	StageChangedAt time.Time `json:"stage_changed_at"`
+
+	History []StageEvent `json:"history,omitempty"`
+	Notes   []TaskNote   `json:"notes,omitempty"`
+}
+
+// SetStage updates the task's stage and appends a transition to its history (only
+// when the stage actually changes), keeping timestamps consistent. Use it for
+// every stage change so the metrics have an accurate record.
+func (t *Task) SetStage(s TaskStage, at time.Time) {
+	t.UpdatedAt = at
+	if t.Stage == s && len(t.History) > 0 {
+		return
+	}
+	t.Stage = s
+	t.StageChangedAt = at
+	t.History = append(t.History, StageEvent{Stage: s, At: at})
 }

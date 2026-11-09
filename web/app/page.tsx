@@ -29,6 +29,7 @@ import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { Board } from "@/components/Board";
+import { Metrics } from "@/components/Metrics";
 import { MembersPanel } from "@/components/MembersPanel";
 import { Landing } from "@/components/Landing";
 import { Auth } from "@/components/Auth";
@@ -88,7 +89,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [running, setRunning] = useState(false);
   const [waitingNode, setWaitingNode] = useState<string | null>(null);
   const [approvalDetail, setApprovalDetail] = useState<string>("");
-  const [appView, setAppView] = useState<"editor" | "board">("editor");
+  const [appView, setAppView] = useState<"editor" | "board" | "metrics">("editor");
   const [conn, setConn] = useState("idle");
   const [runLabel, setRunLabel] = useState("No run yet");
   const [runMeta, setRunMeta] = useState("press Run to execute");
@@ -681,9 +682,12 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         <div className="viewbar">
           <button className={`vbtn${appView === "editor" ? " on" : ""}`} onClick={() => setAppView("editor")} data-testid="view-editor">Editor</button>
           <button className={`vbtn${appView === "board" ? " on" : ""}`} onClick={() => setAppView("board")} data-testid="view-board">Board</button>
+          <button className={`vbtn${appView === "metrics" ? " on" : ""}`} onClick={() => setAppView("metrics")} data-testid="view-metrics">Metrics</button>
         </div>
         {appView === "board" ? (
           <Board onOpenRun={(id) => { setAppView("editor"); pickRun(id); }} onToast={showToast} />
+        ) : appView === "metrics" ? (
+          <Metrics onToast={showToast} />
         ) : (
         <div className="body">
           <RunRail

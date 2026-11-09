@@ -421,11 +421,7 @@ func (e *Engine) projectTaskStage(runID string, node model.Node) {
 	stage := model.TaskStage(node.Stage)
 	snap, ok, _ := e.store.MutateTask(run.TaskID, func(t *model.Task) {
 		t.CurrentRunID = runID
-		if t.Stage != stage {
-			t.Stage = stage
-			t.StageChangedAt = time.Now()
-		}
-		t.UpdatedAt = time.Now()
+		t.SetStage(stage, time.Now())
 	})
 	if ok {
 		e.publish(model.Event{Type: "task.updated", RunID: runID, Task: &snap, Time: time.Now()})
@@ -443,9 +439,7 @@ func (e *Engine) finalizeTask(run *model.Run, final model.Status) {
 		stage = model.StageBlocked
 	}
 	snap, ok, _ := e.store.MutateTask(run.TaskID, func(t *model.Task) {
-		t.Stage = stage
-		t.StageChangedAt = time.Now()
-		t.UpdatedAt = time.Now()
+		t.SetStage(stage, time.Now())
 		if v, ok := run.Memory["last_pr_url"].(string); ok && v != "" {
 			t.PRURL = v
 		}

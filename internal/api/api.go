@@ -107,8 +107,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{id}", s.getTask)
 	mux.HandleFunc("POST /api/tasks/{id}/start", s.startTask)
 	mux.HandleFunc("POST /api/tasks/{id}/stage", s.setTaskStage)
+	mux.HandleFunc("POST /api/tasks/{id}/notes", s.addTaskNote)
 	mux.HandleFunc("DELETE /api/tasks/{id}", s.deleteTask)
 	mux.HandleFunc("POST /api/intake/{project}", s.intake)
+	mux.HandleFunc("GET /api/metrics", s.boardMetrics)
 	mux.HandleFunc("POST /api/hooks/{workflowID}", s.hook)
 	mux.HandleFunc("GET /api/events", s.events)
 
