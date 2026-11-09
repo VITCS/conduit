@@ -134,6 +134,13 @@ func heuristicScore(summary, desc string) (int, string, string, []string) {
 	return score, levelFor(score), "heuristic readiness estimate", missing
 }
 
+// HeuristicConfidence scores a ticket's readiness offline (no model). Exported for
+// intake-time routing: the webhook can set a confidence before a run exists.
+func HeuristicConfidence(summary, description string) (score int, reason string) {
+	s, _, r, _ := heuristicScore(summary, description)
+	return s, r
+}
+
 func levelFor(score int) string {
 	switch {
 	case score >= 75:

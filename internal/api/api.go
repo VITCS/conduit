@@ -152,7 +152,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Webhooks authenticate with an API token (bearer or ?token=).
-		if strings.HasPrefix(path, "/api/hooks/") {
+		if strings.HasPrefix(path, "/api/hooks/") || strings.HasPrefix(path, "/api/intake/") {
 			tok := bearerToken(r)
 			if tok == "" {
 				tok = r.URL.Query().Get("token")

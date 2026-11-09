@@ -13,7 +13,7 @@ import { api } from "@/lib/api";
 
 type Tab = "variables" | "secrets";
 
-const VAR_PRESETS = ["owner", "repo", "jira_base", "jira_email", "jira_jql", "notion_db", "llm_provider", "llm_model", "audit_url"];
+const VAR_PRESETS = ["owner", "repo", "jira_base", "jira_email", "jira_jql", "notion_db", "llm_provider", "llm_model", "audit_url", "auto_start_confidence"];
 const SECRET_PRESETS = ["github_token", "llm_key", "jira_token", "notion_token", "scan_token"];
 
 export function SettingsPanel(props: { initialTab?: Tab; onClose: () => void; onToast: (m: string) => void }) {

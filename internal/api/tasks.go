@@ -4,9 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
+	"conduit/internal/components"
 	"conduit/internal/model"
 )
 
@@ -173,28 +178,31 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// POST /api/intake/{project} — webhook intake: create a Backlog task from an issue.
+// POST /api/intake/{project}?source=github|jira|notion — webhook intake. Accepts
+// a raw provider payload (or the normalized fields) and creates a Backlog task,
+// scoring intake confidence. If the project var `auto_start_confidence` is set and
+// the score clears it, the task is started automatically.
 func (s *Server) intake(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Title       string `json:"title"`
-		Summary     string `json:"summary"`
-		Description string `json:"description"`
-		Source      string `json:"source"`
-		SourceRef   string `json:"source_ref"`
-		SourceURL   string `json:"source_url"`
+	var raw map[string]any
+	if r.Body != nil {
+		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&raw)
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	title := pickStr(body.Title, body.SourceRef, body.Summary)
-	if title == "" {
-		writeErr(w, http.StatusBadRequest, "title, source_ref or summary is required")
+	project := r.PathValue("project")
+	src := r.URL.Query().Get("source")
+	nt := normalizeIntake(src, raw)
+	if nt.Title == "" {
+		writeErr(w, http.StatusBadRequest, "could not derive a task title from the payload")
 		return
 	}
+
+	score, reason := components.HeuristicConfidence(nt.Summary, nt.Description)
 	now := time.Now()
 	t := model.Task{
-		ID: newTaskID(), ProjectID: r.PathValue("project"),
-		Title: title, Summary: body.Summary, Description: body.Description,
-		Source: pickStr(body.Source, "intake"), SourceRef: body.SourceRef, SourceURL: body.SourceURL,
-		Stage: model.StageBacklog, CreatedAt: now, UpdatedAt: now, StageChangedAt: now,
+		ID: newTaskID(), ProjectID: project,
+		Title: nt.Title, Summary: nt.Summary, Description: nt.Description,
+		Source: pickStr(nt.Source, "intake"), SourceRef: nt.SourceRef, SourceURL: nt.SourceURL,
+		Confidence: score,
+		Stage:      model.StageBacklog, CreatedAt: now, UpdatedAt: now, StageChangedAt: now,
 	}
 	created, err := s.Store.CreateTask(t)
 	if err != nil {
@@ -202,7 +210,94 @@ func (s *Server) intake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Store.Broker().Publish(model.Event{Type: "task.created", Task: &created, Time: now})
-	writeJSON(w, http.StatusCreated, created)
+
+	// Auto-start policy: start when confidence clears the project threshold.
+	autoStarted := false
+	if thr := autoStartThreshold(s, project); thr > 0 && score >= thr {
+		if wf, ok := s.taskWorkflow(created); ok {
+			run := s.Engine.EnqueueForTask(wf, created)
+			snap, _, _ := s.Store.MutateTask(created.ID, func(tt *model.Task) {
+				tt.CurrentRunID = run.ID
+				tt.WorkflowID = wf.ID
+				tt.Stage = model.StageImplement
+				tt.StageChangedAt = time.Now()
+				tt.UpdatedAt = time.Now()
+			})
+			s.Store.Broker().Publish(model.Event{Type: "task.updated", RunID: run.ID, Task: &snap, Time: time.Now()})
+			created = snap
+			autoStarted = true
+		}
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"task": created, "confidence": score, "confidence_reason": reason, "auto_started": autoStarted,
+	})
+}
+
+// autoStartThreshold reads the project's auto_start_confidence var (0 = disabled).
+func autoStartThreshold(s *Server, project string) int {
+	v, ok, _ := s.Store.GetVar(project, "auto_start_confidence")
+	if !ok {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+type normalizedIntake struct{ Title, Summary, Description, Source, SourceRef, SourceURL string }
+
+// normalizeIntake maps a provider webhook payload (GitHub issues, Jira, or a
+// normalized/Notion body) to task fields.
+func normalizeIntake(source string, raw map[string]any) normalizedIntake {
+	switch strings.ToLower(source) {
+	case "github":
+		if iss, ok := raw["issue"].(map[string]any); ok {
+			ref := ""
+			if n, ok := iss["number"].(float64); ok {
+				ref = fmt.Sprintf("#%d", int(n))
+			}
+			if repo, ok := raw["repository"].(map[string]any); ok {
+				if fn, ok := repo["full_name"].(string); ok {
+					ref = fn + ref
+				}
+			}
+			return normalizedIntake{
+				Title: str(iss["title"]), Summary: str(iss["title"]), Description: str(iss["body"]),
+				Source: "github", SourceRef: ref, SourceURL: str(iss["html_url"]),
+			}
+		}
+	case "jira":
+		if iss, ok := raw["issue"].(map[string]any); ok {
+			key := str(iss["key"])
+			summary, desc := "", ""
+			if f, ok := iss["fields"].(map[string]any); ok {
+				summary = str(f["summary"])
+				desc = str(f["description"]) // plain string; ADF objects are skipped
+			}
+			return normalizedIntake{
+				Title: pickStr(summary, key), Summary: summary, Description: desc,
+				Source: "jira", SourceRef: key, SourceURL: str(raw["url"]),
+			}
+		}
+	}
+	// Normalized body (manual, Notion automations, or a pre-shaped payload).
+	return normalizedIntake{
+		Title:       pickStr(str(raw["title"]), str(raw["source_ref"]), str(raw["summary"])),
+		Summary:     str(raw["summary"]),
+		Description: str(raw["description"]),
+		Source:      pickStr(str(raw["source"]), source),
+		SourceRef:   str(raw["source_ref"]),
+		SourceURL:   str(raw["source_url"]),
+	}
+}
+
+func str(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
 
 func pickStr(vals ...string) string {

@@ -8,7 +8,12 @@
 > the tasks API (`/api/tasks` CRUD + `/start` + `/stage`, `/api/intake/{project}`);
 > factory `Node.Stage` wiring + a fetch that prefers the task's ticket; and the
 > Board UI (Editor/Board toggle, five live columns, New task, Start, View run, PR).
-> Phases 2–3 (auto-intake webhooks, confidence-at-intake, metrics dashboard) remain.
+> Phase 2 shipped: token-authed `/api/intake/{project}?source=` webhooks with
+> GitHub / Jira / generic (Notion) payload normalization; heuristic
+> confidence-at-intake + an auto-start policy (`auto_start_confidence` project var);
+> a task detail drawer (description, confidence, run history, stage move, delete);
+> and board search + source filter. Phase 3 (a factory-performance metrics page,
+> multiple workflows per board, task comments) remains.
 
 ## Goal
 
