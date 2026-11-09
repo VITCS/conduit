@@ -224,6 +224,121 @@ go test ./internal/store/ -run TestPostgresStoreContract -v
 4. An **approval** node sets the run to `waiting` and blocks until
    `POST /api/runs/{id}/approve {node_id, decision}` delivers a decision.
 
+## The AI Factory — ticket → reviewed PR
+
+The **AI Factory** (the `ai-factory` project, workflow `wf_factory`) is a complete
+one‑shot‑engineering pipeline: a real ticket becomes a reviewed pull request with
+two human gates, a real CI verification step, and automatic recovery. It is seeded
+on first run and surfaced two ways — as a **workflow** on the canvas, and as a
+**board** of durable tasks (Backlog → Implement → Verify → Done → Blocked).
+
+```
+Ticket (Jira/Notion/webhook)
+  → Triage · Confidence ──low──▶ Needs clarification (human)
+  → Refine & Plan → Draft → Review          (agents)
+  → Human Approval  (the plan)
+  → Plan Changes → Approve Changes (the exact files) → Apply Changes (pushes a branch)
+  → Verify Checks (CI) ──fail──▶ retry ×2 back to the coding agent ──exhausted──▶ Needs attention
+  → Open PR → comment the PR on the ticket → Record Delivery
+```
+
+### 1. Configure once (Settings → Variables / Secrets)
+
+Everything is set per project and referenced from nodes as `${var:NAME}` /
+`${secret:NAME}` — no per‑node repetition. Switch to the **AI Factory** project,
+open **Settings**, and set:
+
+**Variables** (plain, visible)
+
+| Variable | Example | Used by |
+| --- | --- | --- |
+| `owner` | `acme` | coding agent, PR, checks |
+| `repo` | `web` | coding agent, PR, checks |
+| `jira_base` | `https://acme.atlassian.net` | Jira fetch / comment |
+| `jira_email` | `bot@acme.com` | Jira auth |
+| `jira_jql` | `project = ENG AND status = "Ready for Dev" ORDER BY created ASC` | Jira fetch |
+| `llm_provider` | `anthropic` | all agents |
+| `llm_model` | `claude-sonnet-4-6` (or your model) | all agents |
+| `auto_start_confidence` | `70` *(optional)* | webhook intake auto‑start |
+
+**Secrets** (encrypted, write‑only)
+
+| Secret | What | Scope needed |
+| --- | --- | --- |
+| `llm_key` | model API key | — |
+| `jira_token` | Atlassian API token | read issues + add comments |
+| `github_token` | GitHub token | **`contents:write` + `pull_requests:write`** (the coding agent commits a branch, opens the PR, and reads check‑runs) |
+| `notion_token` | *(only if using Notion as the source)* | read the database |
+
+> The branch base is `main` by default. For a GitHub‑only review/merge flow the
+> `github` project additionally uses `scan_token` (the security‑scan gate).
+
+### 2. Run it — two ways
+
+**A. From the board (manual).** Open the **Board** tab → **New task** (or it
+appears from intake). A card lands in **Backlog**. Click **Start** — the factory
+runs bound to that task, and the card advances Backlog → Implement → Verify → Done
+live. The task’s ticket is used as‑is (no Jira needed for a manual task).
+
+**B. From a webhook (automatic intake).** Mint an API token
+(`POST /api/tokens`), then point your issue tracker at the intake endpoint. The
+payload is normalized for `source=github|jira`, or send the generic shape
+(Notion automations, anything):
+
+```bash
+# GitHub issue webhook → a Backlog task, scored for readiness
+curl -X POST "https://YOUR_HOST/api/intake/ai-factory?source=github&token=$CONDUIT_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"issue":{"number":482,"title":"Add rate limiting","body":"Throttle /api/* to 100 req/min. Acceptance: a test covers the limiter.","html_url":"https://github.com/acme/web/issues/482"},"repository":{"full_name":"acme/web"}}'
+```
+
+Intake scores **confidence** from the ticket (clear outcome, bounded scope, a
+checkable success condition). If you set `auto_start_confidence`, a task that
+clears it **auto‑starts**; otherwise it waits in Backlog for a human. Ambiguous
+tickets are never turned into a confident‑looking wrong change.
+
+### 3. What happens during a run
+
+- **Triage** gates intake again inside the run; a low score routes to **Needs
+  clarification** instead of implementing.
+- Three agents **refine → draft → review** the ticket; the first **Human
+  Approval** shows the plan + review (and the confidence) right at the gate.
+- **Coding plan → Approve Changes → Apply:** the coding agent first proposes the
+  exact files (create/modify), you approve that list, then it pulls the current
+  contents, edits them, and **pushes a branch via the GitHub Git Data API** (no
+  local checkout).
+- **Verify Checks (CI):** waits for the repo’s own check‑runs on the pushed
+  commit. On failure it loops back to the coding agent **up to twice**, feeding the
+  failing checks back as context; only after the budget is spent does it go to
+  **Needs attention**. A repo with no CI configured passes straight through.
+- **Open PR** (idempotent) → comments the PR link back on the ticket → **Record
+  Delivery**; the task moves to **Done** with the PR and branch captured.
+
+### 4. Try it end‑to‑end (smoke test, no credentials)
+
+You can exercise the whole shape offline — triage uses an offline heuristic when
+no `llm_key` is set, and a repo with no CI passes Verify:
+
+1. **Board → New task**, title *“Add a CONTRIBUTING note; acceptance: file exists.”*
+   (a clear, checkable ask scores as ready).
+2. Click **Start**. Watch the **Editor** run the graph live (or click **View run**
+   on the card). It pauses at **Human Approval** — the banner shows the plan.
+3. **Approve.** It plans the file changes and pauses at **Approve Changes** with
+   the exact file list. **Approve** again.
+4. With real `owner`/`repo`/`github_token`, it pushes a branch, verifies CI, opens
+   a PR, and the card lands in **Done** with a **PR** link. Without them, the
+   coding step reports what it needs — the earlier stages still demonstrate the
+   full plan → approve → apply flow.
+5. Open the **Metrics** tab: delivered count, average lead time, per‑stage dwell,
+   the stage‑flow funnel, auto‑recovery rate and intervention rate update live.
+
+### 5. Use Notion instead of Jira
+
+Swap the **Fetch Jira Ticket** node for the **Notion** component from the palette,
+set `notion_db` (and a `notion_token` secret), or just drive it from the board /
+webhook intake — both write the same `ticket_*` memory, so the rest of the pipeline
+is unchanged.
+
 ## API
 
 All `/api` routes require authentication (a `Bearer` JWT from login, or an API
@@ -266,7 +381,16 @@ cross-project reads are 404.
 | `GET`  | `/api/secrets` | list secret names (never values) |
 | `PUT`  | `/api/secrets/{name}` | create/update a secret (`{value}`) |
 | `DELETE` | `/api/secrets/{name}` | delete a secret |
-| `GET`  | `/api/events` | SSE stream (optional `?run=<id>`) |
+| `GET`  | `/api/events` | SSE stream (optional `?run=<id>`; omit for all events incl. `task.*`) |
+| `GET`  | `/api/tasks` | list board tasks (optional `?stage=`) |
+| `POST` | `/api/tasks` | create a task in Backlog |
+| `GET`  | `/api/tasks/{id}` | task detail + run history |
+| `POST` | `/api/tasks/{id}/start` | start the factory for a task |
+| `POST` | `/api/tasks/{id}/stage` | move a task to a stage (`{stage}`) |
+| `POST` | `/api/tasks/{id}/notes` | add a comment (`{text}`) |
+| `DELETE` | `/api/tasks/{id}` | delete a task |
+| `POST` | `/api/intake/{project}` | webhook intake (token‑authed; `?source=github\|jira`) |
+| `GET`  | `/api/metrics` | factory‑performance summary for the project |
 
 ## Roadmap
 
