@@ -184,6 +184,134 @@ const GITHUB: HPipe = {
   ],
 };
 
+/* Hero connectivity scene: sources (Jira/Notion/GitHub) flow into the AI Factory
+   pipeline and out to a reviewed PR, with a live board ribbon. Pure SVG so it
+   scales crisply to full width. Motion = a scan beam sweeping the stages, flowing
+   connectors, and a board card that advances in sync. */
+function FactoryScene({ animate }: { animate: boolean }) {
+  const sources = [
+    { label: "Jira", y: 150, dot: "var(--wait)" },
+    { label: "Notion", y: 226, dot: "var(--fg)" },
+    { label: "GitHub", y: 302, dot: "var(--accent)" },
+  ];
+  const stages = ["Triage", "Plan & review", "Approve", "Coding agent", "Verify CI"];
+  const outputs = [
+    { label: "branch pushed", y: 164 },
+    { label: "checks passed", y: 240 },
+    { label: "PR #129 opened", y: 316 },
+  ];
+
+  const FX = 440, FY = 96, FW = 320, FH = 376;      // factory panel
+  const SX = FX + 20, SW = FW - 40, SH = 50, SGAP = 14, STOP = FY + 54; // stage pills
+  const hubL = { x: FX, y: 284 };
+  const hubR = { x: FX + FW, y: 284 };
+  const stageY = (i: number) => STOP + i * (SH + SGAP);
+
+  return (
+    <svg className="fs" viewBox="0 0 1200 552" preserveAspectRatio="xMidYMid meet" role="img"
+      aria-label="Sources — Jira, Notion and GitHub — flow into the AI Factory pipeline (triage, plan, approve, code, verify) and out to a reviewed pull request, tracked on a board.">
+      <defs>
+        <filter id="fs-glow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="3.2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <linearGradient id="fs-beam" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="var(--accent)" stopOpacity="0" />
+          <stop offset="0.5" stopColor="var(--accent)" stopOpacity="0.5" />
+          <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      {/* connectors: sources -> factory hub */}
+      {sources.map((s, i) => {
+        const d = `M${232},${s.y + 24} C${(232 + hubL.x) / 2},${s.y + 24} ${(232 + hubL.x) / 2},${hubL.y} ${hubL.x},${hubL.y}`;
+        return (
+          <g key={"c" + i}>
+            <path d={d} className="fs-edge" />
+            <path d={d} className={`fs-edge flow${animate ? " on" : ""}`} style={{ animationDelay: `${i * 0.5}s` }} />
+            {animate && <circle r="3.6" className="fs-tok"><animateMotion dur="2.8s" begin={`${i * 0.5}s`} repeatCount="indefinite" path={d} /></circle>}
+          </g>
+        );
+      })}
+      {/* connectors: factory hub -> outputs */}
+      {outputs.map((o, i) => {
+        const d = `M${hubR.x},${hubR.y} C${(hubR.x + 820) / 2},${hubR.y} ${(hubR.x + 820) / 2},${o.y + 24} ${820},${o.y + 24}`;
+        return (
+          <g key={"o" + i}>
+            <path d={d} className="fs-edge" />
+            <path d={d} className={`fs-edge flow out${animate ? " on" : ""}`} style={{ animationDelay: `${1.4 + i * 0.5}s` }} />
+            {animate && <circle r="3.6" className="fs-tok out"><animateMotion dur="2.8s" begin={`${1.4 + i * 0.5}s`} repeatCount="indefinite" path={d} /></circle>}
+          </g>
+        );
+      })}
+
+      {/* source chips */}
+      <text x="44" y="118" className="fs-cap">SOURCES</text>
+      {sources.map((s, i) => (
+        <g key={"s" + i} className="fs-src">
+          <rect x="44" y={s.y} width="188" height="48" rx="11" />
+          <circle cx="68" cy={s.y + 24} r="5.5" fill={s.dot} />
+          <text x="86" y={s.y + 30} className="fs-src-t">{s.label}</text>
+        </g>
+      ))}
+
+      {/* factory panel */}
+      <rect x={FX} y={FY} width={FW} height={FH} rx="18" className="fs-panel" />
+      <text x={FX + 20} y={FY + 32} className="fs-panel-t">AI Factory</text>
+      <circle cx={FX + FW - 24} cy={FY + 26} r="4.5" className="fs-live" />
+      {/* scan beam sweeping the stages */}
+      {animate && (
+        <rect x={SX} width={SW} height={SH} rx="10" fill="url(#fs-beam)" className="fs-beam">
+          <animate attributeName="y" dur="5.5s" repeatCount="indefinite"
+            keyTimes="0;0.12;0.30;0.48;0.66;0.84;0.92;1"
+            values={`${stageY(0)};${stageY(0)};${stageY(1)};${stageY(2)};${stageY(3)};${stageY(4)};${stageY(4)};${stageY(0)}`} />
+        </rect>
+      )}
+      {stages.map((st, i) => {
+        const y = stageY(i);
+        const gate = st === "Approve";
+        return (
+          <g key={"g" + i} className={`fs-stage${animate ? " anim" : ""}`} style={{ ["--i" as string]: i }}>
+            <rect x={SX} y={y} width={SW} height={SH} rx="10" className={gate ? "fs-pill gate" : "fs-pill"} />
+            <circle cx={SX + 18} cy={y + SH / 2} r="4" className="fs-pill-dot" />
+            <text x={SX + 34} y={y + SH / 2 + 5} className="fs-pill-t">{st}</text>
+            {gate && <text x={SX + SW - 12} y={y + SH / 2 + 5} className="fs-gate-badge">human</text>}
+          </g>
+        );
+      })}
+
+      {/* output chips */}
+      <text x="820" y="140" className="fs-cap">DELIVERED</text>
+      {outputs.map((o, i) => (
+        <g key={"out" + i} className={`fs-out${animate ? " anim" : ""}`} style={{ ["--i" as string]: i }}>
+          <rect x="820" y={o.y} width="236" height="48" rx="11" />
+          <text x="842" y={o.y + 30} className="fs-out-t">{o.label}</text>
+          <text x="1038" y={o.y + 30} className="fs-check">done</text>
+        </g>
+      ))}
+
+      {/* board ribbon */}
+      <g className="fs-board">
+        <text x="44" y="486" className="fs-cap">BOARD</text>
+        {["Backlog", "Implement", "Verify", "Done"].map((c, i) => (
+          <g key={"b" + i}>
+            <rect x={44 + i * 254} y="496" width="242" height="44" rx="11" className="fs-lane" />
+            <text x={60 + i * 254} y="516" className="fs-lane-t">{c}</text>
+            <rect x={60 + i * 254} y="522" width="56" height="12" rx="3" className="fs-ghost" />
+          </g>
+        ))}
+        {animate && (
+          <rect width="80" height="30" rx="8" y="503" className="fs-card">
+            <animate attributeName="x" dur="5.5s" repeatCount="indefinite"
+              keyTimes="0;0.12;0.30;0.48;0.66;0.84;0.92;1"
+              values="58;58;312;566;566;820;820;58" />
+          </rect>
+        )}
+      </g>
+    </svg>
+  );
+}
+
+
 function WorkflowCanvas({ pipe, animate }: { pipe: "factory" | "github"; animate: boolean }) {
   const data = pipe === "factory" ? FACTORY : GITHUB;
   const N = data.nodes.length;
@@ -339,12 +467,19 @@ const COMPONENTS = ["webhook", "schedule", "jira", "notion", "agent", "coding_pl
 
 export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGetStarted: () => void }) {
   const [animate, setAnimate] = useState(true);
-  const [pipe, setPipe] = useState<"factory" | "github">("factory");
+  const [heroView, setHeroView] = useState<"overview" | "run">("overview");
   const statsRef = useRef<HTMLDivElement>(null);
   useReveal();
   useTilt();
   useCountUp(statsRef);
   useEffect(() => { setAnimate(!prefersReduced()); }, []);
+  // Marketing page is always dark, regardless of the saved app theme (restored
+  // by the Topbar once the user signs in). Does not touch localStorage.
+  useEffect(() => {
+    const prev = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", "dark");
+    return () => { if (prev) document.documentElement.setAttribute("data-theme", prev); };
+  }, []);
 
   return (
     <div className="landing">
@@ -361,37 +496,40 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
         </div>
       </header>
 
-      <section className="lx-hero">
-        <div className="lx-hero-copy">
-          <span className="lx-eyebrow" data-reveal><Zap size={13} /> Human-in-the-loop automation control plane</span>
-          <h1 data-reveal>
-            Turn a ticket into a reviewed PR —<br />with a <span className="lx-grad">human in the loop</span>.
-          </h1>
-          <p className="lx-lead" data-reveal>
-            Conduit Agent turns a visual graph of components into a live workflow. Pull a ticket from
-            Jira or Notion, let agents plan and review it, approve the plan, let a coding agent open a
-            real pull request — or review, security-scan and merge the PRs you already have. Every run
-            streams live and pauses for a human before anything risky. One self-hosted binary.
-          </p>
-          <div className="lx-cta" data-reveal>
-            <button className="btn primary lg" onClick={onGetStarted} data-testid="hero-getstarted">Create an account <ArrowRight size={17} /></button>
-            <button className="btn lg" onClick={onSignIn} data-testid="hero-signin">Sign in</button>
-          </div>
-          <p className="lx-trust" data-reveal>Self-hosted · single binary · email or Google / GitHub sign-in</p>
+      <section className="lx-hero lx-hero-center">
+        <span className="lx-eyebrow" data-reveal><Zap size={13} /> The open-source AI software factory</span>
+        <h1 data-reveal>
+          Tickets in. <span className="lx-grad">Reviewed pull requests</span> out —<br />with a human in the loop.
+        </h1>
+        <p className="lx-lead" data-reveal>
+          Conduit is an AI <b>software factory</b>: connect Jira, Notion or GitHub and it turns a ticket
+          into a reviewed pull request on a live board — triaged, planned, coded, CI-verified, and merged
+          only after a human approves. Under the hood it turns a visual graph of components into a live
+          workflow. One self-hosted binary.
+        </p>
+        <div className="lx-cta" data-reveal>
+          <button className="btn primary lg" onClick={onGetStarted} data-testid="hero-getstarted">Start your factory <ArrowRight size={17} /></button>
+          <button className="btn lg" onClick={onSignIn} data-testid="hero-signin">Sign in</button>
         </div>
+        <p className="lx-trust" data-reveal>Self-hosted · single binary · email or Google / GitHub sign-in</p>
+      </section>
 
-        <div className="lx-hero-stage" data-reveal data-tilt>
+      <div className="lx-stagewrap" data-reveal>
+        <div className="lx-hero-stage wide">
           <div className="lx-stage-bar">
             <span className="lx-dot r" /><span className="lx-dot y" /><span className="lx-dot g" />
-            <div className="pl-toggle" role="tablist" aria-label="Choose a workflow">
-              <button role="tab" aria-selected={pipe === "factory"} className={`pl-tog${pipe === "factory" ? " on" : ""}`} onClick={() => setPipe("factory")}>AI Factory</button>
-              <button role="tab" aria-selected={pipe === "github"} className={`pl-tog${pipe === "github" ? " on" : ""}`} onClick={() => setPipe("github")}>GitHub</button>
+            <span className="lx-stage-title">ai-factory · connected</span>
+            <div className="pl-toggle" role="tablist" aria-label="Hero view">
+              <button role="tab" aria-selected={heroView === "overview"} className={`pl-tog${heroView === "overview" ? " on" : ""}`} onClick={() => setHeroView("overview")}>Overview</button>
+              <button role="tab" aria-selected={heroView === "run"} className={`pl-tog${heroView === "run" ? " on" : ""}`} onClick={() => setHeroView("run")}>Live run</button>
             </div>
             <span className="lx-live"><span className="lx-live-dot" /> live</span>
           </div>
-          <WorkflowCanvas pipe={pipe} animate={animate} />
+          {heroView === "overview"
+            ? <FactoryScene animate={animate} />
+            : <WorkflowCanvas pipe="factory" animate={animate} />}
         </div>
-      </section>
+      </div>
 
       <div className="lx-marquee" data-reveal aria-hidden>
         <div className={`lx-track${animate ? "" : " paused"}`}>
