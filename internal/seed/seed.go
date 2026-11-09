@@ -172,7 +172,16 @@ func FactoryWorkflow() model.Workflow {
 					f("jql", "file", "${var:jira_jql}"),
 					f("api_token", "key", "${secret:jira_token}"),
 				}},
-			{ID: "plan", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Refine & Plan", X: 600, Y: 300,
+			{ID: "triage", Type: "triage", Icon: "gauge", Kind: model.KindStep, Title: "Triage · Confidence", X: 600, Y: 300,
+				Config: []model.Field{
+					f("provider", "agent", "${var:llm_provider}"),
+					f("model", "agent", "${var:llm_model}"),
+					f("api_key", "key", "${secret:llm_key}"),
+					f("summary", "file", "${memory.ticket_summary}"),
+					f("description", "file", "${memory.ticket_description}"),
+					f("threshold", "approve", "60"),
+				}},
+			{ID: "plan", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Refine & Plan", X: 880, Y: 300,
 				Config: []model.Field{
 					f("live", "agent", "true"),
 					f("provider", "agent", "${var:llm_provider}"),
@@ -181,7 +190,7 @@ func FactoryWorkflow() model.Workflow {
 					f("output", "db", "plan"),
 					f("prompt", "file", "You are a senior engineer. Turn this ticket into a concrete, step-by-step implementation plan.\n\nTicket ${memory.ticket_key}: ${memory.ticket_summary}\n\n${memory.ticket_description}"),
 				}},
-			{ID: "impl", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Draft Implementation", X: 880, Y: 300,
+			{ID: "impl", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Draft Implementation", X: 1160, Y: 300,
 				Config: []model.Field{
 					f("live", "agent", "true"),
 					f("provider", "agent", "${var:llm_provider}"),
@@ -190,7 +199,7 @@ func FactoryWorkflow() model.Workflow {
 					f("output", "db", "implementation"),
 					f("prompt", "file", "Given this plan, outline the concrete code changes (files, functions, tests) needed.\n\n${memory.plan}"),
 				}},
-			{ID: "review", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Review Confidence", X: 1160, Y: 300,
+			{ID: "review", Type: "agent", Icon: "agent", Kind: model.KindStep, Title: "Review Confidence", X: 1440, Y: 300,
 				Config: []model.Field{
 					f("live", "agent", "true"),
 					f("provider", "agent", "${var:llm_provider}"),
@@ -199,15 +208,15 @@ func FactoryWorkflow() model.Workflow {
 					f("output", "db", "review"),
 					f("prompt", "file", "Review this plan and implementation for correctness and risk. State a merge-confidence (high/medium/low) and any blockers.\n\nPLAN:\n${memory.plan}\n\nIMPLEMENTATION:\n${memory.implementation}"),
 				}},
-			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 1440, Y: 300,
+			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 1720, Y: 300,
 				Config: []model.Field{
 					f("approvers", "user", "maintainers"),
 					f("timeout", "clock", "1d"),
 					// Shown in the approval notification + banner so the reviewer sees
 					// exactly what the agent proposed before deciding.
-					f("summary", "file", "Ticket ${memory.ticket_key} — ${memory.ticket_summary}\n\n— Plan —\n${memory.plan}\n\n— Review —\n${memory.review}"),
+					f("summary", "file", "Ticket ${memory.ticket_key} — ${memory.ticket_summary}\nConfidence: ${memory.confidence} (${memory.confidence_score})\n\n— Plan —\n${memory.plan}\n\n— Review —\n${memory.review}"),
 				}},
-			{ID: "cplan", Type: "coding_plan", Icon: "code", Kind: model.KindStep, Title: "Plan Changes", X: 1680, Y: 300,
+			{ID: "cplan", Type: "coding_plan", Icon: "code", Kind: model.KindStep, Title: "Plan Changes", X: 1960, Y: 300,
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -217,14 +226,14 @@ func FactoryWorkflow() model.Workflow {
 					f("plan", "file", "${memory.plan}"),
 					f("implementation", "file", "${memory.implementation}"),
 				}},
-			{ID: "appr2", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Approve Changes", X: 1920, Y: 300,
+			{ID: "appr2", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Approve Changes", X: 2200, Y: 300,
 				Config: []model.Field{
 					f("approvers", "user", "maintainers"),
 					f("timeout", "clock", "1d"),
 					// The exact file-level change plan, approved before any branch exists.
 					f("summary", "file", "Proposed file changes for ${memory.ticket_key}:\n\n${memory.change_plan}"),
 				}},
-			{ID: "apply", Type: "coding_apply", Icon: "code", Kind: model.KindStep, Title: "Apply Changes", X: 2160, Y: 300,
+			{ID: "apply", Type: "coding_apply", Icon: "code", Kind: model.KindStep, Title: "Apply Changes", X: 2440, Y: 300,
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -239,7 +248,7 @@ func FactoryWorkflow() model.Workflow {
 					f("ticket_summary", "file", "${memory.ticket_summary}"),
 					f("branch_prefix", "branch", "conduit/"),
 				}},
-			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 2400, Y: 300,
+			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 2680, Y: 300,
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -249,7 +258,7 @@ func FactoryWorkflow() model.Workflow {
 					f("body", "file", "Automated by the AI Factory for ${memory.ticket_key}.\n\n— Change plan —\n${memory.change_plan}\n\n— Plan —\n${memory.plan}\n\n— Review —\n${memory.review}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "vchk", Type: "github_checks", Icon: "heart", Kind: model.KindStep, Title: "Verify Checks (CI)", X: 2680, Y: 300,
+			{ID: "vchk", Type: "github_checks", Icon: "heart", Kind: model.KindStep, Title: "Verify Checks (CI)", X: 2960, Y: 300,
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -258,7 +267,7 @@ func FactoryWorkflow() model.Workflow {
 					f("require_checks", "approve", "false"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "post", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Post PR to Ticket", X: 2960, Y: 200,
+			{ID: "post", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Post PR to Ticket", X: 3240, Y: 200,
 				Config: []model.Field{
 					f("action", "agent", "comment"),
 					f("base_url", "globe", "${var:jira_base}"),
@@ -267,15 +276,19 @@ func FactoryWorkflow() model.Workflow {
 					f("api_token", "key", "${secret:jira_token}"),
 					f("body", "file", "🤖 AI Factory opened a PR: ${memory.last_pr_url}\n\nChecks: ${memory.checks_summary}\n\n— Plan —\n${memory.plan}"),
 				}},
-			{ID: "mem", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record Delivery", X: 2960, Y: 420,
+			{ID: "mem", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record Delivery", X: 3240, Y: 420,
 				Config: []model.Field{f("store", "db", "deliveries"), f("key", "key", "ticket_key"), f("set", "file", "work_branch, last_pr_url, checks_summary")}},
-			{ID: "fail", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs attention", X: 600, Y: 540,
+			{ID: "clar", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs clarification", X: 600, Y: 540,
+				Config: []model.Field{f("set", "github", "needs_clarification"), f("notify", "user", "author")}},
+			{ID: "fail", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs attention", X: 320, Y: 540,
 				Config: []model.Field{f("set", "github", "needs_attention"), f("notify", "user", "author")}},
 		},
 		Edges: []model.Edge{
 			{From: "t1", To: "src"},
-			{From: "src", To: "plan", Label: "success"},
+			{From: "src", To: "triage", Label: "success"},
 			{From: "src", To: "fail", Label: "failed"},
+			{From: "triage", To: "plan", Label: "success"},
+			{From: "triage", To: "clar", Label: "failed"},
 			{From: "plan", To: "impl", Label: "success"},
 			{From: "impl", To: "review", Label: "success"},
 			{From: "review", To: "appr", Label: "success"},

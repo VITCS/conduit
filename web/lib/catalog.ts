@@ -13,6 +13,7 @@ export const CATALOG: CatalogItem[] = [
   { type: "github", name: "Git event", icon: "github", kind: "trigger", desc: "Pull request / push" },
   { type: "webhook", name: "Webhook", icon: "webhook", kind: "trigger", desc: "Inbound HTTP trigger" },
   { type: "schedule", name: "Schedule", icon: "clock", kind: "trigger", desc: "Cron schedule" },
+  { type: "triage", name: "Triage (confidence)", icon: "gauge", kind: "step", desc: "Score a ticket's readiness; route low-confidence work to a human" },
   { type: "jira", name: "Jira", icon: "ticket", kind: "step", desc: "Fetch a ticket (JQL) or comment back (needs jira_token)" },
   { type: "notion", name: "Notion", icon: "notion", kind: "step", desc: "Pull a task from a Notion database (needs notion_token)" },
   { type: "http", name: "HTTP", icon: "globe", kind: "step", desc: "Call an API" },
