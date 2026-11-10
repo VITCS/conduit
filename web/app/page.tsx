@@ -406,6 +406,22 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     [runId, waitingNode, showToast],
   );
 
+  const rerunFrom = useCallback(
+    async (nodeId: string) => {
+      if (!runId) return;
+      try {
+        await api.rerun(runId, nodeId);
+        showToast("Re-running from this stage");
+        setRunning(true);
+        openStream(runId);
+        reconcileRun(runId);
+      } catch (e) {
+        showToast("Re-run failed: " + (e as Error).message);
+      }
+    },
+    [runId, showToast, openStream, reconcileRun],
+  );
+
   // --- editor actions ---
   const onConnect = useCallback(
     (c: Connection) => {
@@ -805,6 +821,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
                 onChange={(patch) => patchNode(selected!, patch)}
                 onDelete={() => deleteNode(selected!)}
                 onApprove={approve}
+                onRerun={() => rerunFrom(selected!)}
                 onPrev={() => stepRel(-1)}
                 onNext={() => stepRel(1)}
                 onClose={() => setSelected(null)}

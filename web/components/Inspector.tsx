@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, X, Trash2, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Trash2, Plus, RotateCcw } from "lucide-react";
 import { Icon } from "@/lib/icons";
 import { STATUS_META, CATALOG } from "@/lib/catalog";
 import { useEditor } from "@/lib/editorContext";
@@ -23,6 +23,7 @@ export function Inspector(props: {
   onChange: (patch: Partial<NodeData>) => void;
   onDelete: () => void;
   onApprove: (decision: "approved" | "rejected") => void;
+  onRerun?: () => void;
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
@@ -78,6 +79,18 @@ export function Inspector(props: {
             </span>
             <button className="btn ok" onClick={() => props.onApprove("approved")}>Approve</button>
             <button className="btn" onClick={() => props.onApprove("rejected")}>Reject</button>
+          </div>
+        )}
+
+        {!editMode && status === "failed" && props.onRerun && (
+          <div className="rerun-bar">
+            <span className="msg">
+              This stage failed. Fix the cause (config, variables or secrets), then re-run from
+              here — earlier successful steps are kept.
+            </span>
+            <button className="btn ok" onClick={props.onRerun}>
+              <RotateCcw size={14} /> Re-run from here
+            </button>
           </div>
         )}
 

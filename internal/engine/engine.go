@@ -248,6 +248,90 @@ func (e *Engine) markCanceledFinished(runID string) {
 		Level: "info", Message: fmt.Sprintf("Run %s canceled", runID), Run: &snap})
 }
 
+// Rerun re-queues a finished run to execute again starting at nodeID. The node
+// and everything downstream of it are reset to pending; successful upstream steps
+// and accumulated run memory are kept, so a failed stage can be retried without
+// redoing earlier work. The run must be in a terminal state (not queued/running/
+// waiting). A worker then claims it and executes from nodeID (see execute).
+func (e *Engine) Rerun(runID, nodeID string) (model.Run, error) {
+	run, ok, err := e.store.GetRun(runID)
+	if err != nil {
+		return model.Run{}, err
+	}
+	if !ok {
+		return model.Run{}, fmt.Errorf("run not found")
+	}
+	switch run.Status {
+	case model.StatusQueued, model.StatusRunning, model.StatusWaiting, model.StatusPending:
+		return model.Run{}, fmt.Errorf("run is still active; cancel it before re-running")
+	}
+	wf, ok, err := e.store.GetWorkflow(run.WorkflowID)
+	if err != nil {
+		return model.Run{}, err
+	}
+	if !ok {
+		return model.Run{}, fmt.Errorf("workflow not found for run")
+	}
+	if _, found := nodeByID(wf, nodeID); !found {
+		return model.Run{}, fmt.Errorf("node %q not in workflow", nodeID)
+	}
+
+	reset := descendants(wf, nodeID) // nodeID plus everything reachable from it
+	now := time.Now()
+	snap, _, err := e.store.MutateRun(runID, func(r *model.Run) {
+		for nid := range reset {
+			r.Steps[nid] = &model.StepRun{NodeID: nid, Status: model.StatusPending}
+		}
+		r.Loops = nil // fresh recovery-loop budget for the retried region
+		r.FinishedAt = nil
+		r.Status = model.StatusQueued
+		r.ResumeFrom = []string{nodeID}
+	})
+	if err != nil {
+		return model.Run{}, err
+	}
+	metrics.RunsStarted.Inc("")
+	e.publish(model.Event{Type: "run.queued", RunID: runID, Status: model.StatusQueued,
+		Level: "info", Message: fmt.Sprintf("Re-running from %s", nodeID), Time: now, Run: &snap})
+	return snap, nil
+}
+
+// nodeByID returns the workflow node with the given id.
+func nodeByID(wf model.Workflow, id string) (model.Node, bool) {
+	for _, n := range wf.Nodes {
+		if n.ID == id {
+			return n, true
+		}
+	}
+	return model.Node{}, false
+}
+
+// descendants returns the set containing start and every node reachable from it by
+// following outgoing edges (all labels, retry back-edges included). A re-run resets
+// exactly this set so stale downstream results don't linger.
+func descendants(wf model.Workflow, start string) map[string]bool {
+	out := map[string][]string{}
+	for _, ed := range wf.Edges {
+		if ed.MaxAttempts > 0 {
+			continue // skip retry back-edges so we don't reset upstream nodes
+		}
+		out[ed.From] = append(out[ed.From], ed.To)
+	}
+	seen := map[string]bool{start: true}
+	queue := []string{start}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, to := range out[cur] {
+			if !seen[to] {
+				seen[to] = true
+				queue = append(queue, to)
+			}
+		}
+	}
+	return seen
+}
+
 // Resolve delivers a human decision ("approved"/"rejected") to a waiting
 // approval node. Returns false if nothing is waiting on that node.
 func (e *Engine) Resolve(runID, nodeID, decision string) bool {
@@ -368,10 +452,23 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 		}()
 	}
 
-	for _, n := range wf.Nodes {
-		if n.Kind == model.KindTrigger {
-			activate(n.ID)
+	// Normally a run begins at its trigger nodes. A re-run (ResumeFrom set) instead
+	// begins at the chosen node(s), so the already-successful upstream steps are
+	// kept and only the failed stage and everything after it re-execute. ResumeFrom
+	// is consumed here so a later normal finish doesn't repeat it.
+	startNodes := []string{}
+	if snap, ok, _ := e.store.GetRun(runID); ok && len(snap.ResumeFrom) > 0 {
+		startNodes = append(startNodes, snap.ResumeFrom...)
+		e.store.MutateRun(runID, func(r *model.Run) { r.ResumeFrom = nil }) //nolint:errcheck
+	} else {
+		for _, n := range wf.Nodes {
+			if n.Kind == model.KindTrigger {
+				startNodes = append(startNodes, n.ID)
+			}
 		}
+	}
+	for _, id := range startNodes {
+		activate(id)
 	}
 	wg.Wait()
 

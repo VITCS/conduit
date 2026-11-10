@@ -65,7 +65,10 @@ func execAgent(n model.Node, run *model.Run) Result {
 			Output: map[string]any{"provider": provider, "error": msg},
 			Logs:   []string{"agent: " + msg}}
 	}
-	maxTokens := 1024
+	// A planning/review agent routinely needs more than a sentence; the old 1024
+	// default truncated "Refine & Plan". Default generously; a node can raise it
+	// further via max_tokens (or lower it to cap cost).
+	maxTokens := 4096
 	if v, err := strconv.Atoi(ex("max_tokens")); err == nil && v > 0 {
 		maxTokens = v
 	}

@@ -102,6 +102,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/runs/{id}", s.getRun)
 	mux.HandleFunc("POST /api/runs/{id}/approve", s.approve)
 	mux.HandleFunc("POST /api/runs/{id}/cancel", s.cancel)
+	mux.HandleFunc("POST /api/runs/{id}/rerun", s.rerun)
 	mux.HandleFunc("GET /api/tasks", s.listTasks)
 	mux.HandleFunc("POST /api/tasks", s.createTask)
 	mux.HandleFunc("GET /api/tasks/{id}", s.getTask)
@@ -901,6 +902,35 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 		run = latest
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "canceled": canceled, "status": run.Status})
+}
+
+// rerun re-queues a finished run to execute again from a chosen node (typically a
+// failed stage). Upstream successes and run memory are preserved.
+func (s *Server) rerun(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		NodeID string `json:"node_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body.NodeID == "" {
+		writeErr(w, http.StatusBadRequest, "node_id is required")
+		return
+	}
+	run, ok, err := s.Store.GetRun(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok || run.ProjectID != projectID(r) {
+		writeErr(w, http.StatusNotFound, "run not found")
+		return
+	}
+	snap, err := s.Engine.Rerun(id, body.NodeID)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, snap)
 }
 
 // hook starts a run from an inbound webhook, binding the posted JSON body as the

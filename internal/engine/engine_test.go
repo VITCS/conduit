@@ -350,3 +350,83 @@ func TestCancelUnknownRun(t *testing.T) {
 		t.Fatal("Cancel(unknown) = true, want false")
 	}
 }
+
+// Rerun re-executes from a failed node, keeping successful upstream work, and
+// completes once the cause is fixed.
+func TestRerunFromFailedNode(t *testing.T) {
+	st := store.NewMem()
+	wf := model.Workflow{
+		ID: "wf_rr", Name: "rerun",
+		Nodes: []model.Node{
+			{ID: "t", Type: "github", Kind: model.KindTrigger, Title: "Trigger"},
+			{ID: "a", Type: "http", Kind: model.KindStep, Title: "A", Config: []model.Field{{Key: "url", Value: "http://svc/ok"}}},
+			{ID: "b", Type: "http", Kind: model.KindStep, Title: "B", Config: []model.Field{{Key: "url", Value: "http://svc/fail"}}},
+			{ID: "c", Type: "http", Kind: model.KindStep, Title: "C", Config: []model.Field{{Key: "url", Value: "http://svc/ok"}}},
+		},
+		Edges: []model.Edge{
+			{From: "t", To: "a"}, {From: "a", To: "b", Label: "success"}, {From: "b", To: "c", Label: "success"},
+		},
+	}
+	if err := st.PutWorkflow(wf); err != nil {
+		t.Fatal(err)
+	}
+	e := New(st)
+	e.StepDelay, e.TriggerDelay = 0, 0
+
+	run := e.Start(wf, "")
+	waitFor(t, 2*time.Second, func() bool { return runStatus(t, st, run.ID).Status == model.StatusFailed })
+	r := runStatus(t, st, run.ID)
+	if r.Steps["a"].Status != model.StatusSuccess || r.Steps["b"].Status != model.StatusFailed {
+		t.Fatalf("setup: a=%s b=%s", r.Steps["a"].Status, r.Steps["b"].Status)
+	}
+	aStarted := r.Steps["a"].StartedAt
+
+	// Fix the cause (B's URL no longer names a failure), then re-run from B.
+	wf.Nodes[2].Config[0].Value = "http://svc/ok"
+	if err := st.PutWorkflow(wf); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := e.Rerun(run.ID, "b")
+	if err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	if snap.Status != model.StatusQueued || len(snap.ResumeFrom) != 1 || snap.ResumeFrom[0] != "b" {
+		t.Fatalf("rerun state: status=%s resume=%v", snap.Status, snap.ResumeFrom)
+	}
+	if snap.Steps["b"].Status != model.StatusPending || snap.Steps["c"].Status != model.StatusPending {
+		t.Fatalf("b/c not reset: b=%s c=%s", snap.Steps["b"].Status, snap.Steps["c"].Status)
+	}
+	if snap.Steps["a"].Status != model.StatusSuccess {
+		t.Fatalf("a should be preserved, got %s", snap.Steps["a"].Status)
+	}
+
+	// Drive a worker claim (production path) and let it finish.
+	claimed, ok, _ := st.ClaimRun("w1", time.Second)
+	if !ok || claimed.ID != run.ID {
+		t.Fatalf("claim: ok=%v id=%s", ok, claimed.ID)
+	}
+	e.ExecuteClaimed(context.Background(), claimed)
+
+	waitFor(t, 2*time.Second, func() bool { return runStatus(t, st, run.ID).Status == model.StatusSuccess })
+	r = runStatus(t, st, run.ID)
+	if r.Steps["b"].Status != model.StatusSuccess || r.Steps["c"].Status != model.StatusSuccess {
+		t.Errorf("after rerun: b=%s c=%s, want success", r.Steps["b"].Status, r.Steps["c"].Status)
+	}
+	// A was not re-executed: its start time is unchanged from the first run.
+	if a := r.Steps["a"].StartedAt; (a == nil) != (aStarted == nil) || (a != nil && !a.Equal(*aStarted)) {
+		t.Errorf("A was re-run: start changed %v -> %v", aStarted, a)
+	}
+	if len(r.ResumeFrom) != 0 {
+		t.Errorf("ResumeFrom should be consumed, got %v", r.ResumeFrom)
+	}
+}
+
+// Rerun is refused while a run is still active.
+func TestRerunRejectsActiveRun(t *testing.T) {
+	e, st := newTestEngine(t)
+	run := e.Start(seed.Workflow(), "")
+	waitFor(t, 2*time.Second, func() bool { return runStatus(t, st, run.ID).Status == model.StatusWaiting })
+	if _, err := e.Rerun(run.ID, "a1"); err == nil {
+		t.Error("expected rerun to be refused for an active (waiting) run")
+	}
+}

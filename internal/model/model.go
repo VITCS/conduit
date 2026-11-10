@@ -139,6 +139,10 @@ type Run struct {
 	Input map[string]any `json:"input,omitempty"`
 	// TaskID links this run to a board task, when it was started for one.
 	TaskID string `json:"task_id,omitempty"`
+	// ResumeFrom, when set, tells the engine to begin execution from these node IDs
+	// instead of the workflow's triggers — used to re-run a failed stage without
+	// redoing the successful upstream work. It is consumed (cleared) at execution.
+	ResumeFrom []string `json:"resume_from,omitempty"`
 }
 
 // Role is a user's or token's permission level.

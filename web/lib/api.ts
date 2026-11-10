@@ -144,6 +144,12 @@ export const api = {
     }),
   cancelRun: (runId: string) =>
     req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
+  rerun: (runId: string, nodeId: string) =>
+    req<Run>(`/api/runs/${encodeURIComponent(runId)}/rerun`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node_id: nodeId }),
+    }),
   // EventSource cannot send an Authorization header, so the token rides along as a
   // same-origin query parameter (the server accepts it only for this endpoint).
   eventsURL: (runId: string) =>

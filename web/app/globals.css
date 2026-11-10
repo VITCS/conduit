@@ -326,6 +326,9 @@ input, select { font-family: inherit; }
 .approve-bar { display: flex; align-items: center; gap: 10px; background: var(--wait-bg); border: 1px solid color-mix(in srgb, var(--wait) 45%, transparent); border-radius: 8px; padding: 11px 13px; margin-bottom: 14px; }
 .approve-bar .msg { flex: 1 1 auto; font-size: 13px; font-weight: 500; color: var(--wait-ink); }
 .approve-bar .btn.ok { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.rerun-bar { display: flex; align-items: center; gap: 10px; background: var(--fail-bg); border: 1px solid color-mix(in srgb, var(--fail) 45%, transparent); border-radius: 8px; padding: 11px 13px; margin-bottom: 14px; }
+.rerun-bar .msg { flex: 1 1 auto; font-size: 13px; font-weight: 500; color: var(--fail-ink); }
+.rerun-bar .btn.ok { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 
 /* ---------- persistent approval banner (above the workspace) ---------- */
 .approval-banner {
