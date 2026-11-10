@@ -20,8 +20,13 @@ import (
 // The prompt may template run state: ${input.x} and ${memory.key}.
 func execAgent(n model.Node, run *model.Run) Result {
 	project := runProject(run)
-	provider := strings.ToLower(firstNonEmpty(n.Field("provider"), "anthropic"))
-	modelName := n.Field("model")
+	// ex resolves a field through ${var:…}/${secret:…} (project config) and
+	// ${input.…}/${memory.…} (run state) — so provider and model can be set once as
+	// project variables (e.g. provider ${var:llm_provider}, model ${var:llm_model}),
+	// exactly like the coding/triage components.
+	ex := func(field string) string { return expandTemplate(run, secretExpand(project, n.Field(field))) }
+	provider := strings.ToLower(firstNonEmpty(ex("provider"), "anthropic"))
+	modelName := ex("model")
 	prompt := expandTemplate(run, secretExpand(project, firstNonEmpty(n.Field("prompt"), n.Field("instruction"))))
 
 	// An optional `output` field names a memory key to store the agent's text in,
@@ -50,9 +55,18 @@ func execAgent(n model.Node, run *model.Run) Result {
 	}
 
 	apiKey := secretExpand(project, firstNonEmpty(n.Field("api_key"), n.Field("key")))
-	baseURL := n.Field("base_url")
+	baseURL := ex("base_url")
+	// Fail fast with guidance if a ${var:…}/${secret:…} reference didn't resolve,
+	// rather than sending a literal "${var:llm_model}" to the provider (a confusing
+	// 404). This usually means the project variable isn't set for THIS project.
+	if unresolved := firstUnresolved(provider, modelName, baseURL, apiKey); unresolved != "" {
+		msg := fmt.Sprintf("unresolved config %q — set the project's variables/secrets (e.g. llm_provider, llm_model, llm_key) for this project, with those exact names", unresolved)
+		return Result{Outcome: model.StatusFailed,
+			Output: map[string]any{"provider": provider, "error": msg},
+			Logs:   []string{"agent: " + msg}}
+	}
 	maxTokens := 1024
-	if v, err := strconv.Atoi(n.Field("max_tokens")); err == nil && v > 0 {
+	if v, err := strconv.Atoi(ex("max_tokens")); err == nil && v > 0 {
 		maxTokens = v
 	}
 	text, status, err := callLLM(provider, baseURL, apiKey, modelName, prompt, maxTokens)
@@ -263,6 +277,17 @@ func lookupPath(bag map[string]any, key string) (any, bool) {
 		}
 	}
 	return cur, true
+}
+
+// firstUnresolved returns the first value that still contains a ${var:…} or
+// ${secret:…} token (i.e. a reference that didn't resolve), or "" if all are clean.
+func firstUnresolved(vals ...string) string {
+	for _, v := range vals {
+		if strings.Contains(v, "${var:") || strings.Contains(v, "${secret:") {
+			return v
+		}
+	}
+	return ""
 }
 
 func summarize(s string) string {
