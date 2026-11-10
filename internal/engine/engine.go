@@ -663,6 +663,11 @@ func reachSet(adj map[string][]string, start string) map[string]bool {
 // executor up to the node's configured attempts, and returns StatusCanceled if
 // the run's context is canceled. Approval nodes block until Resolve or cancel.
 func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) model.Status {
+	// A disabled step is bypassed: its executor is not called, it is marked skipped,
+	// and the run proceeds down its success edges. Triggers are never bypassed.
+	if node.Disabled && node.Kind != model.KindTrigger {
+		return e.bypassNode(runID, node)
+	}
 	start := time.Now()
 	e.setStep(runID, node.ID, model.StatusRunning, func(s *model.StepRun) {
 		s.StartedAt = &start
@@ -724,6 +729,22 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 		Status: status, Level: levelFor(status), Step: snap,
 		Message: fmt.Sprintf("%s · %s", node.Title, status)})
 	return res.Outcome
+}
+
+// bypassNode records a disabled step as skipped and returns success so the run
+// continues down the node's success edges (as if the step had passed).
+func (e *Engine) bypassNode(runID string, node model.Node) model.Status {
+	now := time.Now()
+	e.setStep(runID, node.ID, model.StatusSkipped, func(s *model.StepRun) {
+		s.StartedAt = &now
+		s.EndedAt = &now
+		s.Output = map[string]any{"bypassed": true}
+		s.Logs = []string{"bypassed — node disabled"}
+	})
+	e.publish(model.Event{Type: "step.updated", RunID: runID, NodeID: node.ID,
+		Status: model.StatusSkipped, Level: "info", Step: e.stepSnap(runID, node.ID),
+		Message: node.Title + " · bypassed (disabled)"})
+	return model.StatusSuccess
 }
 
 // finishCanceled marks a node canceled and returns the canceled outcome.

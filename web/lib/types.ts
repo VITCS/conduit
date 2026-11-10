@@ -28,6 +28,7 @@ export interface WFNode {
   x: number;
   y: number;
   config: Field[];
+  disabled?: boolean; // bypass this step during runs
 }
 
 export interface WFEdge {

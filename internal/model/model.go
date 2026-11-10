@@ -48,6 +48,10 @@ type Node struct {
 	// Stage, when set, is the board stage this node belongs to. As a task's run
 	// enters the node, the engine projects this onto the task (see model.TaskStage).
 	Stage string `json:"stage,omitempty"`
+	// Disabled bypasses this step during a run: the executor is not called, the step
+	// is marked skipped, and the run continues down the node's success edges. Used to
+	// make an optional step (e.g. a CI check a token can't read) opt-in.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // Field returns the configured value for a key, or "" if absent.

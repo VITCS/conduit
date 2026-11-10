@@ -49,7 +49,7 @@ function wfToNodes(wf: Workflow): Node[] {
     id: n.id,
     type: "conduit",
     position: { x: n.x, y: n.y },
-    data: { title: n.title, typeName: n.type, icon: n.icon, kind: n.kind, config: n.config, status: "pending" } as NodeData,
+    data: { title: n.title, typeName: n.type, icon: n.icon, kind: n.kind, config: n.config, status: "pending", disabled: !!n.disabled } as NodeData,
   }));
 }
 function wfToEdges(wf: Workflow): Edge[] {
@@ -506,6 +506,17 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     [setNodes, markDirty],
   );
 
+  const toggleNodeDisabled = useCallback(
+    (id: string) => {
+      setNodes((ns) =>
+        ns.map((n) => (n.id === id ? { ...n, data: { ...(n.data as NodeData), disabled: !(n.data as NodeData).disabled } } : n)),
+      );
+      markDirty();
+      showToast("Toggled bypass — Save the workflow to apply");
+    },
+    [setNodes, markDirty, showToast],
+  );
+
   const save = useCallback(async () => {
     if (!wf) return;
     const payload: Workflow = {
@@ -522,6 +533,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           x: Math.round(n.position.x),
           y: Math.round(n.position.y),
           config: d.config,
+          ...(d.disabled ? { disabled: true } : {}),
         };
       }),
       edges: edges.map((e) => {
@@ -647,7 +659,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   );
 
   return (
-    <EditorContext.Provider value={{ editMode, setEdgeLabel, deleteEdge, vars, secretNames }}>
+    <EditorContext.Provider value={{ editMode, setEdgeLabel, deleteEdge, toggleNodeDisabled, vars, secretNames }}>
       <div className="app">
         <Topbar
           name={name}

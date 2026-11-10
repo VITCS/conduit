@@ -430,3 +430,47 @@ func TestRerunRejectsActiveRun(t *testing.T) {
 		t.Error("expected rerun to be refused for an active (waiting) run")
 	}
 }
+
+// A disabled step is bypassed: it is not executed, is marked skipped, and the run
+// continues down its success edge.
+func TestDisabledNodeIsBypassed(t *testing.T) {
+	st := store.NewMem()
+	wf := model.Workflow{
+		ID: "wf_bypass", Name: "bypass",
+		Nodes: []model.Node{
+			{ID: "t", Type: "github", Kind: model.KindTrigger, Title: "Trigger"},
+			{ID: "a", Type: "http", Kind: model.KindStep, Title: "A", Config: []model.Field{{Key: "url", Value: "http://svc/ok"}}},
+			// This node would FAIL if executed (url names a failure), but it is disabled.
+			{ID: "chk", Type: "http", Kind: model.KindStep, Title: "Verify", Disabled: true,
+				Config: []model.Field{{Key: "url", Value: "http://svc/fail"}}},
+			{ID: "pr", Type: "status", Kind: model.KindStatus, Title: "PR"},
+		},
+		Edges: []model.Edge{
+			{From: "t", To: "a"}, {From: "a", To: "chk", Label: "success"}, {From: "chk", To: "pr", Label: "success"},
+		},
+	}
+	if err := st.PutWorkflow(wf); err != nil {
+		t.Fatal(err)
+	}
+	e := New(st)
+	e.StepDelay, e.TriggerDelay = 0, 0
+	run := e.Start(wf, "")
+
+	waitFor(t, 2*time.Second, func() bool {
+		s := runStatus(t, st, run.ID).Status
+		return s == model.StatusSuccess || s == model.StatusFailed
+	})
+	r := runStatus(t, st, run.ID)
+	if r.Status != model.StatusSuccess {
+		t.Fatalf("run = %s, want success (disabled check must not fail the run)", r.Status)
+	}
+	if r.Steps["chk"].Status != model.StatusSkipped {
+		t.Errorf("chk = %s, want skipped (bypassed)", r.Steps["chk"].Status)
+	}
+	if r.Steps["chk"].Output["bypassed"] != true {
+		t.Errorf("chk output should mark bypassed, got %v", r.Steps["chk"].Output)
+	}
+	if r.Steps["pr"].Status == model.StatusSkipped {
+		t.Errorf("pr should have run after the bypassed step, got %s", r.Steps["pr"].Status)
+	}
+}
