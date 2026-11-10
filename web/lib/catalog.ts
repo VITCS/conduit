@@ -44,12 +44,12 @@ export const catalogByType = Object.fromEntries(CATALOG.map((c) => [c.type, c]))
 
 // Status -> [badge class suffix, label].
 export const STATUS_META: Record<Status, { cls: string; label: string }> = {
-  pending: { cls: "idle", label: "Pending" },
+  pending: { cls: "idle", label: "Yet to start" },
   triggered: { cls: "wait", label: "Triggered" },
   waiting: { cls: "wait", label: "Waiting" },
-  running: { cls: "run", label: "Running" },
-  success: { cls: "ok", label: "Success" },
-  created: { cls: "ok", label: "Created" },
+  running: { cls: "run", label: "In progress" },
+  success: { cls: "ok", label: "Done" },
+  created: { cls: "ok", label: "Done" },
   failed: { cls: "fail", label: "Failed" },
   skipped: { cls: "idle", label: "Skipped" },
   canceled: { cls: "idle", label: "Canceled" },

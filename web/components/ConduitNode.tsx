@@ -11,11 +11,16 @@ export function ConduitNode({ id, data, selected }: NodeProps) {
   const meta = STATUS_META[d.status] ?? STATUS_META.pending;
   const disabled = !!d.disabled;
   const canBypass = d.kind !== "trigger";
+  const running = d.status === "running";
+  const waiting = d.status === "waiting";
   return (
-    <div className={`cnode kind-${d.kind}${selected ? " sel" : ""}${d.status === "running" ? " active" : ""}${disabled ? " bypassed" : ""}`}>
+    <div
+      className={`cnode kind-${d.kind} status-${d.status}${selected ? " sel" : ""}${running ? " active" : ""}${disabled ? " bypassed" : ""}`}
+    >
+      {(running || waiting) && <span className="n-progress" aria-hidden />}
       <Handle type="target" position={Position.Left} />
       <div className="n-head">
-        <span className="n-ico">
+        <span className={`n-ico${running ? " spin" : ""}`}>
           <Icon name={d.icon} size={15} />
         </span>
         <span className="n-title">{d.title}</span>

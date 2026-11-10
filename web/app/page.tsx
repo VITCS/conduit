@@ -52,6 +52,34 @@ function wfToNodes(wf: Workflow): Node[] {
     data: { title: n.title, typeName: n.type, icon: n.icon, kind: n.kind, config: n.config, status: "pending", disabled: !!n.disabled } as NodeData,
   }));
 }
+// toWorkflowPayload builds the Workflow to PUT from the current canvas state.
+function toWorkflowPayload(wf: Workflow, name: string, nodes: Node[], edges: Edge[]): Workflow {
+  return {
+    id: wf.id,
+    name: name.trim() || wf.name,
+    nodes: nodes.map((n): WFNode => {
+      const d = n.data as NodeData;
+      return {
+        id: n.id,
+        type: d.typeName,
+        title: d.title,
+        icon: d.icon,
+        kind: d.kind,
+        x: Math.round(n.position.x),
+        y: Math.round(n.position.y),
+        config: d.config,
+        ...(d.disabled ? { disabled: true } : {}),
+      };
+    }),
+    edges: edges.map((e) => {
+      const d = e.data as EdgeData | undefined;
+      const out: WFEdge = { from: e.source, to: e.target };
+      if (d?.label) out.label = d.label;
+      if (d?.maxAttempts && d.maxAttempts > 0) out.max_attempts = d.maxAttempts;
+      return out;
+    }),
+  };
+}
 function wfToEdges(wf: Workflow): Edge[] {
   return wf.edges.map((e) => ({
     id: edgeId(e.from, e.to),
@@ -508,44 +536,35 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
 
   const toggleNodeDisabled = useCallback(
     (id: string) => {
-      setNodes((ns) =>
-        ns.map((n) => (n.id === id ? { ...n, data: { ...(n.data as NodeData), disabled: !(n.data as NodeData).disabled } } : n)),
-      );
-      markDirty();
-      showToast("Toggled bypass — Save the workflow to apply");
+      setNodes((ns) => {
+        const next = ns.map((n) =>
+          n.id === id ? { ...n, data: { ...(n.data as NodeData), disabled: !(n.data as NodeData).disabled } } : n,
+        );
+        // Persist the bypass change right away so it actually applies to the next
+        // run — no separate Save step (a common trap: toggling then running the
+        // still-unsaved workflow). Positions/edges ride along via the same payload.
+        const toggled = next.find((n) => n.id === id);
+        const nowDisabled = !!(toggled?.data as NodeData | undefined)?.disabled;
+        if (wf) {
+          api
+            .putWorkflow(toWorkflowPayload(wf, name, next, edges))
+            .then((saved) => {
+              setWf(saved);
+              setDirty(false);
+              showToast(nowDisabled ? "Step will be skipped on the next run" : "Step re-enabled");
+            })
+            .catch((e) => showToast("Could not save bypass: " + (e as Error).message));
+        }
+        return next;
+      });
     },
-    [setNodes, markDirty, showToast],
+    [setNodes, wf, name, edges, showToast],
   );
 
   const save = useCallback(async () => {
     if (!wf) return;
-    const payload: Workflow = {
-      id: wf.id,
-      name: name.trim() || wf.name,
-      nodes: nodes.map((n): WFNode => {
-        const d = n.data as NodeData;
-        return {
-          id: n.id,
-          type: d.typeName,
-          title: d.title,
-          icon: d.icon,
-          kind: d.kind,
-          x: Math.round(n.position.x),
-          y: Math.round(n.position.y),
-          config: d.config,
-          ...(d.disabled ? { disabled: true } : {}),
-        };
-      }),
-      edges: edges.map((e) => {
-        const d = e.data as EdgeData | undefined;
-        const out: WFEdge = { from: e.source, to: e.target };
-        if (d?.label) out.label = d.label;
-        if (d?.maxAttempts && d.maxAttempts > 0) out.max_attempts = d.maxAttempts;
-        return out;
-      }),
-    };
     try {
-      const saved = await api.putWorkflow(payload);
+      const saved = await api.putWorkflow(toWorkflowPayload(wf, name, nodes, edges));
       setWf(saved);
       setDirty(false);
       showToast("Workflow saved");

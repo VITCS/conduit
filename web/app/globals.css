@@ -124,6 +124,36 @@ input, select { font-family: inherit; }
 .cnode:hover { border-color: var(--border-strong); }
 .cnode.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .cnode.active { border-color: var(--run); box-shadow: 0 0 0 1px var(--run); }
+/* per-status left accent so each node's state reads at a glance */
+.cnode::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: var(--border-strong); opacity: 0; transition: opacity .15s; }
+.cnode.status-running::before, .cnode.status-waiting::before, .cnode.status-success::before,
+.cnode.status-created::before, .cnode.status-failed::before, .cnode.status-skipped::before,
+.cnode.status-canceled::before, .cnode.status-triggered::before { opacity: 1; }
+.cnode.status-running::before, .cnode.status-triggered::before { background: var(--run); }
+.cnode.status-waiting::before { background: var(--wait); }
+.cnode.status-success::before, .cnode.status-created::before { background: var(--ok); }
+.cnode.status-failed::before { background: var(--fail); }
+.cnode.status-skipped::before, .cnode.status-canceled::before { background: var(--faint); }
+.cnode.status-failed { border-color: color-mix(in srgb, var(--fail) 55%, var(--border)); }
+.cnode.status-success, .cnode.status-created { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.cnode.active { animation: node-pulse 1.6s ease-in-out infinite; }
+@keyframes node-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--run), 0 0 0 0 color-mix(in srgb, var(--run) 40%, transparent); }
+  50% { box-shadow: 0 0 0 1px var(--run), 0 0 0 6px color-mix(in srgb, var(--run) 16%, transparent); }
+}
+/* animated progress stripe along the top edge while a node is working */
+.n-progress { position: absolute; top: 0; left: 0; right: 0; height: 3px; overflow: hidden; border-radius: 8px 8px 0 0; background: color-mix(in srgb, var(--run) 18%, transparent); }
+.n-progress::after { content: ""; position: absolute; top: 0; left: -40%; height: 100%; width: 40%; background: linear-gradient(90deg, transparent, var(--run), transparent); animation: node-progress 1.1s linear infinite; }
+.cnode.status-waiting .n-progress { background: color-mix(in srgb, var(--wait) 18%, transparent); }
+.cnode.status-waiting .n-progress::after { background: linear-gradient(90deg, transparent, var(--wait), transparent); }
+@keyframes node-progress { 0% { left: -40%; } 100% { left: 100%; } }
+.n-ico.spin { animation: ico-breathe 1.2s ease-in-out infinite; }
+@keyframes ico-breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: .75; } }
+.badge.run::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; animation: dot-blink 1s ease-in-out infinite; vertical-align: middle; }
+@keyframes dot-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) {
+  .cnode.active, .n-progress::after, .n-ico.spin, .badge.run::before { animation: none; }
+}
 .cnode.bypassed { opacity: .62; border-style: dashed; }
 .cnode.bypassed .n-title { text-decoration: line-through; text-decoration-color: var(--faint); }
 .n-bypass { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; user-select: none; }
