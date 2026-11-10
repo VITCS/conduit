@@ -474,3 +474,40 @@ func TestDisabledNodeIsBypassed(t *testing.T) {
 		t.Errorf("pr should have run after the bypassed step, got %s", r.Steps["pr"].Status)
 	}
 }
+
+// Canceling during a bounded recovery loop (CI fails → retry Apply) must stop the
+// loop and finalize the run as canceled, not keep looping back.
+func TestCancelStopsRecoveryLoop(t *testing.T) {
+	st := store.NewMem()
+	wf := model.Workflow{
+		ID: "wf_cancel_loop", Name: "cancel loop",
+		Nodes: []model.Node{
+			{ID: "t", Type: "github", Kind: model.KindTrigger, Title: "Trigger"},
+			{ID: "apply", Type: "http", Kind: model.KindStep, Title: "Apply", Config: []model.Field{{Key: "url", Value: "http://svc/ok"}}},
+			{ID: "ci", Type: "http", Kind: model.KindStep, Title: "CI", Config: []model.Field{{Key: "url", Value: "http://svc/fail"}}},
+		},
+		Edges: []model.Edge{
+			{From: "t", To: "apply"},
+			{From: "apply", To: "ci", Label: "success"},
+			{From: "ci", To: "apply", Label: "failed", MaxAttempts: 100}, // recovery back-edge
+		},
+	}
+	if err := st.PutWorkflow(wf); err != nil {
+		t.Fatal(err)
+	}
+	e := New(st)
+	e.StepDelay, e.TriggerDelay = 15*time.Millisecond, 0
+	run := e.Start(wf, "")
+
+	// Let the loop iterate a few times, then cancel.
+	time.Sleep(90 * time.Millisecond)
+	e.Cancel(run.ID)
+
+	waitFor(t, 3*time.Second, func() bool {
+		s := runStatus(t, st, run.ID).Status
+		return s == model.StatusCanceled || s == model.StatusFailed || s == model.StatusSuccess
+	})
+	if got := runStatus(t, st, run.ID).Status; got != model.StatusCanceled {
+		t.Fatalf("run = %s, want canceled (cancel must break the retry loop)", got)
+	}
+}

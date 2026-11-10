@@ -14,25 +14,22 @@ export function ConduitNode({ id, data, selected }: NodeProps) {
   return (
     <div className={`cnode kind-${d.kind}${selected ? " sel" : ""}${d.status === "running" ? " active" : ""}${disabled ? " bypassed" : ""}`}>
       <Handle type="target" position={Position.Left} />
-      {canBypass && (
-        <label
-          className="n-bypass"
-          title={disabled ? "Bypassed — this step is skipped during runs. Uncheck to run it." : "Bypass this step (skip it during runs)"}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <input
-            type="checkbox"
-            checked={disabled}
-            onChange={() => toggleNodeDisabled(id)}
-          />
-          <span>bypass</span>
-        </label>
-      )}
       <div className="n-head">
         <span className="n-ico">
           <Icon name={d.icon} size={15} />
         </span>
         <span className="n-title">{d.title}</span>
+        {canBypass && (
+          <label
+            className="n-bypass"
+            title={disabled ? "Bypassed — this step is skipped during runs. Uncheck to run it." : "Bypass this step (skip it during runs)"}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <input type="checkbox" checked={disabled} onChange={() => toggleNodeDisabled(id)} />
+            <span>skip</span>
+          </label>
+        )}
       </div>
       <div className="n-cfg">
         {d.config.map((f, i) => {

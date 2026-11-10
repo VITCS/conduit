@@ -423,11 +423,17 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 			}
 
 			outcome := e.runNode(ctx, runID, node)
-			if outcome == model.StatusCanceled {
+			// Stop this branch if the run was canceled — either the node itself
+			// unwound to canceled, or cancellation arrived while its executor was
+			// mid-call (components run network I/O that doesn't observe ctx, so they
+			// can return failed/success after a cancel). Without this ctx check a
+			// failing node with a retry back-edge (e.g. CI) would loop back forever
+			// after Cancel, never letting the run finalize.
+			if outcome == model.StatusCanceled || ctx.Err() != nil {
 				mu.Lock()
 				canceled = true
 				mu.Unlock()
-				return // stop propagating this branch
+				return // stop propagating this branch (no retry, no successors)
 			}
 
 			// Bounded recovery loop: a failing node with a retry back-edge that still

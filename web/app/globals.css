@@ -126,9 +126,9 @@ input, select { font-family: inherit; }
 .cnode.active { border-color: var(--run); box-shadow: 0 0 0 1px var(--run); }
 .cnode.bypassed { opacity: .62; border-style: dashed; }
 .cnode.bypassed .n-title { text-decoration: line-through; text-decoration-color: var(--faint); }
-.n-bypass { position: absolute; top: -10px; right: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; font-size: 10px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; user-select: none; }
+.n-bypass { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; user-select: none; }
 .n-bypass:hover { border-color: var(--border-strong); color: var(--fg); }
-.n-bypass input { width: 12px; height: 12px; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.n-bypass input { width: 13px; height: 13px; margin: 0; cursor: pointer; accent-color: var(--accent); }
 .cnode.bypassed .n-bypass { color: var(--fail-ink); background: var(--fail-bg); border-color: transparent; }
 .n-head { display: flex; align-items: center; gap: 9px; padding: 11px 12px 9px; }
 .n-ico { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; background: var(--accent-soft); color: var(--accent); }
