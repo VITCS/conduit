@@ -18,11 +18,11 @@ async function signIn(page: Page, email: string, password: string) {
 
 test("landing page shows what the app does and offers sign in / create account", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText(/human in the loop/i);
-  await expect(page.getByText(/turns a visual graph of components into a live workflow/i)).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(/reviewed pull requests/i);
+  await expect(page.getByText(/open-source AI software factory/i).first()).toBeVisible();
   // Real capabilities are described; no fake SSO is advertised.
-  await expect(page.getByRole("heading", { name: /Human approval gates/i })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Encrypted secrets/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Make agents work like they should/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /How one-shot engineering works/i })).toBeVisible();
   await expect(page.getByText(/when the server has those providers configured/i)).toBeVisible();
   await expect(page.getByTestId("nav-signin")).toBeVisible();
   await expect(page.getByTestId("hero-getstarted")).toBeVisible();
