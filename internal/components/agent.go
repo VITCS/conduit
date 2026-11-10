@@ -146,6 +146,7 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
+		StopReason string `json:"stop_reason"`
 	}
 	_ = json.Unmarshal(raw, &r)
 	var sb strings.Builder
@@ -156,6 +157,9 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 	}
 	if sb.Len() == 0 {
 		return "", status, fmt.Errorf("anthropic returned no text: %s", apiErrSnippet(raw))
+	}
+	if r.StopReason == "max_tokens" {
+		return sb.String(), status, fmt.Errorf("response truncated at max_tokens=%d — raise max_tokens on this node (or lower max_files)", maxTokens)
 	}
 	return sb.String(), status, nil
 }
@@ -179,10 +183,14 @@ func callOpenAI(base, apiKey, modelName, prompt string) (string, int, error) {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	_ = json.Unmarshal(raw, &r)
 	if len(r.Choices) > 0 && r.Choices[0].Message.Content != "" {
+		if r.Choices[0].FinishReason == "length" {
+			return r.Choices[0].Message.Content, status, fmt.Errorf("response truncated (finish_reason=length) — raise max_tokens on this node (or lower max_files)")
+		}
 		return r.Choices[0].Message.Content, status, nil
 	}
 	return "", status, fmt.Errorf("openai returned no text: %s", apiErrSnippet(raw))

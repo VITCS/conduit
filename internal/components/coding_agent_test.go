@@ -207,3 +207,66 @@ func TestCodingAgentPushesBranch(t *testing.T) {
 		t.Errorf("work_branch = %v", r.MemoryWrites["work_branch"])
 	}
 }
+
+// A model reply cut off at its token cap (stop_reason=max_tokens) must fail with
+// an actionable message, not a bare "unexpected end of JSON input".
+func TestCodingApplyReportsTruncation(t *testing.T) {
+	gh := stubGitData()
+	defer gh.Close()
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Truncated JSON array + explicit truncation signal.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content":     []map[string]any{{"type": "text", "text": `[{"path":"a.md","content":"# hi`}},
+			"stop_reason": "max_tokens",
+		})
+	}))
+	defer llm.Close()
+
+	r := execCodingApply(codeNode(map[string]string{
+		"owner": "o", "repo": "r", "base": "main",
+		"api_base": gh.URL, "token": "ghtok",
+		"provider": "anthropic", "base_url": llm.URL, "api_key": "k", "model": "m",
+		"changes": `[{"path":"a.md","action":"create","details":"new"}]`,
+		"plan":    "add", "ticket": "ENG-9",
+	}), &model.Run{})
+	if r.Outcome != model.StatusFailed {
+		t.Fatalf("want failed on truncation, got %s", r.Outcome)
+	}
+	if msg, _ := r.Output["error"].(string); !strings.Contains(msg, "max_tokens") && !strings.Contains(msg, "truncated") {
+		t.Errorf("error should explain truncation, got: %v", r.Output["error"])
+	}
+}
+
+// The node's max_tokens flows through to the provider request (default 8192, or a
+// configured override).
+func TestCodingApplyHonorsMaxTokens(t *testing.T) {
+	gh := stubGitData()
+	defer gh.Close()
+	var gotMax float64
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		if v, ok := body["max_tokens"].(float64); ok {
+			gotMax = v
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content": []map[string]any{{"type": "text", "text": `[{"path":"a.md","content":"x"}]`}},
+		})
+	}))
+	defer llm.Close()
+
+	r := execCodingApply(codeNode(map[string]string{
+		"owner": "o", "repo": "r", "base": "main",
+		"api_base": gh.URL, "token": "ghtok",
+		"provider": "anthropic", "base_url": llm.URL, "api_key": "k", "model": "m",
+		"max_tokens": "12000",
+		"changes":    `[{"path":"a.md","action":"create","details":"new"}]`,
+		"plan":       "add", "ticket": "ENG-10",
+	}), &model.Run{})
+	if r.Outcome != model.StatusSuccess {
+		t.Fatalf("want success, got %s (%v)", r.Outcome, r.Output)
+	}
+	if gotMax != 12000 {
+		t.Errorf("max_tokens sent = %v, want 12000", gotMax)
+	}
+}

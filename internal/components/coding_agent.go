@@ -31,7 +31,7 @@ type fileChange struct {
 type codingCfg struct {
 	owner, repo, base                   string
 	provider, apiKey, baseURL, model    string
-	maxFiles                            int
+	maxFiles, maxTokens                 int
 	ticket, ticketSummary, branchPrefix string
 	gh                                  ghClient
 	hasToken                            bool
@@ -63,6 +63,13 @@ func resolveCoding(n model.Node, run *model.Run, needToken bool) (codingCfg, fun
 	if v, err := strconv.Atoi(n.Field("max_files")); err == nil && v > 0 {
 		cfg.maxFiles = v
 	}
+	// Implementing full file contents can be large; a low cap truncates the JSON
+	// reply mid-array ("unexpected end of JSON input"). Default generously and let
+	// a node raise it further via max_tokens.
+	cfg.maxTokens = 8192
+	if v, err := strconv.Atoi(ex("max_tokens")); err == nil && v > 0 {
+		cfg.maxTokens = v
+	}
 	if token, ok := githubToken(n, project); ok {
 		cfg.gh = ghClient{base: githubBase(n), owner: owner, repo: repo, headers: githubHeaders(token)}
 		cfg.hasToken = true
@@ -89,7 +96,7 @@ WORK:
 NOTES:
 %s`, c.owner, c.repo, c.maxFiles, task, notes)
 
-	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, 2000)
+	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, c.maxTokens)
 	if err != nil || status < 200 || status >= 300 {
 		r := llmFail("plan", err, status)
 		return nil, &r
@@ -134,7 +141,7 @@ CURRENT FILE CONTENTS:%s
 ORIGINAL TASK:
 %s%s`, c.owner, c.repo, formatChangePlan(items), firstNonEmpty(ctxBuf.String(), " (all files are new)"), task, feedbackBlock(feedback))
 
-	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, 4000)
+	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, c.maxTokens)
 	if err != nil || status < 200 || status >= 300 {
 		r := llmFail("implement", err, status)
 		return nil, &r
@@ -294,6 +301,16 @@ func feedbackBlock(feedback string) string {
 	return "\n\nA PREVIOUS ATTEMPT FAILED VERIFICATION — fix these and keep the rest working:\n" + feedback
 }
 
+// truncationHint annotates a JSON parse error that looks like a cut-off response
+// (the common cause when a model hits its token cap mid-array) with how to fix it.
+func truncationHint(err error) string {
+	msg := err.Error()
+	if strings.Contains(msg, "unexpected end of JSON") || strings.Contains(msg, "unexpected EOF") {
+		msg += " (the model's response looks truncated — raise max_tokens on this node, or lower max_files)"
+	}
+	return msg
+}
+
 func failCode(msg string) Result {
 	return Result{Outcome: model.StatusFailed, Output: map[string]any{"error": msg}, Logs: []string{"coding_agent: " + msg}}
 }
@@ -324,7 +341,7 @@ func parseChangePlan(text string, maxFiles int) ([]changeItem, string) {
 	}
 	var items []changeItem
 	if err := json.Unmarshal([]byte(text[start:end+1]), &items); err != nil {
-		return nil, "could not parse change plan: " + err.Error()
+		return nil, "could not parse change plan: " + truncationHint(err)
 	}
 	cleaned := items[:0]
 	for _, it := range items {
@@ -384,7 +401,7 @@ func parseFileChanges(text string, maxFiles int) ([]fileChange, string) {
 	}
 	var files []fileChange
 	if err := json.Unmarshal([]byte(text[start:end+1]), &files); err != nil {
-		return nil, "could not parse file changes: " + err.Error()
+		return nil, "could not parse file changes: " + truncationHint(err)
 	}
 	cleaned := files[:0]
 	for _, f := range files {
