@@ -45,9 +45,10 @@ func resolveCoding(n model.Node, run *model.Run, needToken bool) (codingCfg, fun
 
 	owner, repo := ex("owner"), ex("repo")
 	if owner == "" || repo == "" || strings.Contains(owner, "${") || strings.Contains(repo, "${") {
-		r := failCode("owner and repo are required")
+		r := failCode("owner and repo are required (set the project variables owner and repo)")
 		return codingCfg{}, ex, &r
 	}
+	owner, repo = normalizeOwnerRepo(owner, repo)
 	cfg := codingCfg{
 		owner: owner, repo: repo,
 		base:          firstNonEmpty(ex("base"), "main"),
@@ -503,7 +504,13 @@ func (g ghClient) fileContent(path, ref string) (content string, exists bool) {
 func (g ghClient) baseCommit(branch string) (commitSHA, treeSHA, errMsg string) {
 	raw, status, err := getWithHeader(g.url("git/ref/heads/"+branch), g.headers)
 	if err != nil || status != 200 {
-		return "", "", fmt.Sprintf("base branch %q not found: %s", branch, ghErr(raw, status, err))
+		// A 404 here is ambiguous: the branch may be missing, but far more often the
+		// repo/owner is wrong or the token can't see it — GitHub returns 404 (not 403)
+		// for a private repo a token can't access. Probe the repo to say which.
+		if status == 404 {
+			return "", "", g.diagnose404(branch)
+		}
+		return "", "", fmt.Sprintf("could not read base branch %q: %s", branch, ghErr(raw, status, err))
 	}
 	var ref struct {
 		Object struct {
@@ -522,6 +529,37 @@ func (g ghClient) baseCommit(branch string) (commitSHA, treeSHA, errMsg string) 
 	}
 	_ = json.Unmarshal(raw, &commit)
 	return ref.Object.SHA, commit.Tree.SHA, ""
+}
+
+// diagnose404 turns a 404 on the branch ref into an actionable message by probing
+// the repository itself: if the repo read also 404s, the owner/repo is wrong or the
+// token lacks access; if the repo is reachable, the named branch truly doesn't exist
+// and we suggest the repo's actual default branch.
+func (g ghClient) diagnose404(branch string) string {
+	raw, status, err := getWithHeader(fmt.Sprintf("%s/repos/%s/%s", g.base, g.owner, g.repo), g.headers)
+	if err != nil {
+		return fmt.Sprintf("could not reach GitHub for %s/%s: %v", g.owner, g.repo, err)
+	}
+	if status == 404 {
+		return fmt.Sprintf("repository %s/%s not found or not accessible — check the owner/repo variables, "+
+			"and that github_token is valid and has access (a private repo needs a token with repo/contents access)", g.owner, g.repo)
+	}
+	if status == 401 || status == 403 {
+		return fmt.Sprintf("github_token lacks access to %s/%s (%s) — grant it repo/contents access", g.owner, g.repo, githubError(raw, status))
+	}
+	if status != 200 {
+		return fmt.Sprintf("could not read repository %s/%s: %s", g.owner, g.repo, githubError(raw, status))
+	}
+	// Repo is reachable, so the branch itself is the problem.
+	var repo struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	_ = json.Unmarshal(raw, &repo)
+	if repo.DefaultBranch != "" && repo.DefaultBranch != branch {
+		return fmt.Sprintf("branch %q not found in %s/%s — its default branch is %q; set the node's base to %q",
+			branch, g.owner, g.repo, repo.DefaultBranch, repo.DefaultBranch)
+	}
+	return fmt.Sprintf("branch %q not found in %s/%s", branch, g.owner, g.repo)
 }
 
 func (g ghClient) makeTree(baseTree string, files []fileChange) (string, string) {

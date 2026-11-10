@@ -56,7 +56,8 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(f string) string { return expandTemplate(run, secretExpand(project, n.Field(f))) }
 
-	owner, repo, number := ex("owner"), ex("repo"), firstNonEmpty(ex("number"), ex("pr"))
+	owner, repo := normalizeOwnerRepo(ex("owner"), ex("repo"))
+	number := firstNonEmpty(ex("number"), ex("pr"))
 	if owner == "" || repo == "" || number == "" {
 		return Result{Outcome: model.StatusFailed,
 			Output: map[string]any{"error": "owner, repo and number are required"},
@@ -197,7 +198,8 @@ func execGitHubMerge(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(f string) string { return expandTemplate(run, secretExpand(project, n.Field(f))) }
 
-	owner, repo, number := ex("owner"), ex("repo"), firstNonEmpty(ex("number"), ex("pr"))
+	owner, repo := normalizeOwnerRepo(ex("owner"), ex("repo"))
+	number := firstNonEmpty(ex("number"), ex("pr"))
 	if owner == "" || repo == "" || number == "" {
 		return Result{Outcome: model.StatusFailed,
 			Output: map[string]any{"error": "owner, repo and number are required"},

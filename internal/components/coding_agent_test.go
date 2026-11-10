@@ -345,3 +345,37 @@ func TestCodingApplyImplementsOneRequestPerFile(t *testing.T) {
 		}
 	}
 }
+
+// A 404 on the base branch is diagnosed: missing branch vs. inaccessible repo.
+func TestBaseCommitDiagnoses404(t *testing.T) {
+	t.Run("repo reachable, branch missing -> suggests default branch", func(t *testing.T) {
+		gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.Contains(req.URL.Path, "/git/ref/heads/") {
+				w.WriteHeader(404)
+				_ = json.NewEncoder(w).Encode(map[string]any{"message": "Not Found"})
+				return
+			}
+			// repo metadata
+			_ = json.NewEncoder(w).Encode(map[string]any{"default_branch": "master"})
+		}))
+		defer gh.Close()
+		g := ghClient{base: gh.URL, owner: "VITCS", repo: "fitvive-landing-page", headers: map[string]string{}}
+		_, _, msg := g.baseCommit("main")
+		if !strings.Contains(msg, "master") || !strings.Contains(msg, "default branch") {
+			t.Errorf("want default-branch hint, got %q", msg)
+		}
+	})
+
+	t.Run("repo not accessible -> owner/repo/token guidance", func(t *testing.T) {
+		gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(404)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "Not Found"})
+		}))
+		defer gh.Close()
+		g := ghClient{base: gh.URL, owner: "VITCS", repo: "fitvive-landing-page", headers: map[string]string{}}
+		_, _, msg := g.baseCommit("main")
+		if !strings.Contains(msg, "not found or not accessible") || !strings.Contains(msg, "github_token") {
+			t.Errorf("want repo/token guidance, got %q", msg)
+		}
+	})
+}

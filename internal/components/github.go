@@ -43,6 +43,35 @@ func githubBase(n model.Node) string {
 	return strings.TrimRight(firstNonEmpty(n.Field("api_base"), "https://api.github.com"), "/")
 }
 
+// normalizeOwnerRepo cleans common ways owner/repo get mis-entered so a valid repo
+// isn't rejected as "not found": a full URL or "owner/repo" pasted into the repo
+// field, surrounding whitespace, a leading "@", or a trailing ".git".
+func normalizeOwnerRepo(owner, repo string) (string, string) {
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	// Strip a URL down to its "owner/repo" path.
+	if i := strings.Index(repo, "github.com"); i >= 0 {
+		repo = repo[i+len("github.com"):]
+		repo = strings.TrimPrefix(repo, "/")
+		repo = strings.TrimPrefix(repo, ":") // scp-style git@github.com:owner/repo
+	}
+	repo = strings.TrimPrefix(repo, "/")
+	repo = strings.TrimSuffix(repo, ".git")
+	// If the repo field carries "owner/repo", split it (it's the more specific form).
+	if strings.Contains(repo, "/") {
+		parts := strings.SplitN(strings.Trim(repo, "/"), "/", 2)
+		if len(parts) == 2 {
+			if parts[0] != "" {
+				owner = parts[0]
+			}
+			repo = parts[1]
+		}
+	}
+	owner = strings.Trim(strings.TrimSpace(owner), "/@")
+	repo = strings.TrimSuffix(strings.Trim(strings.TrimSpace(repo), "/"), ".git")
+	return owner, repo
+}
+
 // githubError extracts a human-readable message from a GitHub error response body.
 func githubError(raw []byte, status int) string {
 	var e struct {
@@ -75,7 +104,7 @@ func execGitHubPR(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(field string) string { return expandTemplate(run, secretExpand(project, n.Field(field))) }
 
-	owner, repo := ex("owner"), ex("repo")
+	owner, repo := normalizeOwnerRepo(ex("owner"), ex("repo"))
 	head := ex("head")
 	base := firstNonEmpty(ex("base"), "main")
 	title := ex("title")

@@ -32,7 +32,7 @@ func execGitHubChecks(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(f string) string { return expandTemplate(run, secretExpand(project, n.Field(f))) }
 
-	owner, repo := ex("owner"), ex("repo")
+	owner, repo := normalizeOwnerRepo(ex("owner"), ex("repo"))
 	ref := firstNonEmpty(ex("ref"), ex("commit"), ex("head"))
 	if owner == "" || repo == "" || strings.Contains(owner, "${") || strings.Contains(repo, "${") {
 		return failChecks("owner and repo are required")

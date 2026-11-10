@@ -132,3 +132,23 @@ func TestFilterNotEquals(t *testing.T) {
 		t.Fatalf("no branch should skip, got %s", r2.Outcome)
 	}
 }
+
+func TestNormalizeOwnerRepo(t *testing.T) {
+	cases := []struct{ inO, inR, wantO, wantR string }{
+		{"VITCS", "fitvive-landing-page", "VITCS", "fitvive-landing-page"},
+		{"VITCS", "fitvive-landing-page.git", "VITCS", "fitvive-landing-page"},
+		{"", "VITCS/fitvive-landing-page", "VITCS", "fitvive-landing-page"},
+		{"ignored", "VITCS/fitvive-landing-page", "VITCS", "fitvive-landing-page"},
+		{"", "https://github.com/VITCS/fitvive-landing-page", "VITCS", "fitvive-landing-page"},
+		{"", "https://github.com/VITCS/fitvive-landing-page.git", "VITCS", "fitvive-landing-page"},
+		{"", "git@github.com:VITCS/fitvive-landing-page.git", "VITCS", "fitvive-landing-page"},
+		{"  VITCS ", "  fitvive-landing-page  ", "VITCS", "fitvive-landing-page"},
+		{"@VITCS", "fitvive-landing-page", "VITCS", "fitvive-landing-page"},
+	}
+	for _, c := range cases {
+		o, r := normalizeOwnerRepo(c.inO, c.inR)
+		if o != c.wantO || r != c.wantR {
+			t.Errorf("normalizeOwnerRepo(%q,%q) = (%q,%q), want (%q,%q)", c.inO, c.inR, o, r, c.wantO, c.wantR)
+		}
+	}
+}
