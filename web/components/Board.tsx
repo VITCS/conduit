@@ -18,6 +18,7 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [open, setOpen] = useState<Task | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -63,15 +64,11 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
     );
   }, [tasks, query, sourceFilter]);
 
-  async function newTask() {
-    const title = window.prompt("New task — title / problem statement:");
-    if (!title) return;
-    const description = window.prompt("Description (optional):") || "";
-    try {
-      await api.createTask({ title, summary: title, description, source: "manual" });
-      onToast("Task created in Backlog");
-      refresh();
-    } catch (e) { onToast("Create failed: " + (e as Error).message); }
+  async function createTask(body: Partial<Task>) {
+    await api.createTask(body);
+    onToast("Task created in Backlog");
+    setNewOpen(false);
+    refresh();
   }
 
   async function start(t: Task) {
@@ -104,7 +101,7 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
           <option value="">All sources</option>
           {sources.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <button className="btn primary" onClick={newTask}><Plus size={15} /> New task</button>
+        <button className="btn primary" onClick={() => setNewOpen(true)}><Plus size={15} /> New task</button>
       </div>
       {loading ? (
         <div className="board-empty">Loading…</div>
@@ -140,6 +137,7 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
           onToast={onToast}
         />
       )}
+      {newOpen && <NewTaskModal onClose={() => setNewOpen(false)} onCreate={createTask} onToast={onToast} />}
     </div>
   );
 }
@@ -273,4 +271,75 @@ function runCls(status: string): string {
   if (status === "waiting") return "wait";
   if (status === "running") return "run";
   return "idle";
+}
+
+function NewTaskModal({ onClose, onCreate, onToast }: {
+  onClose: () => void; onCreate: (b: Partial<Task>) => Promise<void>; onToast: (m: string) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [source, setSource] = useState("manual");
+  const [sourceRef, setSourceRef] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    try {
+      await onCreate({ title: title.trim(), summary: title.trim(), description: description.trim(), source, source_ref: sourceRef.trim() || undefined });
+    } catch (e) {
+      onToast("Create failed: " + (e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <Plus size={16} />
+          <span className="modal-title">New task</span>
+          <button className="iconbtn" onClick={onClose} aria-label="Close"><X size={17} /></button>
+        </div>
+        <p className="hint" style={{ padding: "0 16px" }}>
+          Create a task in <b>Backlog</b>. Start it on the board to run the factory — a clear outcome and a
+          checkable success condition score higher at triage.
+        </p>
+        <div className="modal-body">
+          <label className="nt-field">
+            <span className="nt-label">Title / problem statement</span>
+            <input className="inp" autoFocus placeholder="e.g. Add rate limiting to the public API"
+              value={title} onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }} />
+          </label>
+          <label className="nt-field">
+            <span className="nt-label">Description <span className="nt-opt">optional</span></span>
+            <textarea className="inp nt-area" rows={4} placeholder="What should be true after the change? Acceptance criteria, affected area, constraints…"
+              value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+          <div className="nt-row">
+            <label className="nt-field">
+              <span className="nt-label">Source</span>
+              <select className="inp" value={source} onChange={(e) => setSource(e.target.value)}>
+                <option value="manual">Manual</option>
+                <option value="jira">Jira</option>
+                <option value="notion">Notion</option>
+                <option value="github">GitHub</option>
+              </select>
+            </label>
+            <label className="nt-field">
+              <span className="nt-label">Reference <span className="nt-opt">optional</span></span>
+              <input className="inp mono" placeholder="e.g. ENG-482" value={sourceRef} onChange={(e) => setSourceRef(e.target.value)} />
+            </label>
+          </div>
+          <div className="nt-actions">
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn primary" onClick={submit} disabled={!title.trim() || busy}>
+              <Plus size={14} /> {busy ? "Creating…" : "Create task"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

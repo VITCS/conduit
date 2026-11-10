@@ -384,6 +384,12 @@ input, select { font-family: inherit; }
 .modal-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--border); }
 .modal-head .modal-title { font-weight: 600; font-size: 15px; flex: 1 1 auto; }
 .modal-body { padding: 14px 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.nt-field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; }
+.nt-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.nt-opt { font-weight: 500; color: var(--faint); font-size: 11px; }
+.nt-area { resize: vertical; min-height: 78px; font-family: inherit; line-height: 1.5; }
+.nt-row { display: flex; gap: 12px; }
+.nt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .set-tabs { display: flex; gap: 4px; padding: 10px 16px 0; }
 .set-tab { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 7px 10px; cursor: pointer; }
 .set-tab:hover { color: var(--fg); }
