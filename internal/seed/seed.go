@@ -13,6 +13,7 @@ func Workflow() model.Workflow {
 		ID:        "wf_preview_envs",
 		ProjectID: model.DefaultProjectID,
 		Name:      "Preview Environments · DigitalOcean",
+		Rev:       1,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "github", Icon: "github", Kind: model.KindTrigger, Title: "On Pull Request", X: 40, Y: 300,
 				Config: []model.Field{f("repo", "github", "storejs / storefront"), f("on", "webhook", "pull_request.opened")}},
@@ -65,6 +66,7 @@ func GitHubWorkflow() model.Workflow {
 		ID:        "wf_github",
 		ProjectID: GitHubProjectID,
 		Name:      "GitHub · Open + Review PRs",
+		Rev:       1,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "GitHub Event", X: 40, Y: 340,
 				Config: []model.Field{f("on", "github", "pull_request / manual open"), f("hook", "webhook", "POST /api/hooks/wf_github?token=…")}},
@@ -162,6 +164,11 @@ func FactoryWorkflow() model.Workflow {
 		ID:        "wf_factory",
 		ProjectID: FactoryProjectID,
 		Name:      "AI Factory · Ticket → PR",
+		// Rev 2: the real Jira/Notion → triage → plan → approve → coding_apply →
+		// github_checks → github_pr pipeline. Rev 1 (and the pre-versioning legacy
+		// "Issue → Reviewed PR" demo) was fully simulated — see SyncBuiltins, which
+		// upgrades an un-edited legacy copy to this definition on startup.
+		Rev: 2,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "webhook", Kind: model.KindTrigger, Title: "Ticket Event", X: 40, Y: 300,
 				Config: []model.Field{f("on", "webhook", "jira / notion / manual run"), f("hook", "webhook", "POST /api/hooks/wf_factory?token=…")}},

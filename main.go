@@ -84,34 +84,23 @@ func run() error {
 	}
 	defer closeStore()
 
-	// Ensure the default project exists, then seed the default workflow into it.
+	// Ensure the projects that hold the built-in workflows exist.
 	if _, ok, _ := st.GetProject(model.DefaultProjectID); !ok {
 		if err := st.CreateProject(model.Project{ID: model.DefaultProjectID, Name: "Default", CreatedAt: time.Now()}); err != nil {
 			return err
 		}
 	}
-	if _, ok, _ := st.GetWorkflow(seed.Workflow().ID); !ok {
-		if err := st.PutWorkflow(seed.Workflow()); err != nil {
-			return err
-		}
-	}
-	// Seed the AI Factory sample in its own project.
 	if _, ok, _ := st.GetProject(seed.FactoryProjectID); !ok {
 		_ = st.CreateProject(model.Project{ID: seed.FactoryProjectID, Name: "AI Factory", CreatedAt: time.Now()})
 	}
-	if _, ok, _ := st.GetWorkflow(seed.FactoryWorkflow().ID); !ok {
-		if err := st.PutWorkflow(seed.FactoryWorkflow()); err != nil {
-			return err
-		}
-	}
-	// Seed the unified GitHub workflow (open + review + merge) in one project.
 	if _, ok, _ := st.GetProject(seed.GitHubProjectID); !ok {
 		_ = st.CreateProject(model.Project{ID: seed.GitHubProjectID, Name: "GitHub", CreatedAt: time.Now()})
 	}
-	if _, ok, _ := st.GetWorkflow(seed.GitHubWorkflow().ID); !ok {
-		if err := st.PutWorkflow(seed.GitHubWorkflow()); err != nil {
-			return err
-		}
+	// Install or upgrade the built-in workflows. Unlike a plain "seed if absent",
+	// this refreshes an out-of-date built-in (e.g. an older, simulated AI Factory)
+	// to the current shipped definition — but never overwrites one the user edited.
+	if err := seed.SyncBuiltins(st, nil); err != nil {
+		return err
 	}
 
 	ui, err := fs.Sub(webFS, "web/out")

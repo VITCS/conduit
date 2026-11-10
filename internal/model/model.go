@@ -102,6 +102,12 @@ type Workflow struct {
 	Name      string `json:"name"`
 	Nodes     []Node `json:"nodes"`
 	Edges     []Edge `json:"edges"`
+	// Rev and SeedHash track built-in (seeded) workflows so the server can upgrade
+	// them to a newer shipped definition on startup without ever overwriting a copy
+	// the user has edited. Both are zero/empty for user-created workflows and for
+	// built-ins seeded before this mechanism existed. See seed.SyncBuiltins.
+	Rev      int    `json:"rev,omitempty"`
+	SeedHash string `json:"seed_hash,omitempty"`
 }
 
 // StepRun is the execution record for one node within a run.
