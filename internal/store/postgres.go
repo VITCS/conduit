@@ -70,6 +70,15 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS tasks_project_stage_idx ON tasks (project_id, stage);
 CREATE INDEX IF NOT EXISTS tasks_created_idx ON tasks (created_at DESC);
 CREATE INDEX IF NOT EXISTS workflows_project_idx ON workflows (project_id);
+CREATE TABLE IF NOT EXISTS review_requests (
+    id          text PRIMARY KEY,
+    project_id  text NOT NULL,
+    status      text NOT NULL,
+    data        jsonb NOT NULL,
+    created_at  timestamptz NOT NULL,
+    updated_at  timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS review_requests_project_idx ON review_requests (project_id, status, created_at DESC);
 CREATE TABLE IF NOT EXISTS secrets (
     project_id text NOT NULL DEFAULT 'default',
     name       text NOT NULL,
@@ -274,6 +283,7 @@ func (s *Pg) DeleteProject(id string) error {
 	for _, q := range []string{
 		`DELETE FROM runs WHERE project_id=$1`,
 		`DELETE FROM tasks WHERE project_id=$1`,
+		`DELETE FROM review_requests WHERE project_id=$1`,
 		`DELETE FROM workflows WHERE project_id=$1`,
 		`DELETE FROM secrets WHERE project_id=$1`,
 		`DELETE FROM project_vars WHERE project_id=$1`,
@@ -285,6 +295,107 @@ func (s *Pg) DeleteProject(id string) error {
 		}
 	}
 	return tx.Commit()
+}
+
+func (s *Pg) CreateReviewRequest(rr model.ReviewRequest) (model.ReviewRequest, error) {
+	now := time.Now()
+	if rr.CreatedAt.IsZero() {
+		rr.CreatedAt = now
+	}
+	rr.UpdatedAt = now
+	if rr.Status == "" {
+		rr.Status = "pending"
+	}
+	b, err := json.Marshal(rr)
+	if err != nil {
+		return model.ReviewRequest{}, err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO review_requests (id, project_id, status, data, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6)`,
+		rr.ID, rr.ProjectID, rr.Status, b, rr.CreatedAt, rr.UpdatedAt)
+	return rr, err
+}
+
+func (s *Pg) GetReviewRequest(id string) (model.ReviewRequest, bool, error) {
+	var b []byte
+	err := s.db.QueryRow(`SELECT data FROM review_requests WHERE id=$1`, id).Scan(&b)
+	if err == sql.ErrNoRows {
+		return model.ReviewRequest{}, false, nil
+	}
+	if err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	var rr model.ReviewRequest
+	if err := json.Unmarshal(b, &rr); err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	return rr, true, nil
+}
+
+func (s *Pg) ListReviewRequests(projectID, status string) ([]model.ReviewRequest, error) {
+	q := `SELECT data FROM review_requests WHERE project_id=$1`
+	args := []any{projectID}
+	if status != "" {
+		q += ` AND status=$2`
+		args = append(args, status)
+	}
+	q += ` ORDER BY created_at DESC`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.ReviewRequest{}
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var rr model.ReviewRequest
+		if err := json.Unmarshal(b, &rr); err != nil {
+			return nil, err
+		}
+		out = append(out, rr)
+	}
+	return out, rows.Err()
+}
+
+func (s *Pg) MutateReviewRequest(id string, fn func(*model.ReviewRequest)) (model.ReviewRequest, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	var b []byte
+	err = tx.QueryRowContext(ctx, `SELECT data FROM review_requests WHERE id=$1 FOR UPDATE`, id).Scan(&b)
+	if err == sql.ErrNoRows {
+		return model.ReviewRequest{}, false, nil
+	}
+	if err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	var rr model.ReviewRequest
+	if err := json.Unmarshal(b, &rr); err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	fn(&rr)
+	rr.UpdatedAt = time.Now()
+	nb, err := json.Marshal(&rr)
+	if err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE review_requests SET status=$2, data=$3, updated_at=$4 WHERE id=$1`,
+		id, rr.Status, nb, rr.UpdatedAt); err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	return rr, true, nil
 }
 
 func (s *Pg) GetWorkflow(id string) (model.Workflow, bool, error) {

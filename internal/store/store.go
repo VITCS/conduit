@@ -30,6 +30,14 @@ type Store interface {
 	// tasks, members, vars, secrets). The API layer refuses built-in projects.
 	DeleteProject(id string) error
 
+	// Review requests: PRs handed off to a project's review workflow (inbox).
+	CreateReviewRequest(rr model.ReviewRequest) (model.ReviewRequest, error)
+	GetReviewRequest(id string) (model.ReviewRequest, bool, error)
+	// ListReviewRequests returns a project's requests (newest first); status ""
+	// returns all, otherwise only requests in that status.
+	ListReviewRequests(projectID, status string) ([]model.ReviewRequest, error)
+	MutateReviewRequest(id string, fn func(*model.ReviewRequest)) (model.ReviewRequest, bool, error)
+
 	PutWorkflow(w model.Workflow) error
 	GetWorkflow(id string) (model.Workflow, bool, error)
 	// ListWorkflows returns workflows in a project, or all when projectID is "".
@@ -117,16 +125,18 @@ type Mem struct {
 	members    map[string]model.ProjectMember // key: projectID\x00userID
 	workflows  map[string]model.Workflow
 	runs       map[string]*model.Run
-	order      []string                      // run IDs, oldest first
-	tasks      map[string]*model.Task        // by ID
-	taskOrder  []string                      // task IDs, oldest first
-	claimedBy  map[string]string             // runID -> workerID
-	leaseExp   map[string]time.Time          // runID -> lease expiry
-	secrets    map[string][]byte             // key: projectID\x00name
-	vars       map[string]string             // key: projectID\x00name
-	users      map[string]model.User         // by ID
-	identities map[string]model.UserIdentity // key: provider\x00subject
-	tokens     map[string]model.APIToken     // by ID
+	order      []string                        // run IDs, oldest first
+	tasks      map[string]*model.Task          // by ID
+	taskOrder  []string                        // task IDs, oldest first
+	reviews    map[string]*model.ReviewRequest // by ID
+	reviewOrd  []string                        // review IDs, oldest first
+	claimedBy  map[string]string               // runID -> workerID
+	leaseExp   map[string]time.Time            // runID -> lease expiry
+	secrets    map[string][]byte               // key: projectID\x00name
+	vars       map[string]string               // key: projectID\x00name
+	users      map[string]model.User           // by ID
+	identities map[string]model.UserIdentity   // key: provider\x00subject
+	tokens     map[string]model.APIToken       // by ID
 	audit      []model.AuditEntry
 	broker     *Broker
 }
@@ -139,6 +149,7 @@ func NewMem() *Mem {
 		workflows:  map[string]model.Workflow{},
 		runs:       map[string]*model.Run{},
 		tasks:      map[string]*model.Task{},
+		reviews:    map[string]*model.ReviewRequest{},
 		claimedBy:  map[string]string{},
 		leaseExp:   map[string]time.Time{},
 		secrets:    map[string][]byte{},
@@ -276,6 +287,16 @@ func (s *Mem) DeleteProject(id string) error {
 		keptTasks = append(keptTasks, tid)
 	}
 	s.taskOrder = keptTasks
+	// Review requests in the project.
+	keptReviews := s.reviewOrd[:0]
+	for _, rid := range s.reviewOrd {
+		if rr, ok := s.reviews[rid]; ok && rr.ProjectID == id {
+			delete(s.reviews, rid)
+			continue
+		}
+		keptReviews = append(keptReviews, rid)
+	}
+	s.reviewOrd = keptReviews
 	// Members, vars and secrets are keyed by "projectID\x00…".
 	prefix := id + "\x00"
 	for k := range s.members {
@@ -294,6 +315,63 @@ func (s *Mem) DeleteProject(id string) error {
 		}
 	}
 	return nil
+}
+
+func (s *Mem) CreateReviewRequest(rr model.ReviewRequest) (model.ReviewRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	if rr.CreatedAt.IsZero() {
+		rr.CreatedAt = now
+	}
+	rr.UpdatedAt = now
+	if rr.Status == "" {
+		rr.Status = "pending"
+	}
+	cp := rr
+	s.reviews[rr.ID] = &cp
+	s.reviewOrd = append(s.reviewOrd, rr.ID)
+	return cp, nil
+}
+
+func (s *Mem) GetReviewRequest(id string) (model.ReviewRequest, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rr, ok := s.reviews[id]
+	if !ok {
+		return model.ReviewRequest{}, false, nil
+	}
+	return *rr, true, nil
+}
+
+func (s *Mem) ListReviewRequests(projectID, status string) ([]model.ReviewRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []model.ReviewRequest{}
+	// newest first
+	for i := len(s.reviewOrd) - 1; i >= 0; i-- {
+		rr, ok := s.reviews[s.reviewOrd[i]]
+		if !ok || rr.ProjectID != projectID {
+			continue
+		}
+		if status != "" && rr.Status != status {
+			continue
+		}
+		out = append(out, *rr)
+	}
+	return out, nil
+}
+
+func (s *Mem) MutateReviewRequest(id string, fn func(*model.ReviewRequest)) (model.ReviewRequest, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rr, ok := s.reviews[id]
+	if !ok {
+		return model.ReviewRequest{}, false, nil
+	}
+	fn(rr)
+	rr.UpdatedAt = time.Now()
+	return *rr, true, nil
 }
 
 func (s *Mem) CreateUser(u model.User) error {

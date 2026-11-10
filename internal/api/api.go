@@ -112,6 +112,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/tasks/{id}/stage", s.setTaskStage)
 	mux.HandleFunc("POST /api/tasks/{id}/notes", s.addTaskNote)
 	mux.HandleFunc("DELETE /api/tasks/{id}", s.deleteTask)
+	mux.HandleFunc("GET /api/review-requests", s.listReviewRequests)
+	mux.HandleFunc("POST /api/review-requests/{id}/run", s.runReviewRequest)
+	mux.HandleFunc("POST /api/review-requests/{id}/dismiss", s.dismissReviewRequest)
 	mux.HandleFunc("POST /api/intake/{project}", s.intake)
 	mux.HandleFunc("GET /api/metrics", s.boardMetrics)
 	mux.HandleFunc("POST /api/hooks/{workflowID}", s.hook)
@@ -199,7 +202,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 // isProjectScoped reports whether a path's authorization depends on project
 // membership (as opposed to global, account-level routes).
 func isProjectScoped(path string) bool {
-	for _, pre := range []string{"/api/workflows", "/api/runs", "/api/secrets", "/api/vars", "/api/schedules"} {
+	for _, pre := range []string{"/api/workflows", "/api/runs", "/api/secrets", "/api/vars", "/api/schedules", "/api/review-requests"} {
 		if path == pre || strings.HasPrefix(path, pre+"/") {
 			return true
 		}
@@ -965,6 +968,83 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, snap)
+}
+
+// listReviewRequests returns the pending review inbox for the selected project
+// (PRs handed off from workflows that opened them). status defaults to "pending".
+func (s *Server) listReviewRequests(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if status == "" {
+		status = "pending"
+	}
+	if status == "all" {
+		status = ""
+	}
+	list, err := s.Store.ListReviewRequests(projectID(r), status)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []model.ReviewRequest{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// runReviewRequest triggers the review workflow for a handed-off PR. This is the
+// explicit human "go" — it starts the workflow seeded with a pull_request-shaped
+// input so the review branch runs against the real PR.
+func (s *Server) runReviewRequest(w http.ResponseWriter, r *http.Request) {
+	rr, ok, err := s.Store.GetReviewRequest(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok || rr.ProjectID != projectID(r) {
+		writeErr(w, http.StatusNotFound, "review request not found")
+		return
+	}
+	wf, ok, _ := s.Store.GetWorkflow(rr.WorkflowID)
+	if !ok {
+		writeErr(w, http.StatusConflict, "review workflow not found")
+		return
+	}
+	// Shape the input like a GitHub pull_request webhook so the review branch
+	// (filter on action, github_review, security_scan) resolves its ${input.…}.
+	input := map[string]any{
+		"action": "opened",
+		"number": rr.Number,
+		"repository": map[string]any{
+			"name":  rr.Repo,
+			"owner": map[string]any{"login": rr.Owner},
+		},
+		"pull_request": map[string]any{
+			"number":   rr.Number,
+			"html_url": rr.URL,
+			"head":     map[string]any{"ref": rr.Head},
+		},
+	}
+	run := s.Engine.Enqueue(wf, fmt.Sprintf("review: %s #%d", rr.Repo, rr.Number), input)
+	s.Store.MutateReviewRequest(rr.ID, func(x *model.ReviewRequest) { //nolint:errcheck
+		x.Status = "started"
+		x.RunID = run.ID
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "run": run})
+}
+
+// dismissReviewRequest removes a PR from the review inbox without running it.
+func (s *Server) dismissReviewRequest(w http.ResponseWriter, r *http.Request) {
+	rr, ok, err := s.Store.GetReviewRequest(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok || rr.ProjectID != projectID(r) {
+		writeErr(w, http.StatusNotFound, "review request not found")
+		return
+	}
+	s.Store.MutateReviewRequest(rr.ID, func(x *model.ReviewRequest) { x.Status = "dismissed" }) //nolint:errcheck
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // hook starts a run from an inbound webhook, binding the posted JSON body as the

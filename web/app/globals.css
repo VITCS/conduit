@@ -374,6 +374,18 @@ input, select { font-family: inherit; }
   border-bottom: 1px solid color-mix(in srgb, var(--wait) 55%, transparent);
   color: var(--wait-ink); font-size: 13.5px;
 }
+/* PR review inbox (handoff from an upstream workflow that opened a PR) */
+.review-inbox { display: flex; flex-direction: column; gap: 7px; padding: 10px 16px; z-index: 29;
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border-bottom: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); }
+.review-inbox .ri-head { display: flex; align-items: center; gap: 8px; color: var(--ok-ink); font-size: 13.5px; }
+.review-inbox .ri-head .ri-sub { color: var(--muted); font-weight: 400; font-size: 12.5px; }
+.review-inbox .ri-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.review-inbox .ri-pr { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent); text-decoration: none; flex: 0 0 auto; }
+.review-inbox .ri-pr:hover { text-decoration: underline; }
+.review-inbox .ri-title { flex: 1 1 auto; min-width: 0; color: var(--fg); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.review-inbox .ri-src { flex: 0 0 auto; color: var(--faint); font-size: 11.5px; }
+.review-inbox .ri-row .btn { flex: 0 0 auto; }
+.review-inbox .ri-row .btn.ok { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .approval-banner .ab-row { display: flex; align-items: center; gap: 12px; }
 .approval-banner .ab-text { flex: 1 1 auto; }
 .approval-banner .ab-detail { margin: 0; }

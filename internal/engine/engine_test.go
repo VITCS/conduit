@@ -562,3 +562,50 @@ func TestRunningTransitionIsBroadcast(t *testing.T) {
 		t.Error("no step.updated(status=running) was broadcast for node h")
 	}
 }
+
+// maybeHandoffPR records a pending review request in the GitHub project when a PR
+// is opened from another project, and never from within the GitHub project itself.
+func TestPRHandoffCreatesReviewRequest(t *testing.T) {
+	st := store.NewMem()
+	if err := st.PutWorkflow(seed.GitHubWorkflow()); err != nil {
+		t.Fatal(err)
+	}
+	e := New(st)
+	prNode := model.Node{ID: "pr", Type: "github_pr", Title: "Open Pull Request",
+		Config: []model.Field{{Key: "title", Value: "feat: ${memory.ticket_key}"}}}
+	out := map[string]any{"number": 42, "repo": "VITCS/fitvive-landing-page", "head": "conduit/ENG-1", "html_url": "https://github.com/VITCS/fitvive-landing-page/pull/42"}
+
+	// From a non-GitHub project → a pending request appears in the GitHub inbox.
+	run := &model.Run{ID: "run_x", ProjectID: "ai-factory", WorkflowID: "wf_factory",
+		Title: "task: SEO", Steps: map[string]*model.StepRun{}, Memory: map[string]any{"ticket_key": "ENG-1"}}
+	if _, err := st.CreateRun(run); err != nil {
+		t.Fatal(err)
+	}
+	e.maybeHandoffPR(run.ID, prNode, out)
+	reqs, _ := st.ListReviewRequests(seed.GitHubProjectID, "pending")
+	if len(reqs) != 1 {
+		t.Fatalf("review requests = %d, want 1", len(reqs))
+	}
+	got := reqs[0]
+	if got.Owner != "VITCS" || got.Repo != "fitvive-landing-page" || got.Number != 42 {
+		t.Errorf("bad request fields: %+v", got)
+	}
+	if got.Head != "conduit/ENG-1" || got.WorkflowID != seed.GitHubWorkflowID {
+		t.Errorf("bad head/workflow: %+v", got)
+	}
+	if got.Title != "feat: ENG-1" {
+		t.Errorf("title not rendered from memory: %q", got.Title)
+	}
+
+	// A PR opened by the GitHub project itself must NOT create a request (no loop).
+	run2 := &model.Run{ID: "run_y", ProjectID: seed.GitHubProjectID, WorkflowID: seed.GitHubWorkflowID,
+		Steps: map[string]*model.StepRun{}}
+	if _, err := st.CreateRun(run2); err != nil {
+		t.Fatal(err)
+	}
+	e.maybeHandoffPR(run2.ID, prNode, out)
+	reqs, _ = st.ListReviewRequests(seed.GitHubProjectID, "pending")
+	if len(reqs) != 1 {
+		t.Errorf("self-review created a request; requests = %d, want still 1", len(reqs))
+	}
+}

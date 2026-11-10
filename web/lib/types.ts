@@ -77,6 +77,8 @@ export interface SSEvent {
   step?: StepRun;
   run?: Run;
   task?: Task;
+  review?: ReviewRequest;
+  project_id?: string;
   time: string;
 }
 
@@ -89,6 +91,23 @@ export interface NodeData {
   config: Field[];
   status: Status;
   [key: string]: unknown;
+}
+
+export interface ReviewRequest {
+  id: string;
+  project_id: string;
+  workflow_id: string;
+  owner: string;
+  repo: string;
+  number: number;
+  url: string;
+  head?: string;
+  title?: string;
+  source?: string;
+  source_run?: string;
+  status: string;
+  run_id?: string;
+  created_at: string;
 }
 
 export type TaskStage = "backlog" | "implement" | "verify" | "done" | "blocked";

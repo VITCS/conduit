@@ -51,6 +51,10 @@ func Workflow() model.Workflow {
 // GitHubProjectID holds the single, unified GitHub PR workflow.
 const GitHubProjectID = "github"
 
+// GitHubWorkflowID is the ID of the seeded GitHub review workflow (the target of
+// PR handoffs from workflows that open pull requests).
+const GitHubWorkflowID = "wf_github"
+
 // GitHubWorkflow is one workflow covering the whole PR lifecycle, so you never
 // switch projects to open vs. review a PR. A single webhook trigger fans out to two
 // branches, selected by the payload:

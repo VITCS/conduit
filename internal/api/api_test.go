@@ -792,3 +792,76 @@ func TestDeleteProject(t *testing.T) {
 		t.Errorf("delete unknown = %d, want 404", code)
 	}
 }
+
+func TestReviewRequestsFlow(t *testing.T) {
+	st := store.NewMem()
+	_ = st.CreateProject(model.Project{ID: seed.GitHubProjectID, Name: "GitHub"})
+	_ = st.PutWorkflow(seed.GitHubWorkflow())
+	eng := engine.New(st)
+	eng.StepDelay, eng.TriggerDelay = 0, 0
+	startWorkers(t, st, eng)
+	srv := &api.Server{Store: st, Engine: eng, Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	rr, _ := st.CreateReviewRequest(model.ReviewRequest{
+		ID: "rr_1", ProjectID: seed.GitHubProjectID, WorkflowID: seed.GitHubWorkflowID,
+		Owner: "VITCS", Repo: "fitvive-landing-page", Number: 7, Head: "conduit/x",
+		URL: "https://github.com/VITCS/fitvive-landing-page/pull/7", Title: "feat: x", Status: "pending",
+	})
+
+	do := func(method, path string) (int, map[string]any) {
+		req, _ := http.NewRequest(method, ts.URL+path, nil)
+		req.Header.Set("X-Conduit-Project", seed.GitHubProjectID)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		defer resp.Body.Close()
+		var m map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&m)
+		return resp.StatusCode, m
+	}
+
+	// List shows the pending request.
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/review-requests", nil)
+	req.Header.Set("X-Conduit-Project", seed.GitHubProjectID)
+	resp, _ := http.DefaultClient.Do(req)
+	var list []map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&list)
+	resp.Body.Close()
+	if len(list) != 1 || list[0]["id"] != "rr_1" {
+		t.Fatalf("list = %v, want 1 pending", list)
+	}
+
+	// Run it → starts a review run and marks the request started.
+	code, m := do(http.MethodPost, "/api/review-requests/"+rr.ID+"/run")
+	if code != 200 || m["run"] == nil {
+		t.Fatalf("run review = %d (%v)", code, m)
+	}
+	got, _, _ := st.GetReviewRequest("rr_1")
+	if got.Status != "started" || got.RunID == "" {
+		t.Errorf("after run: status=%s runID=%s", got.Status, got.RunID)
+	}
+
+	// It no longer appears in the pending list.
+	req2, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/review-requests", nil)
+	req2.Header.Set("X-Conduit-Project", seed.GitHubProjectID)
+	resp2, _ := http.DefaultClient.Do(req2)
+	var list2 []map[string]any
+	_ = json.NewDecoder(resp2.Body).Decode(&list2)
+	resp2.Body.Close()
+	if len(list2) != 0 {
+		t.Errorf("pending after run = %d, want 0", len(list2))
+	}
+
+	// Dismiss a second request.
+	_, _ = st.CreateReviewRequest(model.ReviewRequest{ID: "rr_2", ProjectID: seed.GitHubProjectID, WorkflowID: seed.GitHubWorkflowID, Owner: "o", Repo: "r", Number: 9, Status: "pending"})
+	if code, _ := do(http.MethodPost, "/api/review-requests/rr_2/dismiss"); code != 200 {
+		t.Errorf("dismiss = %d", code)
+	}
+	got2, _, _ := st.GetReviewRequest("rr_2")
+	if got2.Status != "dismissed" {
+		t.Errorf("rr_2 status = %s, want dismissed", got2.Status)
+	}
+}

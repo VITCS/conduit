@@ -19,7 +19,7 @@ import {
   type NodeTypes,
   type EdgeTypes,
 } from "@xyflow/react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, GitPullRequest } from "lucide-react";
 
 import { ConduitNode } from "@/components/ConduitNode";
 import { ConduitEdge } from "@/components/ConduitEdge";
@@ -36,7 +36,7 @@ import { Auth } from "@/components/Auth";
 import { EditorContext } from "@/lib/editorContext";
 import { api, getToken, setToken, setOnUnauthorized, getProject, setProject } from "@/lib/api";
 import { type CatalogItem } from "@/lib/catalog";
-import type { EdgeData, NodeData, Run, SSEvent, Status, Workflow, WFNode, WFEdge } from "@/lib/types";
+import type { EdgeData, NodeData, Run, SSEvent, Status, Workflow, WFNode, WFEdge, ReviewRequest } from "@/lib/types";
 
 const nodeTypes: NodeTypes = { conduit: ConduitNode };
 const edgeTypes: EdgeTypes = { conduit: ConduitEdge };
@@ -130,6 +130,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [currentProject, setCurrentProject] = useState("default");
   const [vars, setVars] = useState<Record<string, string>>({});
   const [secretNames, setSecretNames] = useState<string[]>([]);
+  const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
   const [toast, setToast] = useState("");
 
   // Project config (vars + secret names) used to show resolved values on nodes.
@@ -170,6 +171,15 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     }
   }, []);
   const markDirty = useCallback(() => setDirty(true), []);
+
+  // Pending PR review handoffs for the current project (the GitHub review inbox).
+  const loadReviewRequests = useCallback(async () => {
+    try {
+      setReviewRequests(await api.listReviewRequests());
+    } catch {
+      setReviewRequests([]);
+    }
+  }, []);
 
   // --- load the current project's workflow (creating a starter if empty) ---
   const loadWorkflows = useCallback(async () => {
@@ -219,6 +229,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       setCurrentProject(eff);
       await loadWorkflows();
       loadProjectConfig();
+      loadReviewRequests();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -230,8 +241,9 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       setSelected(null);
       loadWorkflows();
       loadProjectConfig();
+      loadReviewRequests();
     },
-    [loadWorkflows, loadProjectConfig],
+    [loadWorkflows, loadProjectConfig, loadReviewRequests],
   );
 
   const newProject = useCallback(async () => {
@@ -337,6 +349,12 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       const d: SSEvent = JSON.parse((ev as MessageEvent).data);
       addLog(d.level || "info", d.message || "");
     });
+    es.addEventListener("review.requested", (ev) => {
+      const d: SSEvent = JSON.parse((ev as MessageEvent).data);
+      addLog("ok", d.message || "PR sent to the GitHub review inbox");
+      showToast("PR ready for review — open the GitHub project to run it");
+      loadReviewRequests();
+    });
     es.addEventListener("run.waiting", (ev) => {
       const d: SSEvent = JSON.parse((ev as MessageEvent).data);
       if (d.node_id) {
@@ -372,7 +390,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       reconcileRun(runId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showToast, notifyApproval]);
+  }, [showToast, notifyApproval, loadReviewRequests]);
 
   function applyRun(full: Run) {
     const st: Record<string, Status> = {};
@@ -467,6 +485,38 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       }
     },
     [runId, showToast, openStream, reconcileRun],
+  );
+
+  // Trigger the review workflow for a handed-off PR (the explicit human "go").
+  const runReview = useCallback(
+    async (id: string) => {
+      try {
+        const { run } = await api.runReviewRequest(id);
+        setRunId(run.id);
+        setRunLabel(run.title);
+        setRunMeta(run.id);
+        setRunning(true);
+        setAppView("editor");
+        setTab("canvas");
+        openStream(run.id);
+        showToast("Review workflow started");
+        loadReviewRequests();
+      } catch (e) {
+        showToast("Could not start review: " + (e as Error).message);
+      }
+    },
+    [openStream, loadReviewRequests, showToast],
+  );
+  const dismissReview = useCallback(
+    async (id: string) => {
+      try {
+        await api.dismissReviewRequest(id);
+        loadReviewRequests();
+      } catch (e) {
+        showToast("Dismiss failed: " + (e as Error).message);
+      }
+    },
+    [loadReviewRequests, showToast],
   );
 
   // --- editor actions ---
@@ -744,6 +794,26 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
                 <pre className="ab-pre">{approvalDetail}</pre>
               </details>
             )}
+          </div>
+        )}
+        {reviewRequests.length > 0 && (
+          <div className="review-inbox" role="region" aria-label="Pull requests ready for review">
+            <div className="ri-head">
+              <GitPullRequest size={16} />
+              <b>{reviewRequests.length} pull request{reviewRequests.length > 1 ? "s" : ""} ready for review</b>
+              <span className="ri-sub">Opened by an upstream workflow — run the review when you&apos;re ready.</span>
+            </div>
+            {reviewRequests.map((rr) => (
+              <div className="ri-row" key={rr.id}>
+                <a className="ri-pr" href={rr.url || undefined} target="_blank" rel="noreferrer">
+                  {rr.owner}/{rr.repo} #{rr.number}
+                </a>
+                <span className="ri-title">{rr.title || ""}</span>
+                {rr.source && <span className="ri-src">from {rr.source}</span>}
+                <button className="btn ok" onClick={() => runReview(rr.id)}>Run review</button>
+                <button className="btn ghost" onClick={() => dismissReview(rr.id)}>Dismiss</button>
+              </div>
+            ))}
           </div>
         )}
         <div className="viewbar">

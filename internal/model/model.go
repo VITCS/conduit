@@ -88,6 +88,27 @@ type Project struct {
 // DefaultProjectID is the project seeded on first run.
 const DefaultProjectID = "default"
 
+// ReviewRequest is a pull request handed off from the workflow that opened it to a
+// review workflow (e.g. AI Factory → GitHub review). It sits in the target
+// project's inbox until a user triggers the review run or dismisses it.
+type ReviewRequest struct {
+	ID         string    `json:"id"`
+	ProjectID  string    `json:"project_id"`  // target project (holds the review workflow)
+	WorkflowID string    `json:"workflow_id"` // target review workflow
+	Owner      string    `json:"owner"`
+	Repo       string    `json:"repo"`
+	Number     int       `json:"number"`
+	URL        string    `json:"url"`
+	Head       string    `json:"head,omitempty"` // PR head branch, for scans
+	Title      string    `json:"title,omitempty"`
+	Source     string    `json:"source,omitempty"`     // human label, e.g. "AI Factory"
+	SourceRun  string    `json:"source_run,omitempty"` // run that opened the PR
+	Status     string    `json:"status"`               // pending | started | dismissed
+	RunID      string    `json:"run_id,omitempty"`     // review run started for it
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 // ProjectMember grants a user a role within a project. A per-project role
 // overrides the user's global role for that project's resources.
 type ProjectMember struct {
@@ -207,18 +228,21 @@ type AuditEntry struct {
 
 // Event is a message published to live subscribers (the SSE stream).
 type Event struct {
-	Type    string `json:"type"` // run.started, step.updated, log, run.waiting, run.finished
-	RunID   string `json:"run_id"`
-	NodeID  string `json:"node_id,omitempty"`
-	Status  Status `json:"status,omitempty"`
-	Level   string `json:"level,omitempty"` // info, run, ok, fail
-	Message string `json:"message,omitempty"`
+	Type      string `json:"type"` // run.started, step.updated, log, run.waiting, run.finished, review.requested
+	RunID     string `json:"run_id"`
+	ProjectID string `json:"project_id,omitempty"`
+	NodeID    string `json:"node_id,omitempty"`
+	Status    Status `json:"status,omitempty"`
+	Level     string `json:"level,omitempty"` // info, run, ok, fail
+	Message   string `json:"message,omitempty"`
 	// Detail carries longer human-readable context (e.g. the agent's suggestion
 	// shown at an approval gate), rendered from the node's templated summary.
 	Detail string   `json:"detail,omitempty"`
 	Step   *StepRun `json:"step,omitempty"`
 	Run    *Run     `json:"run,omitempty"`
 	// Task carries board-task changes on "task.created" / "task.updated" events.
-	Task *Task     `json:"task,omitempty"`
-	Time time.Time `json:"time"`
+	Task *Task `json:"task,omitempty"`
+	// Review carries the PR handoff on a "review.requested" event.
+	Review *ReviewRequest `json:"review,omitempty"`
+	Time   time.Time      `json:"time"`
 }

@@ -28,11 +28,12 @@ type scanVerdict struct {
 }
 
 // execSecurityScan runs the pre-merge security gate. Config:
-//   base_url   scan service (default https://launchaudit.io; or ${var:audit_url})
-//   token      ${secret:scan_token} by default (X-Scan-Token)
-//   repo_url   the repo to scan, or owner+repo (built into a github.com URL)
-//   ref        informational branch/sha
-//   timeout_s  max seconds to wait for the verdict (default 300)
+//
+//	base_url   scan service (default https://launchaudit.io; or ${var:audit_url})
+//	token      ${secret:scan_token} by default (X-Scan-Token)
+//	repo_url   the repo to scan, or owner+repo (built into a github.com URL)
+//	ref        informational branch/sha
+//	timeout_s  max seconds to wait for the verdict (default 300)
 func execSecurityScan(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(f string) string { return expandTemplate(run, secretExpand(project, n.Field(f))) }

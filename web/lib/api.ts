@@ -1,4 +1,4 @@
-import type { Run, Workflow, Task, BoardMetrics } from "./types";
+import type { Run, Workflow, Task, BoardMetrics, ReviewRequest } from "./types";
 
 // Same-origin by default (the Go server serves both UI and API). For `next dev`
 // against a separately-running server, set NEXT_PUBLIC_API_BASE.
@@ -152,6 +152,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ node_id: nodeId }),
     }),
+  listReviewRequests: () => req<ReviewRequest[]>("/api/review-requests?status=pending"),
+  runReviewRequest: (id: string) =>
+    req<{ ok: boolean; run: Run }>(`/api/review-requests/${encodeURIComponent(id)}/run`, { method: "POST" }),
+  dismissReviewRequest: (id: string) =>
+    req<{ ok: boolean }>(`/api/review-requests/${encodeURIComponent(id)}/dismiss`, { method: "POST" }),
   // EventSource cannot send an Authorization header, so the token rides along as a
   // same-origin query parameter (the server accepts it only for this endpoint).
   eventsURL: (runId: string) =>

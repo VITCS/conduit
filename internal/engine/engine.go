@@ -18,6 +18,7 @@ import (
 	"conduit/internal/components"
 	"conduit/internal/metrics"
 	"conduit/internal/model"
+	"conduit/internal/seed"
 	"conduit/internal/store"
 )
 
@@ -739,7 +740,81 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 	e.publish(model.Event{Type: "step.updated", RunID: runID, NodeID: node.ID,
 		Status: status, Level: levelFor(status), Step: snap,
 		Message: fmt.Sprintf("%s · %s", node.Title, status)})
+
+	// When a step opens a real pull request, hand it off to the GitHub review
+	// workflow's inbox so a reviewer can trigger the review (see maybeHandoffPR).
+	if node.Type == "github_pr" && (res.Outcome == model.StatusCreated || res.Outcome == model.StatusSuccess) {
+		e.maybeHandoffPR(runID, node, res.Output)
+	}
 	return res.Outcome
+}
+
+// maybeHandoffPR records a review request for a freshly opened PR, so it appears in
+// the GitHub project's review inbox. It is a no-op when the run is already in the
+// GitHub project (no self-review), when the review workflow is absent, or when the
+// output carries no PR number.
+func (e *Engine) maybeHandoffPR(runID string, node model.Node, out map[string]any) {
+	run, ok, _ := e.store.GetRun(runID)
+	if !ok || run.ProjectID == seed.GitHubProjectID {
+		return
+	}
+	wf, ok, _ := e.store.GetWorkflow(seed.GitHubWorkflowID)
+	if !ok {
+		return
+	}
+	number := toInt(out["number"])
+	if number <= 0 {
+		return
+	}
+	owner, repo := splitRepo(fmt.Sprintf("%v", out["repo"]))
+	if owner == "" || repo == "" {
+		return
+	}
+	title := strings.TrimSpace(components.Render(&run, node.Field("title")))
+	if title == "" {
+		title = fmt.Sprintf("PR #%d", number)
+	}
+	source := run.Title
+	if wfSrc, ok, _ := e.store.GetWorkflow(run.WorkflowID); ok && wfSrc.Name != "" {
+		source = wfSrc.Name
+	}
+	rr, err := e.store.CreateReviewRequest(model.ReviewRequest{
+		ID:         fmt.Sprintf("rr_%d", time.Now().UnixNano()),
+		ProjectID:  wf.ProjectID,
+		WorkflowID: wf.ID,
+		Owner:      owner, Repo: repo, Number: number,
+		URL:    fmt.Sprintf("%v", out["html_url"]),
+		Head:   fmt.Sprintf("%v", out["head"]),
+		Title:  title,
+		Source: source, SourceRun: runID, Status: "pending",
+	})
+	if err != nil {
+		return
+	}
+	msg := fmt.Sprintf("Opened PR #%d in %s/%s — sent to the GitHub review inbox. Open the GitHub project to run the review.", number, owner, repo)
+	// On the source run's stream (the user is watching this run), and tagged with
+	// the target project so a project-wide listener can surface it too.
+	e.publish(model.Event{Type: "review.requested", RunID: runID, ProjectID: wf.ProjectID,
+		Level: "info", Message: msg, Review: &rr, Time: time.Now()})
+}
+
+func toInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
+}
+
+func splitRepo(s string) (owner, repo string) {
+	if i := strings.IndexByte(s, '/'); i > 0 {
+		return s[:i], s[i+1:]
+	}
+	return "", ""
 }
 
 // bypassNode records a disabled step as skipped and returns success so the run
