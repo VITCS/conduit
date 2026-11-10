@@ -123,8 +123,9 @@ func TestCodingApplyFromApprovedPlan(t *testing.T) {
 	gh := stubGitData()
 	defer gh.Close()
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Implement phase now returns raw file content (one file per request).
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"content": []map[string]any{{"type": "text", "text": `[{"path":"README.md","content":"# hi"}]`}},
+			"content": []map[string]any{{"type": "text", "text": "# hi\n"}},
 		})
 	}))
 	defer llm.Close()
@@ -185,7 +186,7 @@ func TestCodingAgentPushesBranch(t *testing.T) {
 		if strings.Contains(string(b), "CHANGE PLAN for the work") {
 			text = `[{"path":"README.md","action":"create","details":"add a readme"}]`
 		} else {
-			text = `[{"path":"README.md","content":"# hi"}]`
+			text = "# hi\n" // implement phase returns raw file content
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"content": []map[string]any{{"type": "text", "text": text}},
@@ -250,7 +251,7 @@ func TestCodingApplyHonorsMaxTokens(t *testing.T) {
 			gotMax = v
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"content": []map[string]any{{"type": "text", "text": `[{"path":"a.md","content":"x"}]`}},
+			"content": []map[string]any{{"type": "text", "text": "x\n"}},
 		})
 	}))
 	defer llm.Close()
@@ -268,5 +269,79 @@ func TestCodingApplyHonorsMaxTokens(t *testing.T) {
 	}
 	if gotMax != 12000 {
 		t.Errorf("max_tokens sent = %v, want 12000", gotMax)
+	}
+}
+
+// A multi-file change must produce one model request per file (so no single reply
+// has to carry every file's contents) and push each file's raw content as a blob.
+func TestCodingApplyImplementsOneRequestPerFile(t *testing.T) {
+	var blobs []string
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/git/ref/heads/main"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"object": map[string]any{"sha": "base"}})
+		case strings.Contains(req.URL.Path, "/git/commits/base"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"tree": map[string]any{"sha": "bt"}})
+		case strings.HasSuffix(req.URL.Path, "/git/blobs"):
+			var b struct {
+				Content string `json:"content"`
+			}
+			_ = json.NewDecoder(req.Body).Decode(&b)
+			blobs = append(blobs, b.Content)
+			w.WriteHeader(201)
+			_ = json.NewEncoder(w).Encode(map[string]any{"sha": "blob"})
+		case strings.HasSuffix(req.URL.Path, "/git/trees"):
+			w.WriteHeader(201)
+			_ = json.NewEncoder(w).Encode(map[string]any{"sha": "tree"})
+		case strings.HasSuffix(req.URL.Path, "/git/commits"):
+			w.WriteHeader(201)
+			_ = json.NewEncoder(w).Encode(map[string]any{"sha": "c1"})
+		case strings.HasSuffix(req.URL.Path, "/git/refs"):
+			w.WriteHeader(201)
+			_ = json.NewEncoder(w).Encode(map[string]any{})
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer gh.Close()
+
+	var llmCalls int
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		b, _ := io.ReadAll(req.Body)
+		llmCalls++
+		// Echo the file path so each file gets distinct content.
+		text := "content-A"
+		if strings.Contains(string(b), "b.txt") {
+			text = "content-B"
+		} else if strings.Contains(string(b), "c.txt") {
+			text = "content-C"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content": []map[string]any{{"type": "text", "text": text}},
+		})
+	}))
+	defer llm.Close()
+
+	r := execCodingApply(codeNode(map[string]string{
+		"owner": "o", "repo": "r", "base": "main",
+		"api_base": gh.URL, "token": "ghtok",
+		"provider": "anthropic", "base_url": llm.URL, "api_key": "k", "model": "m",
+		"changes": `[{"path":"a.txt","action":"create","details":"a"},{"path":"b.txt","action":"create","details":"b"},{"path":"c.txt","action":"create","details":"c"}]`,
+		"plan":    "three files", "ticket": "ENG-11",
+	}), &model.Run{})
+	if r.Outcome != model.StatusSuccess {
+		t.Fatalf("want success, got %s (%v)", r.Outcome, r.Output)
+	}
+	if llmCalls != 3 {
+		t.Errorf("llm calls = %d, want 3 (one per file)", llmCalls)
+	}
+	if len(blobs) != 3 {
+		t.Fatalf("blobs pushed = %d, want 3", len(blobs))
+	}
+	joined := strings.Join(blobs, "|")
+	for _, want := range []string{"content-A", "content-B", "content-C"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("blob %q not pushed; got %q", want, joined)
+		}
 	}
 }

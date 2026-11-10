@@ -109,49 +109,92 @@ NOTES:
 	return items, nil
 }
 
-// implementChanges pulls current contents for "modify" files (downgrading any
-// that don't exist on base to "create"), then asks the model for full contents.
+// implementChanges produces the full new content for each planned file. It asks
+// the model for ONE file per request (pulling the current content for a "modify",
+// and downgrading a missing one to "create"). Implementing files individually
+// means a large change never has to fit every file's contents in a single reply —
+// the old all-in-one JSON array truncated at the token cap ("unexpected end of
+// JSON input" / "response truncated at max_tokens").
 func (c codingCfg) implementChanges(items []changeItem, task, feedback string) ([]fileChange, *Result) {
-	var ctxBuf strings.Builder
+	files := make([]fileChange, 0, len(items))
 	for i := range items {
-		if !strings.EqualFold(items[i].Action, "modify") {
-			continue
+		current := ""
+		if strings.EqualFold(items[i].Action, "modify") {
+			content, exists := c.gh.fileContent(items[i].Path, c.base)
+			if !exists {
+				items[i].Action = "create"
+			} else {
+				if len(content) > 24000 {
+					content = content[:24000] + "\n… (truncated)"
+				}
+				current = content
+			}
 		}
-		content, exists := c.gh.fileContent(items[i].Path, c.base)
-		if !exists {
-			items[i].Action = "create"
-			continue
+		content, r := c.implementOneFile(items[i], current, task, feedback)
+		if r != nil {
+			return nil, r
 		}
-		if len(content) > 12000 {
-			content = content[:12000] + "\n… (truncated)"
-		}
-		fmt.Fprintf(&ctxBuf, "\n--- current content of %s ---\n%s\n", items[i].Path, content)
+		files = append(files, fileChange{Path: items[i].Path, Content: content})
 	}
-	prompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
-Implement the change plan below. For each file, return its COMPLETE new content —
-for a "modify" file, edit the CURRENT CONTENT shown (do not drop existing code).
-Respond with ONLY a JSON array (no prose, no fences) of objects:
-[{"path":"relative/path.ext","content":"<full file content>"}]
-
-CHANGE PLAN:
-%s
-
-CURRENT FILE CONTENTS:%s
-
-ORIGINAL TASK:
-%s%s`, c.owner, c.repo, formatChangePlan(items), firstNonEmpty(ctxBuf.String(), " (all files are new)"), task, feedbackBlock(feedback))
-
-	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, c.maxTokens)
-	if err != nil || status < 200 || status >= 300 {
-		r := llmFail("implement", err, status)
-		return nil, &r
-	}
-	files, perr := parseFileChanges(text, c.maxFiles)
-	if perr != "" {
-		r := failCode(perr)
+	if len(files) == 0 {
+		r := failCode("no files to implement")
 		return nil, &r
 	}
 	return files, nil
+}
+
+// implementOneFile asks the model for the complete new content of a single file,
+// returned as raw text (no JSON, no code fences). Raw text avoids JSON escaping
+// overhead and means the only thing that must fit in the response is this one file.
+func (c codingCfg) implementOneFile(item changeItem, current, task, feedback string) (string, *Result) {
+	verb, context := "Create", " This file does not exist yet."
+	if strings.EqualFold(item.Action, "modify") && current != "" {
+		verb = "Modify"
+		context = "\n\n--- CURRENT CONTENT (edit this; keep existing code that should stay) ---\n" + current
+	}
+	details := strings.TrimSpace(item.Details)
+	if details == "" {
+		details = "implement the change described by the task"
+	}
+	prompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
+%s the file %q.
+WHAT TO CHANGE: %s
+
+Return ONLY the complete new content of %q — no explanation, no commentary, and no
+markdown code fences, just the raw file content.
+
+ORIGINAL TASK:
+%s%s%s`, c.owner, c.repo, verb, item.Path, details, item.Path, task, feedbackBlock(feedback), context)
+
+	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, c.maxTokens)
+	if err != nil || status < 200 || status >= 300 {
+		r := llmFail("implement "+item.Path, err, status)
+		return "", &r
+	}
+	content := stripCodeFence(text)
+	if strings.TrimSpace(content) == "" {
+		r := failCode("model returned empty content for " + item.Path)
+		return "", &r
+	}
+	return content, nil
+}
+
+// stripCodeFence removes a single surrounding ```lang … ``` fence if the model
+// wrapped the file in one despite being asked not to.
+func stripCodeFence(s string) string {
+	t := strings.TrimSpace(s)
+	if !strings.HasPrefix(t, "```") {
+		return s
+	}
+	nl := strings.IndexByte(t, '\n')
+	if nl < 0 {
+		return s
+	}
+	t = t[nl+1:]
+	if i := strings.LastIndex(t, "```"); i >= 0 {
+		t = t[:i]
+	}
+	return strings.TrimRight(t, "\n")
 }
 
 // commitBranch commits the files to a fresh branch via the Git Data API.
