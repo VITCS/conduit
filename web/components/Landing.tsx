@@ -1,29 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import {
-  ShieldCheck, UserCheck, Github, ArrowRight, Slack, Bot,
-  Ticket, NotebookText, Boxes, Activity, PlayCircle,
-} from "lucide-react";
+import { ArrowRight, Github } from "lucide-react";
 
 /* ------------------------------------------------------------------ helpers */
-
-function Logo({ size = 28 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <defs>
-        <linearGradient id="nlg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="var(--accent)" />
-          <stop offset="1" stopColor="var(--accent-deep)" />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent-soft)" />
-      <circle cx="9" cy="16" r="3" fill="url(#nlg)" />
-      <circle cx="23" cy="9" r="3" fill="url(#nlg)" />
-      <circle cx="23" cy="23" r="3" fill="url(#nlg)" />
-      <path d="M11.6 14.6 20.4 10M11.6 17.4 20.4 22" stroke="url(#nlg)" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 function prefersReduced() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -38,7 +17,7 @@ function useReveal() {
     }
     const io = new IntersectionObserver(
       (es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
-      { threshold: 0.16 },
+      { threshold: 0.18 },
     );
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();
@@ -53,7 +32,7 @@ function useCountUp(ref: React.RefObject<HTMLElement | null>) {
       root.querySelectorAll<HTMLElement>("[data-count]").forEach((el) => {
         const target = parseInt(el.dataset.count || "0", 10);
         if (prefersReduced()) { el.textContent = String(target); return; }
-        const dur = 1100; const start = performance.now();
+        const dur = 1200, start = performance.now();
         const tick = (t: number) => {
           const p = Math.min(1, (t - start) / dur);
           el.textContent = String(Math.round(target * (1 - Math.pow(1 - p, 3))));
@@ -69,107 +48,76 @@ function useCountUp(ref: React.RefObject<HTMLElement | null>) {
   }, [ref]);
 }
 
-function useTilt() {
-  useEffect(() => {
-    if (prefersReduced()) return;
-    const els = Array.from(document.querySelectorAll<HTMLElement>("[data-tilt]"));
-    const handlers: Array<[HTMLElement, (e: PointerEvent) => void, () => void]> = [];
-    els.forEach((el) => {
-      const move = (e: PointerEvent) => {
-        const r = el.getBoundingClientRect();
-        const px = (e.clientX - r.left) / r.width - 0.5;
-        const py = (e.clientY - r.top) / r.height - 0.5;
-        el.style.setProperty("--rx", `${(-py * 5).toFixed(2)}deg`);
-        el.style.setProperty("--ry", `${(px * 6).toFixed(2)}deg`);
-      };
-      const reset = () => { el.style.setProperty("--rx", "0deg"); el.style.setProperty("--ry", "0deg"); };
-      el.addEventListener("pointermove", move); el.addEventListener("pointerleave", reset);
-      handlers.push([el, move, reset]);
-    });
-    return () => handlers.forEach(([el, m, r]) => { el.removeEventListener("pointermove", m); el.removeEventListener("pointerleave", r); });
-  }, []);
-}
+/* --------------------------------------------------------------------- mark */
 
-/* ----------------------------------------------------- animated factory board */
-
-const BOARD_STAGES = ["Backlog", "Implement", "Verify", "Review", "Done"];
-const LIVE_STATUS = [
-  { t: "queued", c: "idle" },
-  { t: "coding agent", c: "run" },
-  { t: "CI checks", c: "wait" },
-  { t: "in review", c: "run" },
-  { t: "merged #129", c: "ok" },
-];
-type Card = { title: string; who: string; when: string; chip?: string; chipc?: string };
-const FILLER: Card[][] = [
-  [
-    { title: "Re-run hooks on client navigation", who: "JN", when: "2m", chip: "confidence 2", chipc: "idle" },
-    { title: "Mute digest notifications", who: "LE", when: "9m" },
-  ],
-  [{ title: "Return local paths from retrieve()", who: "MA", when: "12m", chip: "agent", chipc: "run" }],
-  [{ title: "Fix deploy & retrieve tests", who: "DI", when: "34m", chip: "tests failing", chipc: "fail" }],
-  [{ title: "Link artifact type", who: "KW", when: "1d", chip: "review #27", chipc: "run" }],
-  [
-    { title: "Store Work Orders state at client", who: "ZU", when: "1d", chip: "merged #27", chipc: "ok" },
-    { title: "Mute digests so users can focus", who: "LE", when: "1d", chip: "merged #25", chipc: "ok" },
-  ],
-];
-
-function Avatar({ who }: { who: string }) {
-  return <span className="sb-av">{who}</span>;
-}
-
-function TaskCard({ c }: { c: Card }) {
+// A conduit mark: a signal entering one channel and leaving reviewed. Built from
+// strokes so it reads at any size and carries the page's two accents.
+function Mark({ size = 26 }: { size?: number }) {
   return (
-    <div className="sb-card">
-      <div className="sb-card-t">{c.title}</div>
-      <div className="sb-card-m">
-        <Avatar who={c.who} />
-        <span className="sb-when">{c.when}</span>
-        {c.chip && <span className={`sb-chip ${c.chipc || "idle"}`}>{c.chip}</span>}
-      </div>
-    </div>
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden>
+      <rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" stroke="var(--ink)" strokeWidth="1.6" />
+      <path d="M7 16h6.5" stroke="var(--flame)" strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M13.5 16c3.6 0 3.6-7 7.2-7M13.5 16c3.6 0 3.6 7 7.2 7" stroke="var(--cobalt)" strokeWidth="2.4" strokeLinecap="round" />
+      <circle cx="22.4" cy="9" r="2.3" fill="var(--cobalt)" />
+      <circle cx="22.4" cy="23" r="2.3" fill="var(--cobalt)" />
+    </svg>
   );
 }
 
-function FactoryBoard({ animate }: { animate: boolean }) {
-  const [col, setCol] = useState(0);
+/* ------------------------------------------------------ the production line */
+
+const STAGES = [
+  { k: "Intake", read: "ticket #482 · received" },
+  { k: "Triage", read: "confidence 0.86 · ready" },
+  { k: "Plan", read: "4 files · change plan" },
+  { k: "Build", read: "branch pushed · conduit/482" },
+  { k: "Verify", read: "CI green · checks passed" },
+  { k: "Review", read: "2 gates · approved" },
+  { k: "Ship", read: "merged · PR #129" },
+];
+
+// A luminous token travels the conduit, lighting each gate as it passes and
+// reading out what happened there — a single kinetic focal point for the page.
+function ProductionLine() {
+  const [i, setI] = useState(0);
+  const [animate, setAnimate] = useState(true);
+  useEffect(() => { setAnimate(!prefersReduced()); }, []);
   useEffect(() => {
-    if (!animate) return;
-    const id = setInterval(() => setCol((c) => (c + 1) % (BOARD_STAGES.length + 1)), 1800);
+    if (!animate) { setI(STAGES.length - 1); return; }
+    const id = setInterval(() => setI((c) => (c + 1) % STAGES.length), 1500);
     return () => clearInterval(id);
   }, [animate]);
-  const live = Math.min(col, BOARD_STAGES.length - 1);
-  const st = LIVE_STATUS[live];
+
+  const n = STAGES.length;
+  const pct = (idx: number) => (idx / (n - 1)) * 100;
 
   return (
-    <div className="sb" data-tilt>
-      <div className="sb-bar">
-        <span className="sb-wd r" /><span className="sb-wd y" /><span className="sb-wd g" />
-        <span className="sb-bar-t">ai-factory · board</span>
-        <span className="sb-live"><span className="sb-live-dot" /> live</span>
+    <div className="cl-line" data-reveal>
+      <div className="cl-line-top">
+        <span className="cl-chip in">
+          <span className="cl-chip-dot" /> TICKET
+        </span>
+        <span className="cl-readout" key={i}>{STAGES[i].read}</span>
+        <span className={`cl-chip out${i === n - 1 ? " on" : ""}`}>
+          PR <span className="cl-check">✓</span>
+        </span>
       </div>
-      <div className="sb-cols">
-        {BOARD_STAGES.map((s, i) => (
-          <div className="sb-col" key={s}>
-            <div className="sb-colhead">
-              <span className={`sb-coldot s-${s.toLowerCase()}`} />
-              <b>{s}</b>
-              <span className="sb-n">{FILLER[i].length + (live === i && animate ? 1 : 0)}</span>
-            </div>
-            <div className="sb-slots">
-              {animate && live === i && (
-                <div className="sb-card hot">
-                  <div className="sb-card-t">Add rate limiting to the public API</div>
-                  <div className="sb-card-m">
-                    <Avatar who="AI" />
-                    <span className="sb-when">now</span>
-                    <span className={`sb-chip ${st.c}`}>{st.t}</span>
-                  </div>
-                </div>
-              )}
-              {FILLER[i].map((c, j) => <TaskCard c={c} key={j} />)}
-            </div>
+
+      <div className="cl-track">
+        <div className="cl-rail" />
+        <div className="cl-fill" style={{ width: `${pct(i)}%` }} />
+        <div className="cl-token" style={{ left: `${pct(i)}%` }}>
+          <span className="cl-token-core" />
+        </div>
+        {STAGES.map((s, idx) => (
+          <div
+            key={s.k}
+            className={`cl-gate${idx <= i ? " lit" : ""}${idx === i ? " active" : ""}`}
+            style={{ left: `${pct(idx)}%` }}
+          >
+            <span className="cl-gate-tick" />
+            <span className="cl-gate-num">{String(idx + 1).padStart(2, "0")}</span>
+            <span className="cl-gate-k">{s.k}</span>
           </div>
         ))}
       </div>
@@ -177,151 +125,188 @@ function FactoryBoard({ animate }: { animate: boolean }) {
   );
 }
 
-/* ------------------------------------------------------------------- data */
+/* ------------------------------------------------------------------- content */
 
-const INTEGRATIONS = [
-  { icon: Ticket, label: "Jira" },
-  { icon: NotebookText, label: "Notion" },
-  { icon: Github, label: "GitHub" },
-  { icon: ShieldCheck, label: "CI checks" },
-  { icon: Bot, label: "Any model" },
-  { icon: Slack, label: "Slack" },
-];
+const INTEGRATIONS = ["Jira", "Notion", "GitHub", "CI checks", "Any model", "Slack"];
 
 const PROBLEMS = [
-  { icon: Boxes, title: "Hard to tell what's safe to hand off", body: "Point an agent at your backlog and it grabs work it can't scope. The wrong tasks look the same as the right ones." },
-  { icon: ShieldCheck, title: "Without guardrails, it ships slop", body: "Unsupervised code is messy and insecure. One long prompt is not a process you can trust on a real repository." },
-  { icon: UserCheck, title: "Engineers babysit every PR", body: "No trust means a human copies logs between tools and hand-holds each change from start to merge." },
-];
-
-const SOLUTIONS = [
-  { icon: Activity, title: "Triage finds what's safe to automate", body: "Conduit scores each ticket by readiness — scope, context, a checkable success condition — and leaves ambiguous work for a person." },
-  { icon: ShieldCheck, title: "Your workflow owns the rules", body: "Define the repo, allowed steps, required checks, review policy and approval gates once. Every run complies, whoever starts it." },
-  { icon: PlayCircle, title: "Verified, not just finished", body: "A pull request is an output, not proof. Conduit runs the repo's CI, and on a failure it loops the coding agent back with the errors." },
+  { n: "A", t: "The backlog hides the easy wins", b: "Point an agent at your tickets and it grabs work it can't scope. The safe tasks and the risky ones look identical." },
+  { n: "B", t: "Unsupervised, it ships slop", b: "One long prompt is not a process. Without rules and verification, agent code is messy, insecure, and nobody's accountable for it." },
+  { n: "C", t: "So engineers babysit every PR", b: "No trust means a human copies logs between tools and hand-holds each change from first line to merge." },
 ];
 
 const STEPS = [
-  { n: "1", t: "Connect", p: "Point Conduit at Jira, Notion or GitHub. Tickets flow onto a live board." },
-  { n: "2", t: "Triage", p: "Each ticket is scored; high-confidence work is ready to start, the rest waits for a human." },
-  { n: "3", t: "Approve", p: "Agents plan, code and review. You approve the plan and the exact file changes — two gates, no blind automation." },
-  { n: "4", t: "Ship", p: "Conduit pushes a branch, verifies CI, opens the PR and reports back on the board." },
+  { t: "Connect", p: "Point Conduit at Jira, Notion or GitHub. Tickets land on a live board." },
+  { t: "Triage", p: "Every ticket is scored for readiness — scope, context, a checkable outcome. Ambiguous work waits for a human." },
+  { t: "Plan", p: "An agent drafts the exact file-level change plan. You approve the plan before a single line is written." },
+  { t: "Build", p: "It writes the change file by file and pushes a real branch through GitHub's API — no local checkout." },
+  { t: "Verify", p: "Conduit runs your repo's CI on the commit. On a failure it loops the agent back with the errors." },
+  { t: "Review", p: "You approve the exact diff; Conduit opens the pull request and hands it to a review pipeline." },
+];
+
+const CONTROLS = [
+  { t: "Two human gates, never skipped", b: "Approve the plan, then approve the exact file changes. Nothing reaches your repo without a person saying yes — twice." },
+  { t: "Verified, not just finished", b: "A pull request is an output, not proof. Every run is gated on your real CI before it ever opens a PR." },
+  { t: "Your models, your stack", b: "Anthropic, OpenAI or a self-hosted gateway. One binary, your keys, your CI, your cost ceiling. No vendor lock-in." },
 ];
 
 /* ------------------------------------------------------------------- page */
 
 export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGetStarted: () => void }) {
-  const [animate, setAnimate] = useState(true);
   const statsRef = useRef<HTMLDivElement>(null);
   useReveal();
-  useTilt();
   useCountUp(statsRef);
-  useEffect(() => { setAnimate(!prefersReduced()); }, []);
-  // The marketing page carries its own light (cream + amber) palette scoped to
-  // .landing.sp in CSS, so it is independent of the dark app theme.
+
+  // The marketing page owns its own look, independent of the dark app theme
+  // (which the Topbar restores after sign-in).
+  useEffect(() => {
+    const prev = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", "landing");
+    return () => { if (prev) document.documentElement.setAttribute("data-theme", prev); };
+  }, []);
 
   return (
-    <div className="landing sp">
-      <header className="sp-nav">
-        <div className="sp-brand"><Logo /><span className="sp-word">Conduit</span></div>
-        <nav className="sp-links">
-          <a href="https://github.com/VITCS/conduit" target="_blank" rel="noreferrer">GitHub</a>
-          <button className="sp-link-btn" onClick={onSignIn} data-testid="nav-signin">Log in</button>
-          <button className="sp-btn primary" onClick={onGetStarted} data-testid="nav-getstarted">Sign up</button>
+    <div className="landing cl">
+      <div className="cl-grain lx-bg" aria-hidden />
+
+      <header className="cl-nav">
+        <div className="cl-brand"><Mark /><span>Conduit</span></div>
+        <nav className="cl-nav-r">
+          <a href="https://github.com/VITCS/conduit" target="_blank" rel="noreferrer" className="cl-nav-link">
+            <Github size={15} /> GitHub
+          </a>
+          <button className="cl-nav-link" onClick={onSignIn} data-testid="nav-signin">Log in</button>
+          <button className="cl-btn sm" onClick={onGetStarted} data-testid="nav-getstarted">Sign up</button>
         </nav>
       </header>
 
-      <section className="sp-hero">
-        <span className="sp-eyebrow" data-reveal>Open-source AI software factory</span>
-        <h1 data-reveal>Routine tickets, shipped as<br /><span className="sp-mark">reviewed pull requests</span> — in half the time.</h1>
-        <p className="sp-lead" data-reveal>
-          Conduit is an open-source AI software factory. Agents automate routine development work —
-          triaged, planned, coded and CI-verified — with the rules, verification and human approval
-          your team needs. Self-hosted, on your stack.
-        </p>
-        <div className="sp-cta" data-reveal>
-          <button className="sp-btn primary lg" onClick={onGetStarted} data-testid="hero-getstarted">Start your factory <ArrowRight size={17} /></button>
-          <button className="sp-btn lg" onClick={onSignIn} data-testid="hero-signin">Log in</button>
+      {/* ── hero ── */}
+      <section className="cl-hero">
+        <div className="cl-hero-l">
+          <span className="cl-eyebrow" data-reveal>Open-source AI software factory</span>
+          <h1 data-reveal>
+            Ship routine tickets<br />
+            as <span className="cl-mark">reviewed pull requests</span>.
+          </h1>
+          <p className="cl-lead" data-reveal>
+            Conduit turns a ticket into a merged-ready pull request — triaged, planned, coded and
+            CI-verified by agents, with the guardrails and human approvals your team actually needs.
+            Self-hosted, on your models.
+          </p>
+          <div className="cl-cta" data-reveal>
+            <button className="cl-btn lg" onClick={onGetStarted} data-testid="hero-getstarted">
+              Start your factory <ArrowRight size={17} />
+            </button>
+            <button className="cl-btn lg ghost" onClick={onSignIn} data-testid="hero-signin">Log in</button>
+          </div>
+          <div className="cl-meta" data-reveal>
+            <span><b>2</b> approval gates</span>
+            <span className="cl-dot" />
+            <span><b>1</b> binary</span>
+            <span className="cl-dot" />
+            <span><b>0</b> vendor lock-in</span>
+          </div>
         </div>
-        <div className="sp-board-wrap" data-reveal>
-          <FactoryBoard animate={animate} />
+
+        <ProductionLine />
+      </section>
+
+      {/* ── trust strip ── */}
+      <section className="cl-strip" data-reveal>
+        <span className="cl-strip-cap">Built on the tools you already run</span>
+        <div className="cl-strip-row">
+          {INTEGRATIONS.map((x) => <span className="cl-tool" key={x}>{x}</span>)}
         </div>
       </section>
 
-      <section className="sp-logos" data-reveal>
-        <span className="sp-logos-cap">Built on the tools you already use</span>
-        <div className="sp-logos-row">
-          {INTEGRATIONS.map((it) => (
-            <span className="sp-logo" key={it.label}><it.icon size={16} /> {it.label}</span>
+      {/* ── problem ── */}
+      <section className="cl-sec">
+        <div className="cl-sec-head" data-reveal>
+          <span className="cl-kicker">The problem</span>
+          <h2>Agents can&apos;t be trusted on autopilot.</h2>
+        </div>
+        <div className="cl-probs">
+          {PROBLEMS.map((p, idx) => (
+            <article className="cl-prob" key={p.n} data-reveal style={{ ["--d" as string]: `${idx * 70}ms` }}>
+              <span className="cl-prob-n">{p.n}</span>
+              <h3>{p.t}</h3>
+              <p>{p.b}</p>
+            </article>
           ))}
         </div>
       </section>
 
-      <section className="sp-section">
-        <span className="sp-kicker" data-reveal>The problem</span>
-        <h2 className="sp-h2" data-reveal>Agents can&apos;t be trusted on autopilot.</h2>
-        <div className="sp-grid3">
-          {PROBLEMS.map((p, i) => (
-            <div className="sp-card prob" key={p.title} data-reveal style={{ ["--i" as string]: String(i) }}>
-              <span className="sp-ic warn"><p.icon size={18} /></span>
-              <h3>{p.title}</h3>
-              <p>{p.body}</p>
-            </div>
-          ))}
+      {/* ── how it works ── */}
+      <section className="cl-sec">
+        <div className="cl-sec-head" data-reveal>
+          <span className="cl-kicker">The line</span>
+          <h2>Six stations, one reviewed PR.</h2>
+          <p className="cl-sec-sub">Every ticket walks the same gated path. You hold the two keys.</p>
         </div>
-      </section>
-
-      <section className="sp-section sp-section-dark">
-        <span className="sp-kicker on-dark" data-reveal>With Conduit</span>
-        <h2 className="sp-h2 on-dark" data-reveal>Make agents work like they should.</h2>
-        <div className="sp-grid3">
-          {SOLUTIONS.map((s, i) => (
-            <div className="sp-card sol" key={s.title} data-reveal style={{ ["--i" as string]: String(i) }}>
-              <span className="sp-ic"><s.icon size={18} /></span>
-              <h3>{s.title}</h3>
-              <p>{s.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="sp-section">
-        <h2 className="sp-h2 center" data-reveal>How one-shot engineering works</h2>
-        <ol className="sp-steps">
-          {STEPS.map((s, i) => (
-            <li key={s.n} data-reveal style={{ ["--i" as string]: String(i) }}>
-              <span className="sp-step-n">{s.n}</span>
-              <div><b>{s.t}</b><p>{s.p}</p></div>
+        <ol className="cl-steps">
+          {STEPS.map((s, idx) => (
+            <li key={s.t} data-reveal style={{ ["--d" as string]: `${idx * 50}ms` }}>
+              <span className="cl-step-n">{String(idx + 1).padStart(2, "0")}</span>
+              <div className="cl-step-b">
+                <h4>{s.t}</h4>
+                <p>{s.p}</p>
+              </div>
             </li>
           ))}
         </ol>
       </section>
 
-      <section className="sp-stats" ref={statsRef} data-reveal>
-        <div className="sp-stat"><div className="sp-num"><span data-count="2">0</span></div><div className="sp-stat-l">human approval gates per task</div></div>
-        <div className="sp-stat"><div className="sp-num"><span data-count="26">0</span></div><div className="sp-stat-l">component types</div></div>
-        <div className="sp-stat"><div className="sp-num"><span data-count="1">0</span></div><div className="sp-stat-l">binary to run it all</div></div>
-        <div className="sp-stat"><div className="sp-num"><span data-count="0">0</span></div><div className="sp-stat-l">vendor lock-in</div></div>
-      </section>
-
-      <section className="sp-closing" data-reveal>
-        <h2>Own your software factory.</h2>
-        <p>Apache-friendly, self-hosted, and built around your models, CI and cost constraints. Create an account and start your first factory in a minute.</p>
-        <div className="sp-cta center">
-          <button className="sp-btn primary lg" onClick={onGetStarted}>Start your factory <ArrowRight size={17} /></button>
-          <a className="sp-btn lg" href="https://github.com/VITCS/conduit" target="_blank" rel="noreferrer"><Github size={16} /> Check the repo</a>
+      {/* ── control band (the one dark moment) ── */}
+      <section className="cl-band">
+        <div className="cl-band-in">
+          <div className="cl-band-head" data-reveal>
+            <span className="cl-kicker on-dark">You stay in control</span>
+            <h2>Automation you can actually sign off on.</h2>
+          </div>
+          <div className="cl-controls">
+            {CONTROLS.map((c, idx) => (
+              <div className="cl-control" key={c.t} data-reveal style={{ ["--d" as string]: `${idx * 70}ms` }}>
+                <span className="cl-control-bar" />
+                <h3>{c.t}</h3>
+                <p>{c.b}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <p className="sp-trust">Self-hosted · single binary · email or Google / GitHub sign-in when the server has those providers configured.</p>
       </section>
 
-      <footer className="sp-foot">
-        <div className="sp-brand"><Logo size={22} /><span className="sp-word">Conduit</span></div>
-        <div className="sp-foot-links">
+      {/* ── stats ── */}
+      <section className="cl-stats" ref={statsRef} data-reveal>
+        <div className="cl-stat"><div className="cl-num"><span data-count="6">0</span></div><span>gated stations per ticket</span></div>
+        <div className="cl-stat"><div className="cl-num"><span data-count="2">0</span></div><span>human approval gates</span></div>
+        <div className="cl-stat"><div className="cl-num"><span data-count="26">0</span></div><span>component types</span></div>
+        <div className="cl-stat"><div className="cl-num"><span data-count="1">0</span></div><span>binary to run it all</span></div>
+      </section>
+
+      {/* ── closing ── */}
+      <section className="cl-close" data-reveal>
+        <h2>Own your software factory.</h2>
+        <p>
+          Apache-friendly, self-hosted, built around your models, your CI and your cost ceiling.
+          Create an account and open your first PR in a minute.
+        </p>
+        <div className="cl-cta cl-cc">
+          <button className="cl-btn lg" onClick={onGetStarted}>Start your factory <ArrowRight size={17} /></button>
+          <a className="cl-btn lg ghost" href="https://github.com/VITCS/conduit" target="_blank" rel="noreferrer">
+            <Github size={16} /> Read the source
+          </a>
+        </div>
+        <p className="cl-fine">Self-hosted · single binary · email or Google / GitHub sign-in when the server has those providers configured.</p>
+      </section>
+
+      <footer className="cl-foot">
+        <div className="cl-brand"><Mark size={22} /><span>Conduit</span></div>
+        <div className="cl-foot-r">
           <a href="https://github.com/VITCS/conduit" target="_blank" rel="noreferrer">GitHub</a>
-          <button className="sp-link-btn" onClick={onSignIn}>Log in</button>
-          <button className="sp-btn primary" onClick={onGetStarted}>Sign up</button>
+          <button className="cl-nav-link" onClick={onSignIn}>Log in</button>
+          <button className="cl-btn sm" onClick={onGetStarted}>Sign up</button>
         </div>
       </footer>
     </div>
   );
 }
-
