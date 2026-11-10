@@ -26,6 +26,9 @@ type Store interface {
 	CreateProject(p model.Project) error
 	GetProject(id string) (model.Project, bool, error)
 	ListProjects() ([]model.Project, error)
+	// DeleteProject removes a project and everything scoped to it (workflows, runs,
+	// tasks, members, vars, secrets). The API layer refuses built-in projects.
+	DeleteProject(id string) error
 
 	PutWorkflow(w model.Workflow) error
 	GetWorkflow(id string) (model.Workflow, bool, error)
@@ -239,6 +242,58 @@ func (s *Mem) ListProjects() ([]model.Project, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+func (s *Mem) DeleteProject(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.projects, id)
+	// Workflows in the project.
+	for wid, w := range s.workflows {
+		if w.ProjectID == id {
+			delete(s.workflows, wid)
+		}
+	}
+	// Runs in the project (and their order/lease bookkeeping).
+	keptOrder := s.order[:0]
+	for _, rid := range s.order {
+		if r, ok := s.runs[rid]; ok && r.ProjectID == id {
+			delete(s.runs, rid)
+			delete(s.claimedBy, rid)
+			delete(s.leaseExp, rid)
+			continue
+		}
+		keptOrder = append(keptOrder, rid)
+	}
+	s.order = keptOrder
+	// Tasks in the project.
+	keptTasks := s.taskOrder[:0]
+	for _, tid := range s.taskOrder {
+		if t, ok := s.tasks[tid]; ok && t.ProjectID == id {
+			delete(s.tasks, tid)
+			continue
+		}
+		keptTasks = append(keptTasks, tid)
+	}
+	s.taskOrder = keptTasks
+	// Members, vars and secrets are keyed by "projectID\x00…".
+	prefix := id + "\x00"
+	for k := range s.members {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.members, k)
+		}
+	}
+	for k := range s.vars {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.vars, k)
+		}
+	}
+	for k := range s.secrets {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.secrets, k)
+		}
+	}
+	return nil
 }
 
 func (s *Mem) CreateUser(u model.User) error {

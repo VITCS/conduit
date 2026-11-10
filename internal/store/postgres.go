@@ -263,6 +263,30 @@ func (s *Pg) ListProjects() ([]model.Project, error) {
 	return out, rows.Err()
 }
 
+func (s *Pg) DeleteProject(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	for _, q := range []string{
+		`DELETE FROM runs WHERE project_id=$1`,
+		`DELETE FROM tasks WHERE project_id=$1`,
+		`DELETE FROM workflows WHERE project_id=$1`,
+		`DELETE FROM secrets WHERE project_id=$1`,
+		`DELETE FROM project_vars WHERE project_id=$1`,
+		`DELETE FROM project_members WHERE project_id=$1`,
+		`DELETE FROM projects WHERE id=$1`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Pg) GetWorkflow(id string) (model.Workflow, bool, error) {
 	var b []byte
 	err := s.db.QueryRow(`SELECT data FROM workflows WHERE id=$1`, id).Scan(&b)

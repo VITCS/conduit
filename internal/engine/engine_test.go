@@ -511,3 +511,54 @@ func TestCancelStopsRecoveryLoop(t *testing.T) {
 		t.Fatalf("run = %s, want canceled (cancel must break the retry loop)", got)
 	}
 }
+
+// The engine must broadcast a node's running transition as a step.updated event
+// (status=running) so the UI shows "In progress" live, not only after the node
+// finishes or on a page refresh.
+func TestRunningTransitionIsBroadcast(t *testing.T) {
+	st := store.NewMem()
+	wf := model.Workflow{
+		ID: "wf_live", Name: "live",
+		Nodes: []model.Node{
+			{ID: "t", Type: "github", Kind: model.KindTrigger, Title: "Trigger"},
+			{ID: "h", Type: "http", Kind: model.KindStep, Title: "Step", Config: []model.Field{{Key: "url", Value: "http://svc/ok"}}},
+		},
+		Edges: []model.Edge{{From: "t", To: "h"}},
+	}
+	if err := st.PutWorkflow(wf); err != nil {
+		t.Fatal(err)
+	}
+	e := New(st)
+	e.StepDelay, e.TriggerDelay = 0, 0
+
+	id, ch := st.Broker().Subscribe()
+	defer st.Broker().Unsubscribe(id)
+	sawRunning := make(chan struct{}, 1)
+	done := make(chan struct{})
+	go func() {
+		for ev := range ch {
+			if ev.Type == "step.updated" && ev.NodeID == "h" && ev.Status == model.StatusRunning {
+				select {
+				case sawRunning <- struct{}{}:
+				default:
+				}
+			}
+			if ev.Type == "run.finished" {
+				close(done)
+				return
+			}
+		}
+	}()
+
+	e.Start(wf, "")
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("run did not finish")
+	}
+	select {
+	case <-sawRunning:
+	default:
+		t.Error("no step.updated(status=running) was broadcast for node h")
+	}
+}

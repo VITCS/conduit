@@ -21,6 +21,7 @@ import (
 	"conduit/internal/model"
 	"conduit/internal/scheduler"
 	"conduit/internal/secrets"
+	"conduit/internal/seed"
 	"conduit/internal/store"
 	"conduit/internal/validate"
 )
@@ -82,6 +83,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/components", s.listComponents)
 	mux.HandleFunc("GET /api/projects", s.listProjects)
 	mux.HandleFunc("POST /api/projects", s.createProject)
+	mux.HandleFunc("DELETE /api/projects/{id}", s.deleteProject)
 	mux.HandleFunc("GET /api/projects/{id}/members", s.listMembers)
 	mux.HandleFunc("POST /api/projects/{id}/members", s.addMember)
 	mux.HandleFunc("DELETE /api/projects/{id}/members/{userID}", s.removeMember)
@@ -508,6 +510,38 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ps)
 }
 
+// builtinProjects are the seeded projects that ship with Conduit and cannot be
+// deleted (they are re-created and their built-in workflows re-synced on startup).
+var builtinProjects = map[string]bool{
+	model.DefaultProjectID: true,
+	seed.FactoryProjectID:  true,
+	seed.GitHubProjectID:   true,
+}
+
+// deleteProject removes a user-created project and everything scoped to it. Only a
+// project owner/admin (or a global owner/admin) may do so; built-in projects are
+// refused.
+func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if builtinProjects[id] {
+		writeErr(w, http.StatusBadRequest, "built-in projects cannot be deleted")
+		return
+	}
+	if _, ok, _ := s.Store.GetProject(id); !ok {
+		writeErr(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if role, ok := s.callerRole(r, id); !ok || (role != model.RoleOwner && role != model.RoleAdmin) {
+		writeErr(w, http.StatusForbidden, "only a project owner or admin can delete a project")
+		return
+	}
+	if err := s.Store.DeleteProject(id); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "deleted": id})
+}
+
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ID   string `json:"id"`
@@ -538,12 +572,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 
 // callerRole returns the caller's effective role for a project (for in-handler checks).
 func (s *Server) callerRole(r *http.Request, project string) (model.Role, bool) {
+	if s.Auth == nil { // open mode (auth disabled, e.g. tests): treat as owner
+		return model.RoleOwner, true
+	}
 	p, ok := r.Context().Value(principalKey).(principal)
 	if !ok {
 		return "", false
-	}
-	if s.Auth == nil { // open mode (tests): treat as owner
-		return model.RoleOwner, true
 	}
 	return s.effectiveRole(p, project)
 }

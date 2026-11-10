@@ -100,6 +100,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }),
+  deleteProject: (id: string) =>
+    req<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listMembers: (projectId: string) =>
     req<{ user_id: string; email: string; name: string; role: string }[]>(
       `/api/projects/${encodeURIComponent(projectId)}/members`,

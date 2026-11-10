@@ -1,5 +1,5 @@
 "use client";
-import { Menu, Play, Square, Save, Pencil, Sun, Moon, LogOut, Users, Sliders } from "lucide-react";
+import { Menu, Play, Square, Save, Pencil, Sun, Moon, LogOut, Users, Sliders, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 function Logo() {
@@ -39,7 +39,10 @@ export function Topbar(props: {
   currentProject: string;
   onSwitchProject: (id: string) => void;
   onNewProject: () => void;
+  onDeleteProject: (id: string) => void;
 }) {
+  const BUILTIN_PROJECTS = new Set(["default", "ai-factory", "github"]);
+  const canDeleteProject = !BUILTIN_PROJECTS.has(props.currentProject);
   const [dark, setDark] = useState(true);
   useEffect(() => {
     // The pre-paint script in layout already set data-theme (default dark).
@@ -83,6 +86,17 @@ export function Topbar(props: {
         ))}
         <option value="__new__">+ New project…</option>
       </select>
+      {canDeleteProject && (
+        <button
+          className="iconbtn"
+          onClick={() => props.onDeleteProject(props.currentProject)}
+          title="Delete this project"
+          aria-label="Delete this project"
+          style={{ color: "var(--fail)" }}
+        >
+          <Trash2 size={16} />
+        </button>
+      )}
       <div className="wf-search" role="search">
         <Pencil size={14} style={{ opacity: 0 }} />
         <input value={props.name} onChange={(e) => props.onName(e.target.value)} aria-label="Workflow name" spellCheck={false} />

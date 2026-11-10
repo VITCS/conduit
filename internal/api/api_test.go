@@ -751,3 +751,44 @@ func TestOAuthConfigAndStart(t *testing.T) {
 		t.Errorf("github start = %d, want 404", resp2.StatusCode)
 	}
 }
+
+func TestDeleteProject(t *testing.T) {
+	ts := newTestServer(t)
+	defer ts.Close()
+
+	// Create a project, then delete it.
+	var created struct {
+		ID string `json:"id"`
+	}
+	if code := postJSON(t, ts.URL+"/api/projects", map[string]string{"name": "Scratch"}, &created); code != 201 {
+		t.Fatalf("create project = %d", code)
+	}
+	del := func(path string) int {
+		req, _ := http.NewRequest(http.MethodDelete, ts.URL+path, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("DELETE %s: %v", path, err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := del("/api/projects/" + created.ID); code != 200 {
+		t.Errorf("delete created project = %d, want 200", code)
+	}
+	// It's gone.
+	var list []map[string]any
+	getJSON(t, ts.URL+"/api/projects", &list)
+	for _, p := range list {
+		if p["id"] == created.ID {
+			t.Error("deleted project still listed")
+		}
+	}
+	// Built-in projects are protected.
+	if code := del("/api/projects/default"); code != 400 {
+		t.Errorf("delete built-in 'default' = %d, want 400", code)
+	}
+	// Unknown project → 404.
+	if code := del("/api/projects/nope"); code != 404 {
+		t.Errorf("delete unknown = %d, want 404", code)
+	}
+}

@@ -247,6 +247,25 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     }
   }, [switchProject, showToast]);
 
+  const deleteProject = useCallback(
+    async (id: string) => {
+      const proj = projects.find((p) => p.id === id);
+      if (!window.confirm(`Delete project "${proj?.name || id}" and all of its workflows and runs? This cannot be undone.`)) {
+        return;
+      }
+      try {
+        await api.deleteProject(id);
+        const list = await api.listProjects();
+        setProjects(list);
+        switchProject(list[0]?.id || "default");
+        showToast("Project deleted");
+      } catch (e) {
+        showToast("Delete failed: " + (e as Error).message);
+      }
+    },
+    [projects, switchProject, showToast],
+  );
+
   // --- reflect statuses onto node data + edge styling ---
   useEffect(() => {
     setNodes((ns) =>
@@ -702,6 +721,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           currentProject={currentProject}
           onSwitchProject={switchProject}
           onNewProject={newProject}
+          onDeleteProject={deleteProject}
         />
         {waitingNode && (
           <div className="approval-banner" role="alert" data-testid="approval-banner">

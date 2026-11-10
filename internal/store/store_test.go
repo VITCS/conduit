@@ -288,3 +288,42 @@ func TestProjectVars(t *testing.T) {
 		t.Error("var leaked across projects")
 	}
 }
+
+func TestDeleteProjectCascades(t *testing.T) {
+	st := NewMem()
+	_ = st.CreateProject(model.Project{ID: "p1", Name: "P1"})
+	_ = st.PutWorkflow(model.Workflow{ID: "w1", ProjectID: "p1", Name: "W1"})
+	_, _ = st.CreateRun(&model.Run{ID: "r1", ProjectID: "p1", WorkflowID: "w1", Steps: map[string]*model.StepRun{}})
+	_, _ = st.CreateTask(model.Task{ID: "t1", ProjectID: "p1", Title: "T1"})
+	_ = st.PutVar("p1", "k", "v")
+	_ = st.AddProjectMember(model.ProjectMember{ProjectID: "p1", UserID: "u1", Role: model.RoleOwner})
+	// A second project must be untouched.
+	_ = st.CreateProject(model.Project{ID: "p2", Name: "P2"})
+	_ = st.PutWorkflow(model.Workflow{ID: "w2", ProjectID: "p2", Name: "W2"})
+
+	if err := st.DeleteProject("p1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, ok, _ := st.GetProject("p1"); ok {
+		t.Error("project p1 still exists")
+	}
+	if _, ok, _ := st.GetWorkflow("w1"); ok {
+		t.Error("workflow w1 not deleted")
+	}
+	if _, ok, _ := st.GetRun("r1"); ok {
+		t.Error("run r1 not deleted")
+	}
+	if _, ok, _ := st.GetTask("t1"); ok {
+		t.Error("task t1 not deleted")
+	}
+	if _, ok, _ := st.GetVar("p1", "k"); ok {
+		t.Error("var not deleted")
+	}
+	if _, ok, _ := st.GetProjectMember("p1", "u1"); ok {
+		t.Error("member not deleted")
+	}
+	// p2 intact.
+	if _, ok, _ := st.GetWorkflow("w2"); !ok {
+		t.Error("unrelated workflow w2 was deleted")
+	}
+}

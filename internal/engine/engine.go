@@ -678,6 +678,11 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 	e.setStep(runID, node.ID, model.StatusRunning, func(s *model.StepRun) {
 		s.StartedAt = &start
 	})
+	// Broadcast the running transition as a step update (not just a log) so the UI
+	// shows "In progress" live, without a page refresh.
+	e.publish(model.Event{Type: "step.updated", RunID: runID, NodeID: node.ID,
+		Status: model.StatusRunning, Level: "run", Step: e.stepSnap(runID, node.ID),
+		Message: fmt.Sprintf("%s · running", node.Title)})
 	e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
 		Message: fmt.Sprintf("%s · running", node.Title)})
 	e.projectTaskStage(runID, node)
