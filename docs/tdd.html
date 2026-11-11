@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Conduit — Technical Design Document</title>
+<meta name="description" content="Interactive technical design document for Conduit, an open-source AI software factory: architecture, stack, data model, execution flow, sequence diagrams and engineering learnings." />
+<style>
+  :root{
+    --bg:#070b09; --bg-2:#0b100d; --panel:#0e1512; --panel-2:#111a16; --line:#1d2a24; --line-2:#16211c;
+    --fg:#e6efe9; --muted:#93a39a; --faint:#6b7a72;
+    --accent:#2ee6a6; --accent-2:#14b981; --accent-ink:#04150e; --accent-soft:rgba(46,230,166,.12);
+    --blue:#6b8cff; --amber:#ffb454; --flame:#ff6b4a; --violet:#b48cff;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    --maxw:960px;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f7f6; --bg-2:#eef2f0; --panel:#ffffff; --panel-2:#f3f6f4; --line:#dde5e1; --line-2:#e7eeea;
+    --fg:#0d1613; --muted:#51605a; --faint:#7d8c85;
+    --accent:#0b9f6f; --accent-2:#0a8a60; --accent-ink:#ffffff; --accent-soft:rgba(11,159,111,.1);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;font-size:15px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,kbd,.mono{font-family:var(--mono)}
+  .wrap{display:grid;grid-template-columns:270px 1fr;min-height:100vh}
+
+  /* sidebar */
+  .side{position:sticky;top:0;height:100vh;overflow:auto;border-right:1px solid var(--line);background:var(--bg-2);padding:20px 16px}
+  .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 14px;font-weight:700;letter-spacing:-.01em}
+  .brand svg{flex:0 0 auto}
+  .brand .b-sub{display:block;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-family:var(--mono)}
+  .nav{display:flex;flex-direction:column;gap:1px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;color:var(--muted);font-size:13.5px;font-weight:500}
+  .nav a:hover{background:var(--panel);color:var(--fg);text-decoration:none}
+  .nav a.on{background:var(--accent-soft);color:var(--accent)}
+  .nav a .dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.5;flex:0 0 auto}
+  .nav .grp{margin-top:14px;padding:4px 10px;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+
+  /* main */
+  main{min-width:0;padding:0 clamp(18px,4vw,56px)}
+  .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;padding:14px 0;margin-bottom:8px;background:linear-gradient(var(--bg),var(--bg) 70%,transparent);backdrop-filter:blur(2px)}
+  .topbar .crumb{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .topbar .sp{flex:1 1 auto}
+  .btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:7px 12px}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.icon{padding:7px 9px}
+
+  section{max-width:var(--maxw);margin:0 auto;padding:40px 0 10px;scroll-margin-top:70px}
+  section>h2{font-size:clamp(23px,3.4vw,32px);letter-spacing:-.02em;margin:0 0 6px;line-height:1.15}
+  section>h2 .no{font-family:var(--mono);font-size:14px;color:var(--accent);margin-right:10px;font-weight:600}
+  section>.lede{color:var(--muted);font-size:16px;margin:0 0 22px;max-width:70ch}
+  h3{font-size:18px;letter-spacing:-.01em;margin:30px 0 10px}
+  h4{font-size:14.5px;margin:20px 0 8px;color:var(--fg)}
+  p{margin:0 0 14px}
+  ul,ol{margin:0 0 16px;padding-left:22px}
+  li{margin:5px 0}
+  hr{border:0;border-top:1px solid var(--line);margin:34px 0}
+  .muted{color:var(--muted)}
+
+  .hero{max-width:var(--maxw);margin:0 auto;padding:42px 0 6px}
+  .hero .ey{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+  .hero h1{font-size:clamp(30px,5vw,46px);letter-spacing:-.03em;line-height:1.05;margin:18px 0 10px}
+  .hero .sub{font-size:18px;color:var(--muted);max-width:66ch}
+  .meta-row{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:22px;font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+  .meta-row b{color:var(--fg)}
+
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h4{margin:0 0 6px}
+  .card p{margin:0;font-size:13.5px;color:var(--muted)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--line)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:14px}
+  .kv dt{color:var(--muted);font-family:var(--mono);font-size:12.5px}
+  .kv dd{margin:0}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:6px 0 18px;display:block;overflow-x:auto}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  th{color:var(--faint);font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+  td code{color:var(--accent);font-size:12.5px}
+
+  pre{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55;margin:6px 0 18px}
+  pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--amber)}
+  :not(pre)>code{background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:1px 6px;font-size:12.5px;color:var(--fg)}
+
+  /* tabs */
+  .tabs{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 14px;border-bottom:1px solid var(--line)}
+  .tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:9px 12px;cursor:pointer}
+  .tab:hover{color:var(--fg)}
+  .tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+  .tabpane{display:none}
+  .tabpane.on{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* architecture diagram */
+  .arch{display:grid;grid-template-columns:1fr 300px;gap:18px;align-items:start}
+  .arch-svg{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+  .arch-svg svg{width:100%;height:auto;display:block}
+  .arch rect.box{cursor:pointer;transition:filter .15s}
+  .arch g.node:hover rect.box{filter:brightness(1.25)}
+  .arch g.node.sel rect.box{stroke:var(--accent);stroke-width:2.2}
+  .arch text{font-family:var(--mono);fill:var(--fg)}
+  .arch .lbl{font-size:11px;font-weight:600}
+  .arch .sub{font-size:8.5px;fill:var(--muted)}
+  .arch .layer{font-size:9px;fill:var(--faint);letter-spacing:.06em}
+  .arch-detail{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;position:sticky;top:70px}
+  .arch-detail h4{margin:0 0 4px;color:var(--accent);font-family:var(--mono);font-size:13px}
+  .arch-detail .tag{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .arch-detail p{font-size:13px;color:var(--muted);margin:10px 0 0}
+  .arch-detail ul{font-size:12.5px;color:var(--muted);margin:10px 0 0;padding-left:18px}
+
+  /* sequence player */
+  .seq{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .seq-head{display:flex;gap:6px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .seq-pick{background:var(--bg-2);border:1px solid var(--line);color:var(--muted);font-family:var(--mono);font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer}
+  .seq-pick.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .seq-lanes{display:grid;padding:14px 14px 4px;gap:8px}
+  .lane-h{display:flex;font-family:var(--mono);font-size:11px;color:var(--muted);gap:6px}
+  .lane-h span{flex:1 1 0;text-align:center;padding:6px 4px;border:1px solid var(--line);border-radius:7px;background:var(--bg-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lane-h span.act{border-color:var(--accent);color:var(--accent)}
+  .seq-rows{padding:4px 14px 10px;display:flex;flex-direction:column;gap:3px;max-height:360px;overflow:auto}
+  .srow{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center;padding:8px 10px;border-radius:8px;border:1px solid transparent;opacity:.5;transition:all .2s}
+  .srow.done{opacity:.9}
+  .srow.cur{opacity:1;background:var(--accent-soft);border-color:var(--accent)}
+  .srow .ep{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srow .ep b{color:var(--fg)}
+  .srow .ep .ar{color:var(--accent);margin:0 5px}
+  .srow .mg{font-size:13.5px}
+  .srow .mg .why{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+  .seq-ctl{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
+  .seq-ctl .prog{flex:1 1 auto;height:4px;background:var(--line);border-radius:3px;overflow:hidden}
+  .seq-ctl .prog i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+  .seq-ctl .cnt{font-family:var(--mono);font-size:12px;color:var(--muted);min-width:52px;text-align:right}
+
+  /* catalog */
+  .cat-ctl{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+  .cat-ctl input{flex:1 1 220px;background:var(--bg-2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:9px 12px;font-family:var(--mono);font-size:13px}
+  .cat-ctl .fchip{background:var(--bg-2);border:1px solid var(--line);color:var(--muted);font-size:12px;padding:7px 12px;border-radius:999px;cursor:pointer;font-weight:600}
+  .cat-ctl .fchip.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+  .comp{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .comp .t{display:flex;align-items:center;gap:8px}
+  .comp .t code{color:var(--accent);font-size:12.5px}
+  .comp .cat{margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--faint);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+  .comp p{margin:7px 0 0;font-size:12.5px;color:var(--muted)}
+
+  /* accordion */
+  details.acc{border:1px solid var(--line);border-radius:10px;margin:0 0 10px;background:var(--panel);overflow:hidden}
+  details.acc>summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:600;display:flex;align-items:center;gap:10px}
+  details.acc>summary::-webkit-details-marker{display:none}
+  details.acc>summary .chev{margin-left:auto;transition:transform .2s;color:var(--muted)}
+  details.acc[open]>summary .chev{transform:rotate(90deg)}
+  details.acc>summary .tg{font-family:var(--mono);font-size:10.5px;color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  details.acc .body{padding:2px 16px 16px;color:var(--muted);font-size:14px}
+  details.acc .body code{color:var(--accent)}
+
+  .callout{border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 10px 10px 0;padding:12px 16px;margin:0 0 16px;font-size:14px}
+  .callout b{color:var(--fg)}
+  .footer{max-width:var(--maxw);margin:40px auto;padding:24px 0 60px;border-top:1px solid var(--line);color:var(--faint);font-size:13px;font-family:var(--mono)}
+
+  @media (max-width:960px){
+    .wrap{grid-template-columns:1fr}
+    .side{display:none}
+    .arch{grid-template-columns:1fr}
+    .arch-detail{position:static}
+    .g4,.g3{grid-template-columns:repeat(2,1fr)}
+    .g2{grid-template-columns:1fr}
+    .srow{grid-template-columns:1fr}
+    .srow .ep{margin-bottom:2px}
+  }
+  @media print{ .side,.topbar,.seq-ctl,.cat-ctl,.tabs{display:none!important} .tabpane{display:block!important} section{break-inside:avoid} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="side">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 32 32" fill="none"><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" stroke="var(--accent)" stroke-width="1.6"/><path d="M7 16h6.5" stroke="var(--flame)" stroke-width="2.4" stroke-linecap="round"/><path d="M13.5 16c3.6 0 3.6-7 7.2-7M13.5 16c3.6 0 3.6 7 7.2 7" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/><circle cx="22.4" cy="9" r="2.3" fill="var(--accent)"/><circle cx="22.4" cy="23" r="2.3" fill="var(--accent)"/></svg>
+      <span>Conduit<span class="b-sub">Technical Design Doc</span></span>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="grp">Overview</div>
+      <a href="#overview"><span class="dot"></span>1 · Introduction</a>
+      <a href="#goals"><span class="dot"></span>2 · Goals &amp; scope</a>
+      <a href="#stack"><span class="dot"></span>3 · Technology stack</a>
+      <div class="grp">Design</div>
+      <a href="#architecture"><span class="dot"></span>4 · Architecture</a>
+      <a href="#model"><span class="dot"></span>5 · Data model</a>
+      <a href="#engine"><span class="dot"></span>6 · Execution engine</a>
+      <a href="#sequences"><span class="dot"></span>7 · Sequence flows</a>
+      <a href="#catalog"><span class="dot"></span>8 · Component catalog</a>
+      <div class="grp">AI &amp; Ops</div>
+      <a href="#ai"><span class="dot"></span>9 · AI approach</a>
+      <a href="#security"><span class="dot"></span>10 · Security</a>
+      <a href="#api"><span class="dot"></span>11 · API surface</a>
+      <a href="#deploy"><span class="dot"></span>12 · Deploy &amp; config</a>
+      <a href="#testing"><span class="dot"></span>13 · Testing</a>
+      <a href="#learnings"><span class="dot"></span>14 · Engineering learnings</a>
+    </nav>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main>
+    <div class="topbar">
+      <span class="crumb">conduit / docs / tdd.html</span>
+      <span class="sp"></span>
+      <button class="btn icon" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+      <button class="btn" onclick="window.print()">Print / PDF</button>
+    </div>
+
+    <!-- HERO -->
+    <div class="hero">
+      <span class="ey">⚡ Technical Design Document</span>
+      <h1>Conduit — an open-source AI software factory.</h1>
+      <p class="sub">Conduit turns a ticket into a reviewed pull request: agents triage, plan, code and CI-verify the change, with human approval gates, on a visual workflow graph. This document describes the system's architecture, stack, data model, execution engine, end-to-end flows and the engineering decisions behind them.</p>
+      <div class="meta-row">
+        <span>Status <b>Beta</b></span>
+        <span>Backend <b>Go 1.24</b></span>
+        <span>UI <b>Next.js 16 · React 18</b></span>
+        <span>Deploy <b>Single binary</b></span>
+        <span>License <b>Open source</b></span>
+      </div>
+    </div>
+
+    <!-- 1 OVERVIEW -->
+    <section id="overview">
+      <h2><span class="no">01</span>Introduction</h2>
+      <p class="lede">What Conduit is, who it's for, and the one idea the whole system is built around.</p>
+      <p>Conduit is a <b>control plane for AI-assisted software delivery</b>. A ticket enters from Jira, Notion, GitHub, a webhook or the board; a chain of components — some of them LLM agents — refine it into a plan, write the code on a branch, verify it against CI, and open a pull request. Crucially, <b>nothing risky happens without a human</b>: the pipeline pauses at explicit approval gates, and a pull request flows on to a review workflow that a person triggers.</p>
+      <p>The organising idea is that an <b>automation is a graph, not a script</b>. Every workflow is a directed graph of typed <em>components</em> (nodes) connected by labelled <em>edges</em>. An engine walks the graph, runs each component, and follows the edge whose label matches the component's outcome (<code>success</code> / <code>failed</code> / <code>approved</code>). This makes the behaviour visible, versioned, pausable and re-runnable — the opposite of a one-shot prompt.</p>
+      <div class="grid g3">
+        <div class="card"><h4>Visible</h4><p>Runs stream live over SSE onto a React-Flow canvas; every node shows its state, output and logs.</p></div>
+        <div class="card"><h4>Gated</h4><p>Two human approval gates per ticket (plan, then exact file changes). CI must pass before a PR opens.</p></div>
+        <div class="card"><h4>Self-hosted</h4><p>One Go binary with an embedded UI. Your models, your keys, your CI. Postgres or in-memory store.</p></div>
+      </div>
+    </section>
+
+    <!-- 2 GOALS -->
+    <section id="goals">
+      <h2><span class="no">02</span>Goals &amp; scope</h2>
+      <div class="grid g2">
+        <div>
+          <h4>Goals</h4>
+          <ul>
+            <li>Automate <b>routine</b> engineering tickets end-to-end, from source to reviewed PR.</li>
+            <li>Keep a <b>human in the loop</b> at the moments that matter, with full context at each gate.</li>
+            <li>Make every run <b>observable</b> and <b>reproducible</b> — live canvas, logs, memory, re-run.</li>
+            <li>Be <b>model- and vendor-agnostic</b>: Anthropic, OpenAI, or a self-hosted gateway.</li>
+            <li>Ship as a <b>single self-hostable binary</b> with no mandatory external services.</li>
+            <li>Treat workflows as <b>versioned data</b> that can be edited, bypassed and upgraded safely.</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Non-goals</h4>
+          <ul>
+            <li>Not an autonomous agent that acts without gates — orchestration is deterministic.</li>
+            <li>Not tied to one LLM provider or one source tracker.</li>
+            <li>Not a hosted SaaS; multi-tenancy is project-scoped within one deployment.</li>
+            <li>Not a replacement for code review — it <em>feeds</em> review, it doesn't skip it.</li>
+          </ul>
+          <div class="callout" style="margin-top:14px"><b>Design tenet.</b> Components are <em>simulated by default</em> (deterministic, offline) so the product demos and tests run with no provider or credentials; a node opts in to real side effects with <code>live:true</code> and a secret.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 STACK -->
+    <section id="stack">
+      <h2><span class="no">03</span>Technology stack</h2>
+      <p class="lede">A deliberately small dependency surface: the Go standard library does most of the backend, and the UI is a static export embedded in the binary.</p>
+      <div class="tabs" data-tabs="stack">
+        <button class="tab on" data-tab="be">Backend</button>
+        <button class="tab" data-tab="fe">Frontend</button>
+        <button class="tab" data-tab="data">Data &amp; infra</button>
+        <button class="tab" data-tab="ai">AI providers</button>
+        <button class="tab" data-tab="why">Why these</button>
+      </div>
+      <div class="tabpane on" data-pane="be">
+        <table>
+          <tr><th>Tech</th><th>Version</th><th>Role</th></tr>
+          <tr><td><b>Go</b></td><td><code>1.24</code></td><td>Language &amp; runtime for the whole backend; compiles to one static binary.</td></tr>
+          <tr><td><b>net/http</b> (stdlib)</td><td>stdlib</td><td>HTTP server, routing (method+pattern mux), SSE streaming. No web framework.</td></tr>
+          <tr><td><b>jackc/pgx</b></td><td><code>v5.7.2</code></td><td>PostgreSQL driver &amp; pool for the durable store.</td></tr>
+          <tr><td><b>robfig/cron</b></td><td><code>v3.0.1</code></td><td>Cron scheduling for the scheduler package.</td></tr>
+          <tr><td><b>golang.org/x/crypto</b></td><td><code>v0.31.0</code></td><td>bcrypt password hashing; crypto helpers for auth &amp; secrets.</td></tr>
+          <tr><td><b>embed</b> (stdlib)</td><td>stdlib</td><td>Embeds the built UI (<code>web/out</code>) into the binary via <code>go:embed</code>.</td></tr>
+        </table>
+        <p class="muted">Standard-library <code>crypto</code>, <code>encoding/json</code>, <code>context</code>, <code>sync</code> and <code>net/http</code> cover sessions, JSON, cancellation, concurrency and transport — no ORM, no router library, no DI framework.</p>
+      </div>
+      <div class="tabpane" data-pane="fe">
+        <table>
+          <tr><th>Tech</th><th>Version</th><th>Role</th></tr>
+          <tr><td><b>Next.js</b></td><td><code>16.4</code></td><td>React framework; static export (<code>output: export</code>) served by the Go binary.</td></tr>
+          <tr><td><b>React</b></td><td><code>18.3</code></td><td>UI runtime.</td></tr>
+          <tr><td><b>@xyflow/react</b> (React Flow)</td><td><code>12.3.5</code></td><td>The node/edge canvas — the live workflow graph &amp; editor.</td></tr>
+          <tr><td><b>TypeScript</b></td><td><code>5.6</code></td><td>Typed UI &amp; API client.</td></tr>
+          <tr><td><b>lucide-react</b></td><td><code>0.454</code></td><td>Icon set.</td></tr>
+          <tr><td><b>JetBrains Mono</b></td><td><code>5.1</code></td><td>Monospace typeface (self-hosted via fontsource).</td></tr>
+          <tr><td><b>EventSource</b> (browser)</td><td>native</td><td>Consumes the SSE run stream for live canvas updates.</td></tr>
+        </table>
+      </div>
+      <div class="tabpane" data-pane="data">
+        <table>
+          <tr><th>Concern</th><th>Choice</th><th>Notes</th></tr>
+          <tr><td>Durable store</td><td><b>PostgreSQL</b></td><td>Workflows &amp; runs as <code>JSONB</code>; tasks, review requests, members, secrets, vars, users, audit as rows. Enabled with <code>CONDUIT_DATABASE_URL</code>.</td></tr>
+          <tr><td>Zero-dep store</td><td><b>In-memory</b></td><td>A full <code>Store</code> implementation for local/dev/test; the default when no DB is set.</td></tr>
+          <tr><td>Run queue</td><td><b>Postgres / in-mem</b></td><td>Lease-based claim (<code>SELECT … FOR UPDATE SKIP LOCKED</code>) for multi-instance workers.</td></tr>
+          <tr><td>Live events</td><td><b>In-process broker + SSE</b></td><td>Optional Postgres <code>LISTEN/NOTIFY</code> relay for multi-instance fan-out.</td></tr>
+          <tr><td>Secrets</td><td><b>Encrypted at rest</b></td><td>Project-scoped, encrypted with <code>CONDUIT_SECRET_KEY</code>.</td></tr>
+        </table>
+      </div>
+      <div class="tabpane" data-pane="ai">
+        <table>
+          <tr><th>Provider</th><th>Endpoint</th><th>Used by</th></tr>
+          <tr><td><b>Anthropic</b></td><td><code>/v1/messages</code></td><td>Default. Agents, triage, coding, review. Detects <code>stop_reason:max_tokens</code>.</td></tr>
+          <tr><td><b>OpenAI</b></td><td><code>/v1/chat/completions</code></td><td>Alternate provider via <code>provider:openai</code>.</td></tr>
+          <tr><td><b>Custom gateway</b></td><td><code>{base_url}</code> → <code>{text}</code></td><td>Self-hosted / proxy models; posts <code>{prompt}</code>, expects <code>{text}</code>.</td></tr>
+        </table>
+        <p class="muted">LLM calls are plain HTTPS through a long-timeout, SSRF-guarded client. There is <b>no agent framework</b> (no LangChain / LlamaIndex): orchestration is Conduit's own deterministic DAG engine; the "agent" is a node that renders a templated prompt and calls a provider.</p>
+      </div>
+      <div class="tabpane" data-pane="why">
+        <div class="grid g2">
+          <div class="card"><h4>Stdlib-first Go</h4><p>Fewer dependencies = a smaller attack surface, trivial cross-compilation, and a binary that starts instantly. The mux, SSE and JSON needs are modest and well-served by stdlib.</p></div>
+          <div class="card"><h4>Embedded static UI</h4><p>Exporting Next.js to static files and embedding them means one artifact to ship and no separate web server, CORS or build coupling at runtime.</p></div>
+          <div class="card"><h4>React Flow</h4><p>The product <em>is</em> a graph; React Flow gives pan/zoom, nodes, edges and handles for free, so effort goes into the domain (components, live state) not canvas plumbing.</p></div>
+          <div class="card"><h4>Pluggable store</h4><p>One <code>Store</code> interface with in-memory &amp; Postgres implementations keeps tests fast and offline while production gets durability and multi-instance workers.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 ARCHITECTURE -->
+    <section id="architecture">
+      <h2><span class="no">04</span>Architecture</h2>
+      <p class="lede">A layered monolith: one process hosts the API, the execution engine, a worker pool and the store, all sharing an event broker. Click a box to inspect it.</p>
+      <div class="arch">
+        <div class="arch-svg">
+          <svg viewBox="0 0 640 470" role="img" aria-label="Conduit architecture diagram">
+            <!-- layer labels -->
+            <text class="layer" x="12" y="24">CLIENT</text>
+            <text class="layer" x="12" y="120">HTTP / API</text>
+            <text class="layer" x="12" y="236">CORE</text>
+            <text class="layer" x="12" y="398">PERSISTENCE / EXTERNAL</text>
+
+            <!-- client -->
+            <g class="node" data-k="ui"><rect class="box" x="90" y="8" width="200" height="40" rx="9" fill="#101c17" stroke="#24544a"/><text class="lbl" x="104" y="26">Next.js UI (embedded)</text><text class="sub" x="104" y="40">React Flow · SSE · board</text></g>
+            <g class="node" data-k="ext-in"><rect class="box" x="320" y="8" width="230" height="40" rx="9" fill="#101c17" stroke="#24544a"/><text class="lbl" x="334" y="26">Webhooks · Intake · Schedules</text><text class="sub" x="334" y="40">Jira/Notion/GitHub events, cron</text></g>
+
+            <!-- api -->
+            <g class="node" data-k="api"><rect class="box" x="90" y="92" width="460" height="56" rx="10" fill="#0f1b22" stroke="#2b4d6b"/><text class="lbl" x="104" y="114">API server (net/http)</text><text class="sub" x="104" y="130">routes · middleware (headers→ratelimit→auth→project) · SSE /api/events</text></g>
+
+            <!-- core -->
+            <g class="node" data-k="engine"><rect class="box" x="90" y="188" width="150" height="86" rx="10" fill="#13211b" stroke="#2e6b55"/><text class="lbl" x="104" y="212">Engine</text><text class="sub" x="104" y="228">DAG scheduler</text><text class="sub" x="104" y="242">runNode · gates</text><text class="sub" x="104" y="256">retries · handoff</text></g>
+            <g class="node" data-k="worker"><rect class="box" x="258" y="188" width="140" height="86" rx="10" fill="#13211b" stroke="#2e6b55"/><text class="lbl" x="272" y="212">Worker pool</text><text class="sub" x="272" y="228">claim + lease</text><text class="sub" x="272" y="242">renew</text><text class="sub" x="272" y="256">ExecuteClaimed</text></g>
+            <g class="node" data-k="components"><rect class="box" x="416" y="188" width="134" height="86" rx="10" fill="#13211b" stroke="#2e6b55"/><text class="lbl" x="430" y="212">Components</text><text class="sub" x="430" y="228">executor registry</text><text class="sub" x="430" y="242">LLM / GitHub</text><text class="sub" x="430" y="256">HTTP / integrations</text></g>
+            <g class="node" data-k="broker"><rect class="box" x="90" y="286" width="460" height="34" rx="9" fill="#1a1726" stroke="#5a4a86"/><text class="lbl" x="104" y="307">Event broker (pub/sub) → SSE · optional Postgres LISTEN/NOTIFY relay</text></g>
+
+            <!-- supporting -->
+            <g class="node" data-k="auth"><rect class="box" x="90" y="334" width="104" height="34" rx="8" fill="#0f1b22" stroke="#2b4d6b"/><text class="lbl" x="102" y="355">Auth</text></g>
+            <g class="node" data-k="secrets"><rect class="box" x="202" y="334" width="104" height="34" rx="8" fill="#0f1b22" stroke="#2b4d6b"/><text class="lbl" x="214" y="355">Secrets/Vars</text></g>
+            <g class="node" data-k="scheduler"><rect class="box" x="314" y="334" width="104" height="34" rx="8" fill="#0f1b22" stroke="#2b4d6b"/><text class="lbl" x="326" y="355">Scheduler</text></g>
+            <g class="node" data-k="seed"><rect class="box" x="426" y="334" width="124" height="34" rx="8" fill="#0f1b22" stroke="#2b4d6b"/><text class="lbl" x="438" y="355">Seed / metrics</text></g>
+
+            <!-- persistence -->
+            <g class="node" data-k="store"><rect class="box" x="90" y="410" width="214" height="44" rx="10" fill="#201a12" stroke="#7a5a2a"/><text class="lbl" x="104" y="430">Store (interface)</text><text class="sub" x="104" y="445">Postgres (JSONB) · In-memory</text></g>
+            <g class="node" data-k="ext-out"><rect class="box" x="320" y="410" width="230" height="44" rx="10" fill="#201a12" stroke="#7a5a2a"/><text class="lbl" x="334" y="430">External services</text><text class="sub" x="334" y="445">LLMs · GitHub API · Jira/Notion · CI</text></g>
+
+            <!-- connectors -->
+            <g stroke="#2e6b55" stroke-width="1.4" fill="none" opacity=".6">
+              <path d="M190 48 V92"/><path d="M435 48 V92"/>
+              <path d="M165 148 V188"/><path d="M328 148 V188"/><path d="M483 148 V188"/>
+              <path d="M320 231 H258"/><path d="M416 231 H398"/>
+              <path d="M320 274 V286"/>
+              <path d="M197 448 H304" opacity=".5"/>
+            </g>
+          </svg>
+        </div>
+        <div class="arch-detail" id="archDetail">
+          <h4>Pick a box</h4>
+          <p>Click any component in the diagram to read what it does, where it lives in the codebase, and how it connects to the rest of the system.</p>
+        </div>
+      </div>
+      <h3>Request &amp; run paths</h3>
+      <div class="grid g2">
+        <div class="card"><h4>Interactive path</h4><p>Browser → API → <code>Enqueue</code> a run (status <code>queued</code>) → worker claims it → engine executes → events stream back over SSE to the canvas.</p></div>
+        <div class="card"><h4>Event path</h4><p>Webhook / intake / schedule → API validates &amp; binds input → enqueues a run bound to the workflow (and board task) → same engine path.</p></div>
+      </div>
+    </section>
+
+    <!-- 5 DATA MODEL -->
+    <section id="model">
+      <h2><span class="no">05</span>Data model</h2>
+      <p class="lede">A handful of durable types. Workflows and runs are stored as JSON; everything else is relational.</p>
+      <table>
+        <tr><th>Type</th><th>Key fields</th><th>Purpose</th></tr>
+        <tr><td><b>Workflow</b></td><td><code>id, project_id, name, nodes[], edges[], rev, seed_hash</code></td><td>The versioned graph. <code>rev</code>/<code>seed_hash</code> drive safe built-in upgrades.</td></tr>
+        <tr><td><b>Node</b></td><td><code>id, type, title, kind, x, y, config[], stage, disabled</code></td><td>A component instance. <code>disabled</code> = bypass; <code>stage</code> projects onto the board.</td></tr>
+        <tr><td><b>Edge</b></td><td><code>from, to, label, max_attempts</code></td><td>Outcome-labelled transition. <code>max_attempts>0</code> marks a bounded retry back-edge.</td></tr>
+        <tr><td><b>Run</b></td><td><code>id, workflow_id, status, steps{}, memory{}, loops{}, input, task_id, resume_from</code></td><td>One execution. <code>memory</code> is shared state; <code>resume_from</code> powers re-run.</td></tr>
+        <tr><td><b>StepRun</b></td><td><code>node_id, status, started/ended, output, logs</code></td><td>Per-node execution record.</td></tr>
+        <tr><td><b>Task</b></td><td><code>id, project_id, title, stage, source, history[], notes[]</code></td><td>A board unit (Backlog→Implement→Verify→Done→Blocked). Linked to runs via <code>task_id</code>.</td></tr>
+        <tr><td><b>ReviewRequest</b></td><td><code>id, project_id, owner, repo, number, head, status, run_id</code></td><td>A PR handed off to a project's review inbox.</td></tr>
+        <tr><td><b>Project</b></td><td><code>id, name, members, vars, secrets</code></td><td>Tenancy boundary for workflows, runs, config.</td></tr>
+        <tr><td><b>Event</b></td><td><code>type, run_id, node_id, status, step, detail, review</code></td><td>Live message to SSE subscribers.</td></tr>
+      </table>
+      <div class="callout"><b>Status lifecycle.</b> <code>pending → running → (success | failed | skipped | canceled)</code>; a step can also be <code>waiting</code> (an approval gate). A run is <code>queued → running → waiting? → success | failed | canceled</code>.</div>
+    </section>
+
+    <!-- 6 ENGINE -->
+    <section id="engine">
+      <h2><span class="no">06</span>Execution engine</h2>
+      <p class="lede">The engine is a parallel, cancellable DAG scheduler with bounded recovery loops, human gates, and a worker-claim model for horizontal scale.</p>
+      <h3>How a run executes</h3>
+      <ol>
+        <li><b>Enqueue.</b> A run is created with every step <code>pending</code> and status <code>queued</code>. (<code>EnqueueForTask</code> seeds a board task's ticket into run memory.)</li>
+        <li><b>Claim.</b> A worker atomically leases a claimable run (<code>queued</code>, or a crashed run whose lease expired) and calls <code>ExecuteClaimed</code>, renewing the lease while it runs.</li>
+        <li><b>Walk.</b> The scheduler activates the trigger nodes (or <code>resume_from</code> on a re-run). Each node runs once, in its own goroutine; independent branches run concurrently.</li>
+        <li><b>Route.</b> After a node returns an outcome, the engine follows every outgoing edge whose <code>label</code> matches (<code>success</code>/<code>failed</code>/<code>approved</code>/unlabelled).</li>
+        <li><b>Gate.</b> An <code>approval</code> node sets the run <code>waiting</code>, renders the agent's suggestion as the gate summary, and blocks until a human resolves it (or the context cancels).</li>
+        <li><b>Recover.</b> A failing node with a retry back-edge (<code>max_attempts</code>) re-enters the loop body carrying its failure context in memory, up to budget — then routes terminally.</li>
+        <li><b>Finalize.</b> Unreached nodes are skipped; the run is marked terminal; a bound task's board stage is projected (Done / Blocked), and a freshly opened PR is handed to the review inbox.</li>
+      </ol>
+      <h3>Key mechanisms</h3>
+      <div class="grid g2">
+        <div class="card"><h4>Bypass (skip)</h4><p>A node flagged <code>disabled</code> is not executed — marked skipped, the run continues down its success edges. Used to make an optional step (e.g. CI) opt-in.</p></div>
+        <div class="card"><h4>Cancellation</h4><p>Cancel cancels the run's context. The scheduler checks <code>ctx.Err()</code> after every node, so a cancel breaks even a recovery loop and the run finalizes promptly.</p></div>
+        <div class="card"><h4>Re-run from a node</h4><p><code>Rerun(runID,nodeID)</code> resets that node and its descendants to pending, keeps upstream results &amp; memory, and re-queues with <code>resume_from</code> set.</p></div>
+        <div class="card"><h4>Live status</h4><p>Each node broadcasts a <code>step.updated(running)</code> as it starts, so the UI shows "in progress" without a refresh.</p></div>
+      </div>
+      <pre><span class="c">// the scheduler's core loop (simplified)</span>
+<span class="k">activate</span>(id):
+  outcome = runNode(ctx, id)
+  <span class="k">if</span> outcome == canceled <span class="k">or</span> ctx.Err(): stop branch
+  <span class="k">if</span> outcome == failed <span class="k">and</span> tryRetry(back-edge budget): re-enter loop
+  <span class="k">for</span> edge <span class="k">in</span> out[id]:
+    <span class="k">if</span> edge.label matches outcome: activate(edge.to)</pre>
+    </section>
+
+    <!-- 7 SEQUENCES -->
+    <section id="sequences">
+      <h2><span class="no">07</span>Sequence &amp; execution flows</h2>
+      <p class="lede">Step through the four flows that matter most. Use ▶ to autoplay, or Prev/Next to walk message by message.</p>
+      <div class="seq">
+        <div class="seq-head" id="seqPick"></div>
+        <div class="seq-lanes"><div class="lane-h" id="laneH"></div></div>
+        <div class="seq-rows" id="seqRows"></div>
+        <div class="seq-ctl">
+          <button class="btn" id="seqPlay">▶ Play</button>
+          <button class="btn" id="seqPrev">Prev</button>
+          <button class="btn" id="seqNext">Next</button>
+          <div class="prog"><i id="seqProg"></i></div>
+          <span class="cnt" id="seqCnt">0 / 0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 CATALOG -->
+    <section id="catalog">
+      <h2><span class="no">08</span>Component catalog</h2>
+      <p class="lede">Components are the vocabulary of every workflow. Each is a typed executor; the engine dispatches by <code>type</code>. Filter or search below.</p>
+      <div class="cat-ctl">
+        <input id="catSearch" placeholder="search components…" aria-label="search components" />
+        <button class="fchip on" data-f="all">All</button>
+        <button class="fchip" data-f="trigger">Triggers</button>
+        <button class="fchip" data-f="ai">AI</button>
+        <button class="fchip" data-f="github">GitHub</button>
+        <button class="fchip" data-f="source">Sources</button>
+        <button class="fchip" data-f="flow">Flow</button>
+        <button class="fchip" data-f="action">Actions</button>
+        <button class="fchip" data-f="state">State</button>
+      </div>
+      <div class="cat-grid" id="catGrid"></div>
+    </section>
+
+    <!-- 9 AI -->
+    <section id="ai">
+      <h2><span class="no">09</span>AI approach &amp; framework</h2>
+      <p class="lede">Conduit is "agentic" at the level of the <em>graph</em>, not an autonomous loop. The intelligence lives in a few well-scoped LLM nodes with human gates around them.</p>
+      <div class="grid g2">
+        <div>
+          <h4>No agent framework — on purpose</h4>
+          <p>There is no LangChain, no tool-calling autonomy loop. An "agent" node renders a templated prompt and calls a provider over HTTPS; the <em>orchestration</em> is Conduit's deterministic DAG. This keeps behaviour inspectable, versioned and gate-able.</p>
+          <h4>Prompt templating</h4>
+          <p>Config values resolve four reference kinds before a call:</p>
+          <ul>
+            <li><code>${input.x}</code> — the triggering payload (dotted paths into a webhook body).</li>
+            <li><code>${memory.x}</code> — shared run state written by earlier steps.</li>
+            <li><code>${var:x}</code> — project configuration variables.</li>
+            <li><code>${secret:x}</code> — encrypted project secrets (API keys, tokens).</li>
+          </ul>
+        </div>
+        <div>
+          <h4>The AI Factory pipeline</h4>
+          <ol>
+            <li><b>Triage</b> — score a ticket's readiness (confidence); low scores route to a human, not the agent.</li>
+            <li><b>Refine &amp; plan</b> — an agent turns the ticket into a plan.</li>
+            <li><b>Human gate ①</b> — approve the plan.</li>
+            <li><b>Plan changes</b> — produce a file-level change plan.</li>
+            <li><b>Human gate ②</b> — approve the exact files.</li>
+            <li><b>Apply</b> — write each file and push a branch via the GitHub Git Data API.</li>
+            <li><b>Verify CI</b> — gate on real check-runs; on failure, loop back with the errors.</li>
+            <li><b>Open PR</b> → hand off to the review workflow.</li>
+          </ol>
+        </div>
+      </div>
+      <div class="callout"><b>Coding strategy.</b> The apply step requests <b>one file per model call</b> (raw content, no JSON array). This avoids truncation: only a single file must fit in any one response, so multi-file changes scale and a cut-off is detected (<code>stop_reason:max_tokens</code>) rather than silently corrupting output.</div>
+      <h4>Confidence as a routing signal</h4>
+      <p>Triage emits a confidence score; the workflow edges route <code>success</code> (ready) vs <code>failed</code> (needs clarification). Automation is applied only where the work is scoped and checkable — the rest waits for a person. This is the core safety idea: <b>don't automate what you can't verify.</b></p>
+    </section>
+
+    <!-- 10 SECURITY -->
+    <section id="security">
+      <h2><span class="no">10</span>Security</h2>
+      <div class="grid g2">
+        <div class="card"><h4>AuthN</h4><p>Email + bcrypt, JWT sessions, and optional Google/GitHub OAuth with a self-hosted identities layer. A bootstrap admin is seeded on first run.</p></div>
+        <div class="card"><h4>AuthZ</h4><p>Project-scoped membership with roles (owner/admin/member/viewer). Writes are gated by effective role; built-in projects can't be deleted.</p></div>
+        <div class="card"><h4>Secrets</h4><p>Project secrets are encrypted at rest with <code>CONDUIT_SECRET_KEY</code> and only resolved at execution via <code>${secret:…}</code> — never returned to the client.</p></div>
+        <div class="card"><h4>SSRF guard</h4><p>Outbound HTTP from components goes through a guarded client; private/loopback egress is denied unless explicitly allowed (<code>CONDUIT_ALLOW_PRIVATE_EGRESS</code>).</p></div>
+        <div class="card"><h4>Transport hardening</h4><p>Middleware chain: security headers → body-size limit → rate limit → auth → project scope. The SSE token rides as a one-endpoint query param (EventSource can't set headers).</p></div>
+        <div class="card"><h4>Audit</h4><p>Config changes are recorded; <code>GET /api/audit</code> exposes the trail.</p></div>
+      </div>
+    </section>
+
+    <!-- 11 API -->
+    <section id="api">
+      <h2><span class="no">11</span>API surface</h2>
+      <p class="lede">A compact JSON REST surface plus one SSE stream. Project scope travels in the <code>X-Conduit-Project</code> header.</p>
+      <table>
+        <tr><th>Area</th><th>Endpoints</th></tr>
+        <tr><td>Auth</td><td><code>POST /api/auth/login · /register</code>, <code>GET /api/auth/me · /config</code>, <code>/oauth/{provider}/start · /callback</code></td></tr>
+        <tr><td>Workflows</td><td><code>GET/PUT /api/workflows[/{id}]</code>, <code>GET /api/components</code></td></tr>
+        <tr><td>Runs</td><td><code>GET/POST /api/runs</code>, <code>GET /api/runs/{id}</code>, <code>POST …/approve · /cancel · /rerun</code></td></tr>
+        <tr><td>Live</td><td><code>GET /api/events?run=…&amp;access_token=…</code> (SSE)</td></tr>
+        <tr><td>Board</td><td><code>GET/POST /api/tasks</code>, <code>POST …/start · /stage · /notes</code></td></tr>
+        <tr><td>Review inbox</td><td><code>GET /api/review-requests</code>, <code>POST …/{id}/run · /dismiss</code></td></tr>
+        <tr><td>Config</td><td><code>/api/secrets · /api/vars · /api/projects · /api/schedules · /api/tokens</code></td></tr>
+        <tr><td>Ingress</td><td><code>POST /api/hooks/{workflowID}?token=…</code>, <code>POST /api/intake/{project}</code></td></tr>
+        <tr><td>Ops</td><td><code>GET /api/health · /api/metrics · /api/audit</code></td></tr>
+      </table>
+    </section>
+
+    <!-- 12 DEPLOY -->
+    <section id="deploy">
+      <h2><span class="no">12</span>Deployment &amp; configuration</h2>
+      <p class="lede">Build the UI, compile one Go binary, run it. Postgres is optional.</p>
+      <pre><span class="c"># build the embedded UI, then the binary</span>
+cd web &amp;&amp; npm ci &amp;&amp; npm run build      <span class="c"># → web/out (static export)</span>
+cd .. &amp;&amp; go build -o conduitd .          <span class="c"># UI is embedded via go:embed</span>
+./conduitd                                <span class="c"># listens on :8080</span></pre>
+      <table>
+        <tr><th>Env var</th><th>Purpose</th></tr>
+        <tr><td><code>CONDUIT_ADDR</code></td><td>Listen address (default <code>:8080</code>).</td></tr>
+        <tr><td><code>CONDUIT_DATABASE_URL</code></td><td>Postgres DSN; omit for the in-memory store.</td></tr>
+        <tr><td><code>CONDUIT_SECRET_KEY</code></td><td>Key that encrypts project secrets at rest.</td></tr>
+        <tr><td><code>CONDUIT_JWT_SECRET</code></td><td>Signs session tokens (ephemeral if unset).</td></tr>
+        <tr><td><code>CONDUIT_ADMIN_EMAIL / _PASSWORD</code></td><td>Bootstrap admin on first run.</td></tr>
+        <tr><td><code>CONDUIT_ALLOW_SIGNUP</code></td><td>Enable self-serve account creation.</td></tr>
+        <tr><td><code>CONDUIT_ALLOW_PRIVATE_EGRESS</code></td><td>Permit loopback/private egress (dev only).</td></tr>
+        <tr><td><code>CONDUIT_BASE_URL</code></td><td>Public base URL for OAuth callbacks.</td></tr>
+      </table>
+      <p class="muted">On startup the server ensures the built-in projects exist and <b>syncs the built-in workflows</b>: a missing one is installed; an unedited older one is upgraded to the shipped <code>rev</code>; a user-edited one is left untouched (matched by content fingerprint).</p>
+    </section>
+
+    <!-- 13 TESTING -->
+    <section id="testing">
+      <h2><span class="no">13</span>Testing strategy</h2>
+      <div class="grid g3">
+        <div class="card"><h4>Go unit tests</h4><p>Per package — engine (DAG, gates, retries, cancel, rerun, bypass, handoff), components (LLM adapters via httptest, GitHub Git Data stubs, truncation), store (cascade, claim), api (handlers).</p></div>
+        <div class="card"><h4>Playwright e2e</h4><p>Real UI against the real server: landing → auth → run → live SSE → approval, and account creation.</p></div>
+        <div class="card"><h4>Offline by default</h4><p>Simulated components and the in-memory store mean the whole suite runs with no provider, no DB and no network.</p></div>
+      </div>
+    </section>
+
+    <!-- 14 LEARNINGS -->
+    <section id="learnings">
+      <h2><span class="no">14</span>Engineering learnings</h2>
+      <p class="lede">Decisions and fixes that shaped the system — the "why it is the way it is".</p>
+      <details class="acc" open><summary>Make every step simulated-by-default <span class="tg">product</span><span class="chev">›</span></summary><div class="body">Each component returns a deterministic result unless <code>live:true</code>. The seeded factory, the demos and the whole test suite run offline. Real side effects are an explicit opt-in with a secret — which also means a safe, credential-free first-run experience.</div></details>
+      <details class="acc"><summary>Expand <code>${var}</code>/<code>${secret}</code> everywhere, not just prompts <span class="tg">bug</span><span class="chev">›</span></summary><div class="body">An agent node read <code>provider</code>/<code>model</code> raw, so <code>${var:llm_model}</code> reached the API verbatim (a confusing 404). Fix: route every field through the same expansion, and fail fast with guidance when a reference is unresolved instead of calling the provider with a literal token.</div></details>
+      <details class="acc"><summary>One file per model call beats one big JSON array <span class="tg">AI</span><span class="chev">›</span></summary><div class="body">Asking for all changed files as a single JSON array truncated at the token cap. Implementing one file per request (raw content) means only a single file must fit any response; truncation is detected (<code>stop_reason:max_tokens</code>) rather than corrupting output.</div></details>
+      <details class="acc"><summary>Diagnose GitHub 404s instead of blaming the branch <span class="tg">DX</span><span class="chev">›</span></summary><div class="body">A 404 on <code>git/ref/heads/main</code> is usually a wrong owner/repo or a token that can't see a private repo — not a missing branch. The code now probes the repo and returns an actionable message, and normalizes owner/repo (full URLs, <code>owner/repo</code>, trailing <code>.git</code>).</div></details>
+      <details class="acc"><summary>Cancel must break the recovery loop <span class="tg">engine</span><span class="chev">›</span></summary><div class="body">Components do network I/O that doesn't observe the run context, so a node could return <em>failed</em> after a cancel and the retry back-edge would re-queue forever. The scheduler now checks <code>ctx.Err()</code> after each node, so cancel ends the run promptly.</div></details>
+      <details class="acc"><summary>Upgrade built-ins without clobbering edits <span class="tg">ops</span><span class="chev">›</span></summary><div class="body">Seeding keyed only by ID froze old definitions on existing databases. Workflows now carry a <code>rev</code> and a content <code>seed_hash</code>; startup upgrades an unedited built-in to the shipped revision and leaves a user-edited one alone.</div></details>
+      <details class="acc"><summary>Broadcast the running transition for live UI <span class="tg">UX</span><span class="chev">›</span></summary><div class="body">A node only logged when it started, so the canvas never showed "in progress" until a refresh. Emitting a <code>step.updated(running)</code> as each node begins makes progress visible live over SSE.</div></details>
+      <details class="acc"><summary>A per-node bypass toggle for optional steps <span class="tg">product</span><span class="chev">›</span></summary><div class="body">Not every environment can run every step (e.g. a token that can't read the Checks API). A <code>disabled</code> flag skips a node and continues down its success edges, and the toggle persists immediately so it applies to the next run.</div></details>
+      <details class="acc"><summary>Hand opened PRs to a review pipeline <span class="tg">feature</span><span class="chev">›</span></summary><div class="body">When a run opens a PR, the engine records a pending review request in the GitHub project's inbox (never self-reviewing). A person triggers the review workflow from a banner — keeping the human in the loop across the whole lifecycle.</div></details>
+    </section>
+
+    <div class="footer">
+      Conduit · Technical Design Document · generated for the engineering team.<br/>
+      Source of truth is the code; regenerate this doc when the architecture changes.
+    </div>
+  </main>
+</div>
+
+<script>
+/* ---------------- theme ---------------- */
+(function(){
+  var root=document.documentElement, b=document.getElementById('themeBtn');
+  try{ var t=localStorage.getItem('tdd_theme'); if(t) root.setAttribute('data-theme',t); }catch(e){}
+  b.onclick=function(){ var n=root.getAttribute('data-theme')==='dark'?'light':'dark'; root.setAttribute('data-theme',n); try{localStorage.setItem('tdd_theme',n)}catch(e){} };
+})();
+
+/* ---------------- scrollspy ---------------- */
+(function(){
+  var links=[].slice.call(document.querySelectorAll('#nav a'));
+  var map={}; links.forEach(function(a){ map[a.getAttribute('href').slice(1)]=a; });
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ links.forEach(function(l){l.classList.remove('on')}); var a=map[e.target.id]; if(a)a.classList.add('on'); } });
+  },{rootMargin:'-20% 0px -70% 0px'});
+  document.querySelectorAll('main section').forEach(function(s){io.observe(s)});
+})();
+
+/* ---------------- tabs ---------------- */
+document.querySelectorAll('.tabs').forEach(function(t){
+  t.addEventListener('click',function(e){
+    var b=e.target.closest('.tab'); if(!b)return;
+    var pane=b.dataset.tab, scope=t.closest('section');
+    t.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('on',x===b)});
+    scope.querySelectorAll('.tabpane').forEach(function(p){p.classList.toggle('on',p.dataset.pane===pane)});
+  });
+});
+
+/* ---------------- architecture detail ---------------- */
+(function(){
+  var D={
+    ui:{t:'Next.js UI (embedded)',tag:'web/ · go:embed',d:'Static-exported React app embedded in the binary. Renders the workflow canvas (React Flow), live board, inspector, settings; consumes the SSE run stream.',l:['React Flow canvas & node inspector','EventSource → live node status','Board, metrics, review inbox']},
+    'ext-in':{t:'Event ingress',tag:'api · hooks/intake/schedules',d:'Outside events that start runs: GitHub/Jira/Notion webhooks, a project intake endpoint, and cron schedules.',l:['POST /api/hooks/{wf}?token=…','POST /api/intake/{project}','Scheduler (robfig/cron)']},
+    api:{t:'API server',tag:'internal/api · net/http',d:'The only network surface. A method+pattern mux with a middleware chain, a JSON REST surface and the SSE endpoint. Resolves project scope from a header.',l:['headers → ratelimit → auth → project scope','REST for workflows/runs/tasks/config','GET /api/events (SSE fan-out)']},
+    engine:{t:'Engine',tag:'internal/engine',d:'The DAG scheduler. Walks the graph in parallel goroutines, runs each node, routes by outcome, handles approval gates, bounded recovery loops, cancel, re-run and the PR handoff.',l:['runNode: retries, gates, bypass','recovery loops via retry back-edges','Cancel / Rerun / Resolve / handoff']},
+    worker:{t:'Worker pool',tag:'internal/worker',d:'Drains the run queue. Each worker leases a claimable run, renews the lease while executing, and calls the engine. A crashed worker\'s lease expires and another reclaims the run.',l:['ClaimRun (lease) + renew','ExecuteClaimed → engine','Multi-instance safe']},
+    components:{t:'Components',tag:'internal/components',d:'The executor registry — one function per node type. Includes the LLM adapters, the GitHub Git Data API client, HTTP/integration actions and flow-control nodes.',l:['registry[type] → Executor','LLM: anthropic/openai/custom','GitHub: blobs→tree→commit→ref']},
+    broker:{t:'Event broker',tag:'internal/store (broker)',d:'In-process pub/sub. The engine publishes run/step/log/review events; the SSE endpoint subscribes and streams them. An optional Postgres LISTEN/NOTIFY relay fans out across instances.',l:['publish → subscribers','SSE per-run filtering','LISTEN/NOTIFY relay (optional)']},
+    auth:{t:'Auth',tag:'internal/auth',d:'Email+bcrypt, JWT sessions, Google/GitHub OAuth, and a self-hosted identities layer.',l:['bcrypt + JWT','OAuth providers','bootstrap admin']},
+    secrets:{t:'Secrets & vars',tag:'internal/secrets',d:'Project-scoped configuration. Secrets are encrypted at rest and resolved only at execution; vars are plain config.',l:['${secret:…} encrypted','${var:…} plain','project-scoped']},
+    scheduler:{t:'Scheduler',tag:'internal/scheduler',d:'Fires schedule-triggered workflows on cron expressions.',l:['robfig/cron','enqueues runs']},
+    seed:{t:'Seed & metrics',tag:'internal/seed · internal/metrics',d:'Ships the built-in workflows (preview-envs, GitHub, AI Factory) and upgrades unedited ones by content hash. Metrics expose run counters.',l:['SyncBuiltins (rev + seed_hash)','built-in projects','/api/metrics']},
+    store:{t:'Store',tag:'internal/store',d:'One interface, two implementations. Postgres keeps workflows/runs as JSONB and the rest relational, with a lease-based claim queue; the in-memory store is a full offline/test implementation.',l:['Postgres (pgx, JSONB)','In-memory (default)','ClaimRun: FOR UPDATE SKIP LOCKED']},
+    'ext-out':{t:'External services',tag:'network',d:'The side-effecting world: LLM providers, the GitHub REST/Git Data API, Jira/Notion, and CI check-runs. All reached through the SSRF-guarded client.',l:['LLMs (Anthropic/OpenAI/custom)','GitHub API · Jira · Notion','CI check-runs']}
+  };
+  var box=document.getElementById('archDetail');
+  document.querySelectorAll('.arch g.node').forEach(function(g){
+    g.addEventListener('click',function(){
+      document.querySelectorAll('.arch g.node').forEach(function(x){x.classList.remove('sel')});
+      g.classList.add('sel');
+      var d=D[g.dataset.k]; if(!d)return;
+      box.innerHTML='<div class="tag">'+d.tag+'</div><h4>'+d.t+'</h4><p>'+d.d+'</p><ul>'+d.l.map(function(x){return '<li>'+x+'</li>'}).join('')+'</ul>';
+    });
+  });
+})();
+
+/* ---------------- sequence player ---------------- */
+(function(){
+  var FLOWS={
+    factory:{name:'AI Factory: ticket → PR',lanes:['Board/User','API','Engine','Agent/LLM','GitHub','CI'],
+      steps:[
+        ['Board/User','API','Start task','A ticket is started from the board.'],
+        ['API','Engine','Enqueue run (queued)','Run created; ticket seeded into memory.'],
+        ['Engine','Agent/LLM','Triage · confidence','Score readiness; low → route to a human.'],
+        ['Engine','Agent/LLM','Refine & plan','Agent drafts a plan from the ticket.'],
+        ['Engine','Board/User','Gate ① — approve plan','Run waits; human approves the plan.'],
+        ['Engine','Agent/LLM','Plan changes','Produce the file-level change plan.'],
+        ['Engine','Board/User','Gate ② — approve changes','Human approves the exact files.'],
+        ['Engine','Agent/LLM','Apply (one file / call)','Model returns each file\'s full content.'],
+        ['Engine','GitHub','Push branch (Git Data API)','blobs → tree → commit → ref.'],
+        ['Engine','CI','Verify check-runs','Gate on real CI; on fail, loop back to apply.'],
+        ['Engine','GitHub','Open pull request','PR opened from the pushed branch.'],
+        ['Engine','API','Hand off to review inbox','PR queued for the review workflow.']
+      ]},
+    run:{name:'Run lifecycle (worker model)',lanes:['Client','API','Store','Worker','Engine','Broker'],
+      steps:[
+        ['Client','API','POST /api/runs','Request to run a workflow.'],
+        ['API','Store','CreateRun (queued)','Persisted with all steps pending.'],
+        ['Worker','Store','ClaimRun (lease)','FOR UPDATE SKIP LOCKED → status running.'],
+        ['Worker','Engine','ExecuteClaimed','Loads the workflow, walks the DAG.'],
+        ['Engine','Broker','publish step.updated','Each node start/finish is published.'],
+        ['Broker','Client','SSE /api/events','Live node status reaches the canvas.'],
+        ['Worker','Store','RenewLease','Lease kept alive while running/waiting.'],
+        ['Engine','Store','MutateRun (final)','Run marked terminal; task stage projected.'],
+        ['Engine','Broker','publish run.finished','UI flips Cancel → Run.']
+      ]},
+    approval:{name:'Human approval gate',lanes:['Engine','Store','Broker','UI','Human'],
+      steps:[
+        ['Engine','Store','set run waiting','Node status → waiting.'],
+        ['Engine','Broker','publish run.waiting + detail','Agent suggestion rendered as summary.'],
+        ['Broker','UI','banner + desktop notify','Approve / Reject / View step.'],
+        ['Human','UI','clicks Approve','Decision made with full context.'],
+        ['UI','Engine','POST …/approve','Decision delivered to the waiting node.'],
+        ['Engine','Store','resume (running)','Follows the approved edge onward.']
+      ]},
+    handoff:{name:'PR → review handoff',lanes:['Engine','Store','UI','Reviewer','Review run'],
+      steps:[
+        ['Engine','Store','github_pr success','A PR is opened by a run.'],
+        ['Engine','Store','CreateReviewRequest (pending)','Recorded in the GitHub project inbox.'],
+        ['Engine','UI','publish review.requested','Toast + inbox badge; not self-review.'],
+        ['Reviewer','UI','opens GitHub project','Sees the pending PR banner.'],
+        ['UI','Review run','POST …/{id}/run','Starts wf_github with a PR-shaped input.'],
+        ['Review run','UI','review → scan → gate → merge','Agent review, security scan, human gate.']
+      ]}
+  };
+  var order=['factory','run','approval','handoff'];
+  var pick=document.getElementById('seqPick'), laneH=document.getElementById('laneH'),
+      rows=document.getElementById('seqRows'), cnt=document.getElementById('seqCnt'),
+      prog=document.getElementById('seqProg');
+  var cur='factory', idx=0, timer=null;
+
+  order.forEach(function(k){
+    var b=document.createElement('button'); b.className='seq-pick'+(k===cur?' on':''); b.textContent=FLOWS[k].name; b.dataset.k=k;
+    b.onclick=function(){ cur=k; idx=0; stop(); renderAll(); };
+    pick.appendChild(b);
+  });
+
+  function renderLanes(){
+    var f=FLOWS[cur];
+    laneH.style.gridTemplateColumns='';
+    laneH.innerHTML=f.lanes.map(function(l){
+      var active = idx>0 && (f.steps[idx-1][0]===l || f.steps[idx-1][1]===l);
+      return '<span class="'+(active?'act':'')+'">'+l+'</span>';
+    }).join('');
+  }
+  function renderRows(){
+    var f=FLOWS[cur];
+    rows.innerHTML=f.steps.map(function(s,i){
+      var cls = i<idx-1?'done':(i===idx-1?'cur':'');
+      return '<div class="srow '+cls+'" data-i="'+i+'">'+
+        '<div class="ep"><b>'+s[0]+'</b><span class="ar">→</span>'+s[1]+'</div>'+
+        '<div class="mg">'+s[2]+'<span class="why">'+s[3]+'</span></div></div>';
+    }).join('');
+    var curEl=rows.querySelector('.srow.cur'); if(curEl)curEl.scrollIntoView({block:'nearest',behavior:'smooth'});
+    cnt.textContent=idx+' / '+f.steps.length;
+    prog.style.width=(f.steps.length?(idx/f.steps.length*100):0)+'%';
+    pick.querySelectorAll('.seq-pick').forEach(function(b){b.classList.toggle('on',b.dataset.k===cur)});
+  }
+  function renderAll(){ renderLanes(); renderRows(); }
+  function next(){ var f=FLOWS[cur]; if(idx<f.steps.length){ idx++; renderAll(); } else { stop(); } }
+  function prev(){ if(idx>0){ idx--; renderAll(); } }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} play.textContent='▶ Play'; }
+  var play=document.getElementById('seqPlay');
+  play.onclick=function(){ if(timer){stop();return;} if(idx>=FLOWS[cur].steps.length)idx=0; play.textContent='❚❚ Pause'; timer=setInterval(function(){ if(idx>=FLOWS[cur].steps.length){stop();return;} next(); },1100); next(); };
+  document.getElementById('seqNext').onclick=function(){stop();next();};
+  document.getElementById('seqPrev').onclick=function(){stop();prev();};
+  renderAll();
+})();
+
+/* ---------------- component catalog ---------------- */
+(function(){
+  var C=[
+    ['github','trigger','Trigger: a GitHub event (PR/push) starts the run.'],
+    ['webhook','trigger','Trigger: an inbound webhook with a bound JSON payload.'],
+    ['schedule','trigger','Trigger: a cron schedule fires the workflow.'],
+    ['start','trigger','Trigger: a manual run from the UI.'],
+    ['triage','ai','Score a ticket\'s readiness (confidence) to route it.'],
+    ['agent','ai','Call an LLM with a templated prompt; write result to memory.'],
+    ['coding_plan','ai','Produce a file-level change plan (no repo writes).'],
+    ['coding_apply','ai','Write each file & push a branch via the Git Data API.'],
+    ['coding_agent','ai','All-in-one: plan → implement → commit a branch.'],
+    ['github_pr','github','Open a real pull request; idempotent on an existing head.'],
+    ['github_review','github','LLM-review a PR\'s diff and post findings.'],
+    ['github_comment','github','Comment on an issue or pull request.'],
+    ['github_checks','github','Gate on a commit\'s CI check-runs.'],
+    ['github_merge','github','Merge a PR (squash/merge/rebase).'],
+    ['security_scan','github','Run a security scan against a ref.'],
+    ['jira','source','Fetch a Jira ticket or comment back on it.'],
+    ['notion','source','Fetch a Notion item as a ticket source.'],
+    ['http','action','Make an HTTP request (simulated unless live:true).'],
+    ['graphql','action','Query a GraphQL endpoint.'],
+    ['slack','action','Post a Slack message.'],
+    ['ssh','action','Run a command over SSH (demo/stub).'],
+    ['approval','flow','Human gate: pause the run until Approve/Reject.'],
+    ['if','flow','Conditional branch on a value.'],
+    ['filter','flow','Pass or stop based on a predicate (e.g. not_empty).'],
+    ['merge','flow','Join/pass-through for converging branches.'],
+    ['wait','flow','Delay for a duration.'],
+    ['timegate','flow','Only proceed within a business-hours window.'],
+    ['noop','flow','Do nothing (placeholder / wiring).'],
+    ['memory','state','Record values into shared run memory / a store.'],
+    ['status','state','Set a status and notify (e.g. changes requested).']
+  ];
+  var grid=document.getElementById('catGrid'), search=document.getElementById('catSearch');
+  var filter='all', q='';
+  function cat(c){return c==='ai'?'AI':c==='github'?'GitHub':c==='source'?'source':c==='trigger'?'trigger':c==='flow'?'flow':c==='action'?'action':'state';}
+  function render(){
+    grid.innerHTML=C.filter(function(c){
+      return (filter==='all'||c[1]===filter) && (!q || c[0].indexOf(q)>=0 || c[2].toLowerCase().indexOf(q)>=0);
+    }).map(function(c){
+      return '<div class="comp"><div class="t"><code>'+c[0]+'</code><span class="cat">'+cat(c[1])+'</span></div><p>'+c[2]+'</p></div>';
+    }).join('') || '<p class="muted">No components match.</p>';
+  }
+  document.querySelectorAll('.cat-ctl .fchip').forEach(function(b){
+    b.onclick=function(){ document.querySelectorAll('.cat-ctl .fchip').forEach(function(x){x.classList.remove('on')}); b.classList.add('on'); filter=b.dataset.f; render(); };
+  });
+  search.oninput=function(){ q=search.value.trim().toLowerCase(); render(); };
+  render();
+})();
+</script>
+</body>
+</html>
