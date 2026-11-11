@@ -35,6 +35,7 @@ type Server struct {
 	Auth      *auth.Service        // optional; nil disables auth (open mode, for tests)
 	Limiter   *rateLimiter         // optional; nil disables rate limiting
 	Web       fs.FS                // static assets (the UI)
+	Docs      []byte               // the interactive TDD, served at /docs (optional)
 
 	// AllowSignup enables the public self-serve registration endpoint
 	// (POST /api/auth/register). When false, accounts are admin-provisioned only.
@@ -122,6 +123,10 @@ func (s *Server) Routes() http.Handler {
 
 	// Static UI (index.html at /, assets alongside). Content-hashed Next assets
 	// under /_next/static are immutable and safe to cache aggressively.
+	// The interactive Technical Design Document (public, no auth).
+	mux.HandleFunc("GET /docs", s.serveDocs)
+	mux.HandleFunc("GET /docs/", s.serveDocs)
+
 	fileServer := http.FileServer(http.FS(s.Web))
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/_next/static/") {
@@ -265,6 +270,17 @@ func withPrincipal(r *http.Request, p principal) context.Context {
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "time": time.Now()})
+}
+
+// serveDocs serves the embedded interactive Technical Design Document.
+func (s *Server) serveDocs(w http.ResponseWriter, r *http.Request) {
+	if len(s.Docs) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	_, _ = w.Write(s.Docs)
 }
 
 // login verifies credentials and returns a JWT plus the user.

@@ -36,8 +36,9 @@ The store is an interface (`internal/store`) with two implementations:
 the interface, so swapping persistence is a one-line change in `main.go`.
 
 **Docs:** [Technical Design Document](docs/tdd.html) (interactive — architecture,
-stack, data model, execution engine, sequence flows) · [GUIDE.md](GUIDE.md) (user
-walkthrough) · [TESTING.md](TESTING.md) (reproducible test guide).
+stack, data model, execution engine, sequence flows; also served live at
+**`/docs`** on a running instance) · [GUIDE.md](GUIDE.md) (user walkthrough) ·
+[TESTING.md](TESTING.md) (reproducible test guide).
 
 ## Quickstart — one command (recommended)
 
@@ -67,10 +68,11 @@ That's the whole testing loop: **build once, run everything at once.**
 > The full reproducible test guide is in [TESTING.md](TESTING.md).
 >
 > **Want the design?** See the **[Technical Design Document](docs/tdd.html)** —
-> an interactive HTML doc (open it in a browser) covering the architecture,
-> technology stack, data model, execution engine, end-to-end sequence flows, the
-> component catalog and the AI approach. A clickable architecture diagram and a
-> step-through sequence player are built in.
+> an interactive HTML doc covering the architecture, technology stack, data model,
+> execution engine, end-to-end sequence flows, the component catalog and the AI
+> approach. A clickable architecture diagram and a step-through sequence player are
+> built in. It's embedded in the binary and served live at **`/docs`** (e.g.
+> `http://localhost:8080/docs`) — or open `docs/tdd.html` in a browser.
 
 ## Build & run from source (without Docker)
 

@@ -44,6 +44,12 @@ import (
 //go:embed all:web/out
 var webFS embed.FS
 
+// The interactive Technical Design Document is embedded and served at /docs so it
+// is viewable from a running instance without a repo checkout.
+//
+//go:embed docs/tdd.html
+var tddHTML []byte
+
 func main() {
 	// `conduitd healthcheck` performs an HTTP self-check and exits 0/1. Used by
 	// the container healthcheck since the distroless image has no shell or curl.
@@ -204,7 +210,7 @@ func run() error {
 
 	srv := &api.Server{
 		Store: st, Engine: eng, Scheduler: sched, Secrets: secretMgr, Auth: authSvc,
-		Limiter: limiter, Web: ui, AllowSignup: allowSignup,
+		Limiter: limiter, Web: ui, Docs: tddHTML, AllowSignup: allowSignup,
 		OAuth: oauthProviders, BaseURL: os.Getenv("CONDUIT_BASE_URL"),
 	}
 
