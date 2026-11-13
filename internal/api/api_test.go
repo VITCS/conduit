@@ -187,6 +187,23 @@ func TestWebhookStartsRunWithInput(t *testing.T) {
 	}
 }
 
+func TestCreateRunAcceptsExplicitInput(t *testing.T) {
+	ts := newTestServer(t)
+	defer ts.Close()
+
+	var run model.Run
+	code := postJSON(t, ts.URL+"/api/runs", map[string]any{
+		"workflow_id": "wf_preview_envs",
+		"input":       map[string]any{"action": "opened", "number": 154},
+	}, &run)
+	if code != http.StatusCreated {
+		t.Fatalf("create run status = %d, want 201", code)
+	}
+	if run.Input["action"] != "opened" || run.Input["number"] != float64(154) {
+		t.Fatalf("run input = %#v", run.Input)
+	}
+}
+
 func getRunRaw(t *testing.T, url string) model.Run {
 	t.Helper()
 	var r model.Run
@@ -863,5 +880,58 @@ func TestReviewRequestsFlow(t *testing.T) {
 	got2, _, _ := st.GetReviewRequest("rr_2")
 	if got2.Status != "dismissed" {
 		t.Errorf("rr_2 status = %s, want dismissed", got2.Status)
+	}
+}
+
+func TestCreateRunConsumesPendingReviewRequestForGitHubWorkflow(t *testing.T) {
+	st := store.NewMem()
+	_ = st.CreateProject(model.Project{ID: seed.GitHubProjectID, Name: "GitHub"})
+	_ = st.PutWorkflow(seed.GitHubWorkflow())
+	eng := engine.New(st)
+	eng.StepDelay, eng.TriggerDelay = 0, 0
+	srv := &api.Server{Store: st, Engine: eng, Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	rr, _ := st.CreateReviewRequest(model.ReviewRequest{
+		ID: "rr_top_run", ProjectID: seed.GitHubProjectID, WorkflowID: seed.GitHubWorkflowID,
+		Owner: "VITCS", Repo: "fitvive-landing-page", Number: 42, Head: "conduit/ENG-1",
+		URL: "https://github.com/VITCS/fitvive-landing-page/pull/42", Title: "feat: ENG-1", Status: "pending",
+	})
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/runs", strings.NewReader(`{"workflow_id":"wf_github"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Conduit-Project", seed.GitHubProjectID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/runs: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create github run = %d, want 201", resp.StatusCode)
+	}
+	var run model.Run
+	if err := json.NewDecoder(resp.Body).Decode(&run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Title != "review: fitvive-landing-page #42" {
+		t.Errorf("run title = %q", run.Title)
+	}
+	if run.Input["action"] != "opened" || run.Input["number"] != float64(42) {
+		t.Fatalf("run input did not carry PR event: %#v", run.Input)
+	}
+	repo, _ := run.Input["repository"].(map[string]any)
+	owner, _ := repo["owner"].(map[string]any)
+	if repo["name"] != "fitvive-landing-page" || owner["login"] != "VITCS" {
+		t.Errorf("repo input = %#v", repo)
+	}
+	pr, _ := run.Input["pull_request"].(map[string]any)
+	head, _ := pr["head"].(map[string]any)
+	if head["ref"] != "conduit/ENG-1" {
+		t.Errorf("head ref = %#v", head)
+	}
+	got, _, _ := st.GetReviewRequest(rr.ID)
+	if got.Status != "started" || got.RunID != run.ID {
+		t.Errorf("request not marked started: status=%s runID=%s want %s", got.Status, got.RunID, run.ID)
 	}
 }

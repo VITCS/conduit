@@ -886,8 +886,9 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		WorkflowID string `json:"workflow_id"`
-		Title      string `json:"title"`
+		WorkflowID string         `json:"workflow_id"`
+		Title      string         `json:"title"`
+		Input      map[string]any `json:"input"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	wf, ok, err := s.Store.GetWorkflow(body.WorkflowID)
@@ -899,7 +900,25 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "workflow not found")
 		return
 	}
-	run := s.Engine.Enqueue(wf, body.Title, nil)
+	title, input := body.Title, body.Input
+	var claimedReview string
+	if len(input) == 0 {
+		if rr, ok, err := s.claimPendingReviewRequest(wf); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		} else if ok {
+			title = reviewRunTitle(rr)
+			input = reviewRequestInput(rr)
+			claimedReview = rr.ID
+		}
+	}
+	run := s.Engine.Enqueue(wf, title, input)
+	if claimedReview != "" {
+		s.Store.MutateReviewRequest(claimedReview, func(x *model.ReviewRequest) { //nolint:errcheck
+			x.Status = "started"
+			x.RunID = run.ID
+		})
+	}
 	writeJSON(w, http.StatusCreated, run)
 }
 
@@ -1025,9 +1044,52 @@ func (s *Server) runReviewRequest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "review workflow not found")
 		return
 	}
-	// Shape the input like a GitHub pull_request webhook so the review branch
-	// (filter on action, github_review, security_scan) resolves its ${input.…}.
-	input := map[string]any{
+	run := s.Engine.Enqueue(wf, reviewRunTitle(rr), reviewRequestInput(rr))
+	s.Store.MutateReviewRequest(rr.ID, func(x *model.ReviewRequest) { //nolint:errcheck
+		x.Status = "started"
+		x.RunID = run.ID
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "run": run})
+}
+
+// claimPendingReviewRequest lets the generic Run button on the GitHub workflow
+// pick up the newest PR handed off by an upstream workflow. Without this, a plain
+// run has no payload, so the review branch's ${input.…} fields never resolve.
+func (s *Server) claimPendingReviewRequest(wf model.Workflow) (model.ReviewRequest, bool, error) {
+	reqs, err := s.Store.ListReviewRequests(wf.ProjectID, "pending")
+	if err != nil {
+		return model.ReviewRequest{}, false, err
+	}
+	for _, rr := range reqs {
+		if rr.WorkflowID != wf.ID {
+			continue
+		}
+		claimed := false
+		snap, ok, err := s.Store.MutateReviewRequest(rr.ID, func(x *model.ReviewRequest) {
+			if x.Status != "pending" {
+				return
+			}
+			x.Status = "starting"
+			claimed = true
+		})
+		if err != nil {
+			return model.ReviewRequest{}, false, err
+		}
+		if ok && claimed {
+			return snap, true, nil
+		}
+	}
+	return model.ReviewRequest{}, false, nil
+}
+
+func reviewRunTitle(rr model.ReviewRequest) string {
+	return fmt.Sprintf("review: %s #%d", rr.Repo, rr.Number)
+}
+
+// reviewRequestInput shapes the request like a GitHub pull_request webhook so the
+// review branch resolves ${input.repository.*}, ${input.number}, and PR head refs.
+func reviewRequestInput(rr model.ReviewRequest) map[string]any {
+	return map[string]any{
 		"action": "opened",
 		"number": rr.Number,
 		"repository": map[string]any{
@@ -1040,12 +1102,6 @@ func (s *Server) runReviewRequest(w http.ResponseWriter, r *http.Request) {
 			"head":     map[string]any{"ref": rr.Head},
 		},
 	}
-	run := s.Engine.Enqueue(wf, fmt.Sprintf("review: %s #%d", rr.Repo, rr.Number), input)
-	s.Store.MutateReviewRequest(rr.ID, func(x *model.ReviewRequest) { //nolint:errcheck
-		x.Status = "started"
-		x.RunID = run.ID
-	})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "run": run})
 }
 
 // dismissReviewRequest removes a PR from the review inbox without running it.

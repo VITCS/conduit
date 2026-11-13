@@ -64,6 +64,7 @@ export interface Run {
   finished_at?: string;
   steps: Record<string, StepRun>;
   memory: Record<string, unknown>;
+  input?: Record<string, unknown>;
 }
 
 export interface SSEvent {

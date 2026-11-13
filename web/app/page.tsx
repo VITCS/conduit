@@ -114,6 +114,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [tab, setTab] = useState<Tab>("canvas");
 
   const [runId, setRunId] = useState<string | null>(null);
+  const [runInput, setRunInput] = useState<Record<string, unknown> | null>(null);
   const [running, setRunning] = useState(false);
   const [waitingNode, setWaitingNode] = useState<string | null>(null);
   const [approvalDetail, setApprovalDetail] = useState<string>("");
@@ -239,6 +240,10 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       setProject(id);
       setCurrentProject(id);
       setSelected(null);
+      setRunId(null);
+      setRunInput(null);
+      setRunLabel("No run yet");
+      setRunMeta("press Run to execute");
       loadWorkflows();
       loadProjectConfig();
       loadReviewRequests();
@@ -317,17 +322,19 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     setLogs([]);
     setWaitingNode(null);
     try {
-      const run = await api.createRun(wf.id);
+      const input = runInput && Object.keys(runInput).length > 0 ? runInput : undefined;
+      const run = await api.createRun(wf.id, input);
       setRunId(run.id);
       setRunLabel(run.title);
       setRunMeta(run.id);
+      setRunInput(run.input || input || null);
       openStream(run.id);
     } catch (e) {
       setRunning(false);
       showToast("Run failed: " + (e as Error).message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, wf, nodes, showToast]);
+  }, [running, wf, nodes, runInput, showToast]);
 
   // openStream subscribes to a run's live events (used by Run and when opening an
   // in-progress run from history). It drives step statuses, logs, the approval
@@ -402,6 +409,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     setStatuses((cur) => ({ ...cur, ...st }));
     setOutputs((cur) => ({ ...cur, ...out }));
     setMemory(full.memory || {});
+    setRunInput(full.input || null);
   }
 
   const TERMINAL: Status[] = ["success", "failed", "canceled", "created", "skipped"];
@@ -495,6 +503,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         setRunId(run.id);
         setRunLabel(run.title);
         setRunMeta(run.id);
+        setRunInput(run.input || null);
         setRunning(true);
         setAppView("editor");
         setTab("canvas");
