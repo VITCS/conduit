@@ -57,8 +57,7 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(f string) string { return expandTemplate(run, secretExpand(project, n.Field(f))) }
 
-	owner, repo := normalizeOwnerRepo(ex("owner"), ex("repo"))
-	number := firstNonEmpty(ex("number"), ex("pr"))
+	owner, repo, number := prContextFromConfigOrMemory(run, ex("owner"), ex("repo"), firstNonEmpty(ex("number"), ex("pr")))
 	if owner == "" || repo == "" || number == "" {
 		return Result{Outcome: model.StatusFailed,
 			Output: map[string]any{"error": "owner, repo and number are required"},
@@ -81,6 +80,9 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 		User         struct {
 			Login string `json:"login"`
 		} `json:"user"`
+		Head struct {
+			Ref string `json:"ref"`
+		} `json:"head"`
 	}
 	metaRaw, status, err := githubDo(http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/pulls/%s", base, owner, repo, number), token, "", nil)
 	if err != nil || status != 200 {
@@ -132,7 +134,8 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 			Logs:    []string{"github_review: no api_key — produced a simulated review"},
 			MemoryWrites: map[string]any{
 				"review": review, "review_confidence": "medium", "diff_preview": diffPreview,
-				"pr_repo": owner + "/" + repo, "pr_number": number,
+				"pr_owner": owner, "pr_name": repo, "pr_repo": owner + "/" + repo, "pr_number": number,
+				"pr_head": meta.Head.Ref,
 			},
 		}
 	}
@@ -155,7 +158,8 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 		Logs:    []string{fmt.Sprintf("github_review: reviewed %s#%s (confidence %s)", owner+"/"+repo, number, confidence)},
 		MemoryWrites: map[string]any{
 			"review": text, "review_confidence": confidence, "diff_preview": diffPreview,
-			"pr_repo": owner + "/" + repo, "pr_number": number,
+			"pr_owner": owner, "pr_name": repo, "pr_repo": owner + "/" + repo, "pr_number": number,
+			"pr_head": meta.Head.Ref,
 		},
 	}
 }
@@ -199,8 +203,7 @@ func execGitHubMerge(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(f string) string { return expandTemplate(run, secretExpand(project, n.Field(f))) }
 
-	owner, repo := normalizeOwnerRepo(ex("owner"), ex("repo"))
-	number := firstNonEmpty(ex("number"), ex("pr"))
+	owner, repo, number := prContextFromConfigOrMemory(run, ex("owner"), ex("repo"), firstNonEmpty(ex("number"), ex("pr")))
 	if owner == "" || repo == "" || number == "" {
 		return Result{Outcome: model.StatusFailed,
 			Output: map[string]any{"error": "owner, repo and number are required"},

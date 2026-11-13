@@ -81,6 +81,7 @@ func TestGitHubReviewUsesGenerousDefaultMaxTokens(t *testing.T) {
 			"deletions":     0,
 			"changed_files": 1,
 			"user":          map[string]any{"login": "dev"},
+			"head":          map[string]any{"ref": "conduit/fix-review"},
 		})
 	}))
 	defer gh.Close()
@@ -104,6 +105,55 @@ func TestGitHubReviewUsesGenerousDefaultMaxTokens(t *testing.T) {
 	}
 	if gotMax != 4096 {
 		t.Errorf("max_tokens sent = %v, want 4096", gotMax)
+	}
+	if r.MemoryWrites["pr_head"] != "conduit/fix-review" {
+		t.Errorf("pr_head memory = %v, want conduit/fix-review", r.MemoryWrites["pr_head"])
+	}
+}
+
+func TestGitHubCommentFallsBackToReviewMemory(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		gotPath = req.URL.Path
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "html_url": "https://github.com/acme/store/pull/42#issuecomment-1"})
+	}))
+	defer srv.Close()
+
+	r := For("github_comment")(node("github_comment",
+		gf("api_base", srv.URL), gf("token", "ghtok"),
+		gf("owner", "${input.repository.owner.login}"), gf("repo", "${input.repository.name}"), gf("number", "${input.number}"),
+		gf("body", "review: ${memory.review}"),
+	), &model.Run{ProjectID: "default", Memory: map[string]any{
+		"pr_repo": "acme/store", "pr_number": 42, "review": "Looks good.",
+	}})
+	if r.Outcome != model.StatusSuccess {
+		t.Fatalf("want success, got %s (%v)", r.Outcome, r.Output)
+	}
+	if gotPath != "/repos/acme/store/issues/42/comments" {
+		t.Errorf("comment path = %q", gotPath)
+	}
+}
+
+func TestGitHubMergeFallsBackToReviewMemory(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		gotPath = req.URL.Path
+		_ = json.NewEncoder(w).Encode(map[string]any{"merged": true, "sha": "abc123"})
+	}))
+	defer srv.Close()
+
+	r := For("github_merge")(node("github_merge",
+		gf("api_base", srv.URL), gf("token", "ghtok"),
+		gf("owner", "${input.repository.owner.login}"), gf("repo", "${input.repository.name}"), gf("number", "${input.number}"),
+	), &model.Run{ProjectID: "default", Memory: map[string]any{
+		"pr_repo": "acme/store", "pr_number": "42",
+	}})
+	if r.Outcome != model.StatusCreated {
+		t.Fatalf("want created, got %s (%v)", r.Outcome, r.Output)
+	}
+	if gotPath != "/repos/acme/store/pulls/42/merge" {
+		t.Errorf("merge path = %q", gotPath)
 	}
 }
 

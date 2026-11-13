@@ -45,8 +45,8 @@ func execSecurityScan(n model.Node, run *model.Run) Result {
 	base = strings.TrimRight(base, "/")
 	repoURL := ex("repo_url")
 	if repoURL == "" || strings.Contains(repoURL, "${") {
-		owner, repo := ex("owner"), ex("repo")
-		if owner != "" && repo != "" && !strings.Contains(owner, "${") && !strings.Contains(repo, "${") {
+		owner, repo, _ := prContextFromConfigOrMemory(run, ex("owner"), ex("repo"), "")
+		if owner != "" && repo != "" {
 			repoURL = "https://github.com/" + owner + "/" + repo
 		}
 	}
@@ -65,7 +65,7 @@ func execSecurityScan(n model.Node, run *model.Run) Result {
 
 	ref := ex("ref")
 	if strings.Contains(ref, "${") {
-		ref = ""
+		ref = memoryString(run, "pr_head")
 	}
 	hdr := map[string]string{"X-Scan-Token": token}
 

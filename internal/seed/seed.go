@@ -70,9 +70,10 @@ func GitHubWorkflow() model.Workflow {
 		ID:        "wf_github",
 		ProjectID: GitHubProjectID,
 		Name:      "GitHub · Open + Review PRs",
-		// Rev 2 raises the Agent Review output cap. Rev 1 used the component's
-		// old 1024-token default, which truncated real PR reviews.
-		Rev: 2,
+		// Rev 3 makes review/merge steps read PR identity from the Agent Review's
+		// run memory and shows the review text at the human approval gate.
+		// Rev 2 raised the Agent Review output cap from the old 1024-token default.
+		Rev: 3,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "GitHub Event", X: 40, Y: 340,
 				Config: []model.Field{f("on", "github", "pull_request / manual open"), f("hook", "webhook", "POST /api/hooks/wf_github?token=…")}},
@@ -110,27 +111,28 @@ func GitHubWorkflow() model.Workflow {
 			{ID: "scan", Type: "security_scan", Icon: "approve", Kind: model.KindStep, Title: "Security Scan", X: 840, Y: 470,
 				Config: []model.Field{
 					f("base_url", "globe", "${var:audit_url}"),
-					f("owner", "github", "${input.repository.owner.login}"),
-					f("repo", "github", "${input.repository.name}"),
-					f("ref", "branch", "${input.pull_request.head.ref}"),
+					f("repo_url", "github", "https://github.com/${memory.pr_repo}"),
+					f("ref", "branch", "${memory.pr_head}"),
 					f("timeout_s", "clock", "600"),
 					f("token", "key", "${secret:scan_token}"),
 				}},
 			{ID: "appr", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Human Approval", X: 1120, Y: 470,
-				Config: []model.Field{f("approvers", "user", "maintainers"), f("timeout", "clock", "1d")}},
+				Config: []model.Field{
+					f("approvers", "user", "maintainers"),
+					f("timeout", "clock", "1d"),
+					f("summary", "file", "PR ${memory.pr_repo} #${memory.pr_number}\nConfidence: ${memory.review_confidence}\nSecurity: ${memory.security_summary}\n\n— Agent Review —\n${memory.review}\n\n— Diff Preview —\n${memory.diff_preview}"),
+				}},
 			{ID: "cmt", Type: "github_comment", Icon: "github", Kind: model.KindStep, Title: "Post Review", X: 1400, Y: 360,
 				Config: []model.Field{
-					f("owner", "github", "${input.repository.owner.login}"),
-					f("repo", "github", "${input.repository.name}"),
-					f("number", "key", "${input.number}"),
+					f("repo", "github", "${memory.pr_repo}"),
+					f("number", "key", "${memory.pr_number}"),
 					f("body", "file", "🤖 Agent review:\n\n${memory.review}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
 			{ID: "merge", Type: "github_merge", Icon: "github", Kind: model.KindStep, Title: "Merge PR", X: 1680, Y: 360,
 				Config: []model.Field{
-					f("owner", "github", "${input.repository.owner.login}"),
-					f("repo", "github", "${input.repository.name}"),
-					f("number", "key", "${input.number}"),
+					f("repo", "github", "${memory.pr_repo}"),
+					f("number", "key", "${memory.pr_number}"),
 					f("method", "key", "squash"),
 					f("token", "key", "${secret:github_token}"),
 				}},

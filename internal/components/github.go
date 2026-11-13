@@ -72,6 +72,42 @@ func normalizeOwnerRepo(owner, repo string) (string, string) {
 	return owner, repo
 }
 
+func unresolvedTemplate(s string) bool {
+	return strings.Contains(s, "${")
+}
+
+func usableConfigValue(s string) string {
+	s = strings.TrimSpace(s)
+	if unresolvedTemplate(s) {
+		return ""
+	}
+	return s
+}
+
+func memoryString(run *model.Run, key string) string {
+	if run == nil {
+		return ""
+	}
+	if v, ok := lookupPath(run.Memory, key); ok {
+		return strings.TrimSpace(fmt.Sprintf("%v", v))
+	}
+	return ""
+}
+
+func prContextFromConfigOrMemory(run *model.Run, owner, repo, number string) (string, string, string) {
+	owner = usableConfigValue(owner)
+	repo = usableConfigValue(repo)
+	number = usableConfigValue(number)
+	if repo == "" {
+		repo = firstNonEmpty(memoryString(run, "pr_repo"), memoryString(run, "last_pr_repo"))
+	}
+	if number == "" {
+		number = firstNonEmpty(memoryString(run, "pr_number"), memoryString(run, "last_pr_number"))
+	}
+	owner, repo = normalizeOwnerRepo(owner, repo)
+	return owner, repo, number
+}
+
 // githubError extracts a human-readable message from a GitHub error response body.
 func githubError(raw []byte, status int) string {
 	var e struct {
@@ -194,14 +230,14 @@ func prResult(owner, repo, head, base string, pr prInfo, logPrefix string) Resul
 
 // execGitHubComment posts a real comment on an issue or pull request. Required
 // config: owner, repo, number, body. Optional: token, api_base. Config values
-// support ${secret:NAME}, ${input.KEY} and ${memory.KEY} (so a webhook's PR
-// number flows straight in as ${input.number}).
+// support ${secret:NAME}, ${input.KEY} and ${memory.KEY}. When a review step has
+// already captured PR identity in memory, owner/repo/number fall back to that so
+// downstream approval/comment/merge steps do not need per-run PR edits.
 func execGitHubComment(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(field string) string { return expandTemplate(run, secretExpand(project, n.Field(field))) }
 
-	owner, repo := ex("owner"), ex("repo")
-	number := firstNonEmpty(ex("number"), ex("issue"), ex("pr"))
+	owner, repo, number := prContextFromConfigOrMemory(run, ex("owner"), ex("repo"), firstNonEmpty(ex("number"), ex("issue"), ex("pr")))
 	body := ex("body")
 	if owner == "" || repo == "" || number == "" || body == "" {
 		return Result{Outcome: model.StatusFailed,
