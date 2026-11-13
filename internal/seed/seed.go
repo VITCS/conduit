@@ -70,7 +70,9 @@ func GitHubWorkflow() model.Workflow {
 		ID:        "wf_github",
 		ProjectID: GitHubProjectID,
 		Name:      "GitHub · Open + Review PRs",
-		Rev:       1,
+		// Rev 2 raises the Agent Review output cap. Rev 1 used the component's
+		// old 1024-token default, which truncated real PR reviews.
+		Rev: 2,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "GitHub Event", X: 40, Y: 340,
 				Config: []model.Field{f("on", "github", "pull_request / manual open"), f("hook", "webhook", "POST /api/hooks/wf_github?token=…")}},
@@ -101,6 +103,7 @@ func GitHubWorkflow() model.Workflow {
 					f("number", "key", "${input.number}"),
 					f("provider", "agent", "anthropic"),
 					f("model", "agent", "claude-3-5-sonnet-latest"),
+					f("max_tokens", "size", "4096"),
 					f("api_key", "key", "${secret:llm_key}"),
 					f("token", "key", "${secret:github_token}"),
 				}},

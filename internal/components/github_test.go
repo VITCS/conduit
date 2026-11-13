@@ -1,6 +1,9 @@
 package components
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"conduit/internal/model"
@@ -62,6 +65,45 @@ func TestGitHubReviewRequiresToken(t *testing.T) {
 	r := For("github_review")(n, &model.Run{ProjectID: "default"})
 	if r.Outcome != model.StatusFailed || r.Output["hint"] == nil {
 		t.Fatalf("want failed with hint, got %s %v", r.Outcome, r.Output)
+	}
+}
+
+func TestGitHubReviewUsesGenerousDefaultMaxTokens(t *testing.T) {
+	var gotMax float64
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("Accept") == "application/vnd.github.diff" {
+			_, _ = w.Write([]byte("diff --git a/app.go b/app.go\n+package main\n"))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"title":         "Fix review",
+			"additions":     1,
+			"deletions":     0,
+			"changed_files": 1,
+			"user":          map[string]any{"login": "dev"},
+		})
+	}))
+	defer gh.Close()
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		gotMax, _ = body["max_tokens"].(float64)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content": []map[string]any{{"type": "text", "text": "CONFIDENCE: high\nLooks good."}},
+		})
+	}))
+	defer llm.Close()
+
+	r := For("github_review")(node("github_review",
+		gf("owner", "acme"), gf("repo", "store"), gf("number", "5"),
+		gf("api_base", gh.URL), gf("token", "ghtok"),
+		gf("provider", "anthropic"), gf("base_url", llm.URL), gf("api_key", "llmkey"), gf("model", "m"),
+	), &model.Run{ProjectID: "default"})
+	if r.Outcome != model.StatusSuccess {
+		t.Fatalf("want success, got %s (%v)", r.Outcome, r.Output)
+	}
+	if gotMax != 4096 {
+		t.Errorf("max_tokens sent = %v, want 4096", gotMax)
 	}
 }
 

@@ -50,8 +50,9 @@ func githubDo(method, url, token, accept string, payload any) ([]byte, int, erro
 }
 
 // execGitHubReview reviews a real PR with an LLM. Required: owner, repo, number.
-// Optional: provider/model/api_key (live review; falls back to a clear simulated
-// review when no api_key), token (${secret:github_token} by default), api_base.
+// Optional: provider/model/api_key/max_tokens (live review; falls back to a clear
+// simulated review when no api_key), token (${secret:github_token} by default),
+// api_base.
 func execGitHubReview(n model.Node, run *model.Run) Result {
 	project := runProject(run)
 	ex := func(f string) string { return expandTemplate(run, secretExpand(project, n.Field(f))) }
@@ -137,7 +138,7 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 	}
 
 	prompt := buildReviewPrompt(owner+"/"+repo, meta.Title, meta.User.Login, meta.Additions, meta.Deletions, meta.ChangedFiles, diff, truncated)
-	maxTokens := 1024
+	maxTokens := 4096
 	if v, e := strconv.Atoi(n.Field("max_tokens")); e == nil && v > 0 {
 		maxTokens = v
 	}
