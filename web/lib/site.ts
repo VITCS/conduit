@@ -6,6 +6,6 @@
 export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://conduit.app").replace(/\/+$/, "");
 
 export const SITE_NAME = "Conduit";
-export const SITE_TAGLINE = "Event-driven automation, with a human in the loop";
+export const SITE_TAGLINE = "AI workflow automation, on autopilot";
 export const SITE_DESCRIPTION =
-  "Conduit is a visual control plane for event-driven automation workflows — build pipelines on a live canvas, review agent output, and keep a human approval gate before anything merges or ships. Self-hosted.";
+  "Conduit Agent is an AI workflow automation platform: connect your tools, deploy intelligent AI agents, and automate multi-step work on a visual canvas — with human approval gates, live monitoring and self-hosted deployment.";

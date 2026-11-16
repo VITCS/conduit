@@ -18,14 +18,35 @@ async function signIn(page: Page, email: string, password: string) {
 
 test("landing page shows what the app does and offers sign in / create account", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText(/reviewed pull requests/i);
-  await expect(page.getByText(/open-source AI software factory/i).first()).toBeVisible();
-  // Real capabilities are described; no fake SSO is advertised.
-  await expect(page.getByRole("heading", { name: /A visible graph, a human gate, and real actions/i })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /From event to action in three steps/i })).toBeVisible();
-  await expect(page.getByText(/when the server has those providers configured/i)).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(/Your Workflows\.\s*On Autopilot\./i);
+  await expect(page.getByText(/Connect your tools\./i)).toBeVisible();
+  // Every major section is present.
+  for (const name of [
+    /See AI automation in action/i, /From idea to automation in minutes/i,
+    /More than automation\. Intelligent execution/i, /Everything connected\. One intelligent workspace/i,
+    /Automation for every team/i, /Stop managing tasks/i,
+  ]) {
+    await expect(page.getByRole("heading", { name })).toBeAttached();
+  }
+  // No fake SSO is advertised, and sample figures are labelled as demo data.
+  await expect(page.getByText(/when the server has those providers configured/i)).toBeAttached();
+  await expect(page.getByText(/illustrative demo data/i)).toBeAttached();
   await expect(page.getByTestId("nav-signin")).toBeVisible();
   await expect(page.getByTestId("hero-getstarted")).toBeVisible();
+});
+
+test("landing live demo runs the lead workflow end to end", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("hero-demo").click();
+  const run = page.getByTestId("demo-run");
+  await expect(run).toHaveText(/Run Workflow/i);
+  await run.click();
+  // The run executes step by step and finishes; the high-priority branch is taken.
+  await expect(run).toHaveText(/Run again/i, { timeout: 20_000 });
+  const timeline = page.locator(".cv-tl");
+  await expect(timeline).toContainText("Add to CRM");
+  await expect(timeline).toContainText("Personalized email");
+  await expect(timeline).not.toContainText("Add to nurture");
 });
 
 test("login → run → approve completes a run (live SSE + approval)", async ({ page }) => {

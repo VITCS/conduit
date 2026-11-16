@@ -11,10 +11,12 @@
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.1.1",
     "@xyflow/react": "12.3.5",
+    "framer-motion": "^11.18.2",
     "lucide-react": "0.454.0",
     "next": "^16.4.3",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "recharts": "^2.15.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
