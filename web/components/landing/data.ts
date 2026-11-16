@@ -1,261 +1,236 @@
-// Content + demo data for the marketing landing page.
+// Content for the marketing landing page.
 //
-// Everything in this file is presentation data. Numbers, leads, run history and
-// outcomes are ILLUSTRATIVE demo data (the page labels them as such) — nothing
-// here is read from a live deployment.
+// RULE FOR THIS FILE: every capability, integration and workflow named here must
+// exist in the product (see internal/seed, internal/components, internal/api).
+// The ticket, run and metric VALUES used in the animations are sample data and
+// the page labels them as such.
 
 export const REPO_URL = "https://github.com/VITCS/conduit";
-// "Talk to our team" target. Point this at a real contact channel (a mailto:,
-// a scheduling link, …) for your deployment.
-export const CONTACT_URL = `${REPO_URL}/issues/new`;
 export const DOCS_URL = "/docs";
 export const CATALOG_URL = "/docs#catalog";
 
 export const NAV_LINKS = [
-  { href: "#demo", label: "Product" },
+  { href: "#demo", label: "How it runs" },
   { href: "#agents", label: "Agents" },
   { href: "#integrations", label: "Integrations" },
-  { href: "#usecases", label: "Use cases" },
-  { href: "#pricing", label: "Pricing" },
+  { href: "#workflows", label: "Workflows" },
+  { href: "#opensource", label: "Open source" },
 ];
 
 /* ------------------------------------------------------------------ hero */
 
-export type HeroNodeId =
-  | "webhooks" | "database" | "agent" | "gmail" | "slack" | "sheets" | "crm" | "notion";
+export type HeroNodeId = "jira" | "issues" | "model" | "approver" | "repo" | "ci" | "pr" | "notion";
 
-// Coordinates are in the hero canvas viewBox (720 × 520). The orchestrator hub
-// sits in the middle; application nodes ring it.
+// Coordinates are in the hero canvas viewBox (720 × 520); the factory hub sits in
+// the middle and the systems it talks to ring it.
 export const HERO_HUB = { x: 360, y: 260 };
 export const HERO_NODES: { id: HeroNodeId; label: string; sub: string; x: number; y: number; tone: string }[] = [
-  { id: "webhooks", label: "Webhooks", sub: "trigger", x: 78, y: 260, tone: "cyan" },
-  { id: "database", label: "Database", sub: "store", x: 158, y: 86, tone: "slate" },
-  { id: "agent", label: "AI Agent", sub: "reason", x: 360, y: 46, tone: "violet" },
-  { id: "gmail", label: "Gmail", sub: "send", x: 562, y: 86, tone: "rose" },
-  { id: "slack", label: "Slack", sub: "notify", x: 642, y: 260, tone: "amber" },
-  { id: "sheets", label: "Google Sheets", sub: "append", x: 562, y: 434, tone: "green" },
-  { id: "crm", label: "CRM", sub: "upsert", x: 360, y: 474, tone: "blue" },
-  { id: "notion", label: "Notion", sub: "log", x: 158, y: 434, tone: "slate" },
+  { id: "jira", label: "Jira", sub: "ticket source", x: 78, y: 260, tone: "blue" },
+  { id: "issues", label: "GitHub Issues", sub: "ticket source", x: 158, y: 86, tone: "slate" },
+  { id: "model", label: "AI model", sub: "plan · code · review", x: 360, y: 46, tone: "violet" },
+  { id: "approver", label: "You", sub: "2 approval gates", x: 562, y: 86, tone: "amber" },
+  { id: "repo", label: "Git branch", sub: "pushed via API", x: 642, y: 260, tone: "cyan" },
+  { id: "ci", label: "CI checks", sub: "verified", x: 562, y: 434, tone: "green" },
+  { id: "pr", label: "Pull request", sub: "opened", x: 360, y: 474, tone: "green" },
+  { id: "notion", label: "Notion", sub: "ticket source", x: 158, y: 434, tone: "slate" },
 ];
-export const HERO_OUTPUTS: HeroNodeId[] = ["gmail", "slack", "sheets", "crm", "notion", "database"];
 
-/* ----------------------------------------------------------- lead demo */
+// One loop of the hero run: which node is being worked with, the pulse between
+// hub and node, and the log line that appears.
+export const HERO_SCRIPT: {
+  ms: number; node?: HeroNodeId; dir?: "in" | "out"; tag: string; text: string; tone?: string; bubble?: string;
+}[] = [
+  { ms: 900, node: "jira", dir: "in", tag: "intake", text: "ENG-482 received from Jira" },
+  { ms: 1300, node: "model", dir: "out", tag: "triage", text: "confidence 86 · ready to automate", tone: "violet", bubble: "Triage + planning…" },
+  { ms: 1500, node: "approver", dir: "out", tag: "gate 1", text: "plan approved by a human", tone: "amber", bubble: "Waiting for your approval…" },
+  { ms: 1300, node: "model", dir: "out", tag: "code", text: "change plan · 4 files", tone: "violet", bubble: "Coding agent writing files…" },
+  { ms: 1300, node: "approver", dir: "out", tag: "gate 2", text: "file changes approved", tone: "amber", bubble: "Waiting for your approval…" },
+  { ms: 900, node: "repo", dir: "out", tag: "apply", text: "pushed branch conduit/ENG-482" },
+  { ms: 1000, node: "ci", dir: "out", tag: "verify", text: "CI checks passed" },
+  { ms: 900, node: "pr", dir: "out", tag: "ship", text: "pull request #129 opened", tone: "ok" },
+];
 
-export type LeadNodeId =
-  | "form" | "analyze" | "enrich" | "dedupe" | "score" | "decide"
-  | "crm" | "slack" | "email" | "nurture" | "followup";
+/* ---------------------------------------------------------- factory demo */
 
-export interface LeadNodeDef {
-  id: LeadNodeId; label: string; sub: string; kind: "trigger" | "ai" | "action" | "logic";
-  x: number; y: number; ms: number; desc: string; input: string; output: string;
+export type DemoNodeId =
+  | "t1" | "src" | "triage" | "plan" | "impl" | "review" | "appr"
+  | "cplan" | "appr2" | "apply" | "vchk" | "pr" | "post";
+
+export interface DemoNodeDef {
+  id: DemoNodeId; label: string; sub: string; kind: "trigger" | "ai" | "action" | "gate";
+  x: number; y: number; ms: number; desc: string; output: string;
 }
 
-export const LEAD_NODES: LeadNodeDef[] = [
-  { id: "form", label: "Form submitted", sub: "Webhook trigger", kind: "trigger", x: 0, y: 0, ms: 420,
-    desc: "A website form posts to a workflow webhook. The JSON body becomes the run's input.",
-    input: "POST /api/hooks/wf_leads", output: "{ name, email, company, message }" },
-  { id: "analyze", label: "AI analyzes lead", sub: "AI Agent", kind: "ai", x: 0, y: 88, ms: 1100,
-    desc: "An agent reads the message, extracts intent and urgency, and writes a short summary to run memory.",
-    input: "${input.message}", output: "{ intent, urgency, summary }" },
-  { id: "enrich", label: "Enrich lead", sub: "HTTP request", kind: "action", x: 0, y: 176, ms: 760,
-    desc: "Calls an enrichment API for company size, industry and role. Retries automatically on a failed attempt.",
-    input: "${input.email}", output: "{ company_size, industry, role }" },
-  { id: "dedupe", label: "Check duplicates", sub: "CRM lookup", kind: "action", x: 0, y: 264, ms: 540,
-    desc: "Looks the contact up in the CRM so an existing record is updated instead of duplicated.",
-    input: "email", output: "{ exists: false }" },
-  { id: "score", label: "Assign lead score", sub: "AI Agent", kind: "ai", x: 0, y: 352, ms: 900,
-    desc: "Combines intent, enrichment and history into a 0–100 score that routes the lead.",
-    input: "${memory.summary} + enrichment", output: "{ score }" },
-  { id: "decide", label: "Score ≥ 70 ?", sub: "IF / ELSE", kind: "logic", x: 0, y: 440, ms: 320,
-    desc: "A conditional node. Its outcome decides which labelled edge the run follows.",
-    input: "${memory.score}", output: "high | low" },
-  { id: "crm", label: "Add to CRM", sub: "High priority", kind: "action", x: -128, y: 560, ms: 520,
-    desc: "Creates the deal and assigns an owner.", input: "lead + score", output: "{ deal_id }" },
-  { id: "slack", label: "Notify sales", sub: "Slack", kind: "action", x: -128, y: 648, ms: 420,
-    desc: "Posts the lead summary to the sales channel.", input: "${memory.summary}", output: "message sent" },
-  { id: "email", label: "Personalized email", sub: "AI Agent + email", kind: "ai", x: -128, y: 736, ms: 820,
-    desc: "An agent drafts a reply from the lead's own words; the email step sends it.", input: "summary + role", output: "email sent" },
-  { id: "nurture", label: "Add to nurture", sub: "Low priority", kind: "action", x: 128, y: 560, ms: 480,
-    desc: "Adds the contact to a nurture campaign.", input: "email", output: "campaign joined" },
-  { id: "followup", label: "Schedule follow-up", sub: "Wait + schedule", kind: "logic", x: 128, y: 648, ms: 420,
-    desc: "Schedules a check-in so the lead isn't forgotten.", input: "+14 days", output: "scheduled" },
+const COL2 = 292, ROW = 88;
+// The seeded "AI Factory · Ticket → PR" workflow, laid out in two columns.
+export const DEMO_NODES: DemoNodeDef[] = [
+  { id: "t1", label: "Ticket event", sub: "webhook · board task", kind: "trigger", x: 0, y: 0, ms: 380,
+    desc: "A run starts from a board task, a Jira / Notion / GitHub ticket, or a webhook.", output: "task_id, ticket" },
+  { id: "src", label: "Fetch ticket", sub: "jira", kind: "action", x: 0, y: ROW, ms: 520,
+    desc: "Loads the ticket's summary and description into run memory. A board task brings its own ticket, so no fetch is needed.", output: "ticket_key, ticket_summary" },
+  { id: "triage", label: "Triage · confidence", sub: "triage", kind: "ai", x: 0, y: ROW * 2, ms: 900,
+    desc: "Scores how ready the ticket is to automate: scope, context, a checkable outcome. Below the threshold it goes to a person instead of an agent.", output: "confidence, confidence_score" },
+  { id: "plan", label: "Refine & plan", sub: "agent", kind: "ai", x: 0, y: ROW * 3, ms: 1000,
+    desc: "An agent turns the ticket into a concrete plan and stores it for the next steps.", output: "plan" },
+  { id: "impl", label: "Draft implementation", sub: "agent", kind: "ai", x: 0, y: ROW * 4, ms: 900,
+    desc: "An agent drafts how the plan would be implemented.", output: "implementation" },
+  { id: "review", label: "Review confidence", sub: "agent", kind: "ai", x: 0, y: ROW * 5, ms: 800,
+    desc: "A second agent pass reviews the draft and states how confident it is.", output: "review" },
+  { id: "appr", label: "Human approval", sub: "approval · gate 1", kind: "gate", x: 0, y: ROW * 6, ms: 0,
+    desc: "The run pauses. The reviewer sees the ticket, the plan and the review, then approves or rejects.", output: "approved | rejected" },
+  { id: "cplan", label: "Plan changes", sub: "coding_plan", kind: "ai", x: COL2, y: 0, ms: 900,
+    desc: "Produces the exact file-level change plan: which files to create or modify, and why. Nothing is written yet.", output: "change_plan" },
+  { id: "appr2", label: "Approve changes", sub: "approval · gate 2", kind: "gate", x: COL2, y: ROW, ms: 0,
+    desc: "The run pauses again. The reviewer approves the exact list of files before any branch exists.", output: "approved | rejected" },
+  { id: "apply", label: "Apply changes", sub: "coding_apply", kind: "ai", x: COL2, y: ROW * 2, ms: 1200,
+    desc: "Writes each file (one model call per file) and pushes a branch through the GitHub Git Data API. No local checkout.", output: "work_branch, commit_sha" },
+  { id: "vchk", label: "Verify checks (CI)", sub: "github_checks", kind: "action", x: COL2, y: ROW * 3, ms: 1000,
+    desc: "Waits for the commit's CI check-runs. On a failure it loops back to Apply changes with the failing checks as feedback, up to twice.", output: "checks_summary" },
+  { id: "pr", label: "Open pull request", sub: "github_pr", kind: "action", x: COL2, y: ROW * 4, ms: 700,
+    desc: "Opens the pull request from the pushed branch and hands it to the review workflow's inbox.", output: "last_pr_url" },
+  { id: "post", label: "Post PR to ticket", sub: "jira", kind: "action", x: COL2, y: ROW * 5, ms: 480,
+    desc: "Comments the PR link, the plan and the check results back on the ticket.", output: "comment posted" },
+];
+export const DEMO_ORDER: DemoNodeId[] = DEMO_NODES.map((n) => n.id);
+export const DEMO_EDGES: { from: DemoNodeId; to: DemoNodeId; label?: string; side?: boolean }[] = [
+  { from: "t1", to: "src" }, { from: "src", to: "triage" }, { from: "triage", to: "plan" },
+  { from: "plan", to: "impl" }, { from: "impl", to: "review" }, { from: "review", to: "appr" },
+  { from: "appr", to: "cplan", label: "approved", side: true },
+  { from: "cplan", to: "appr2" }, { from: "appr2", to: "apply", label: "approved" },
+  { from: "apply", to: "vchk" }, { from: "vchk", to: "pr", label: "success" }, { from: "pr", to: "post" },
 ];
 
-export const LEAD_CHAIN: LeadNodeId[] = ["form", "analyze", "enrich", "dedupe", "score", "decide"];
-export const LEAD_BRANCH: Record<"high" | "low", LeadNodeId[]> = {
-  high: ["crm", "slack", "email"],
-  low: ["nurture", "followup"],
-};
-export const LEAD_EDGES: { from: LeadNodeId; to: LeadNodeId; label?: string }[] = [
-  { from: "form", to: "analyze" }, { from: "analyze", to: "enrich" }, { from: "enrich", to: "dedupe" },
-  { from: "dedupe", to: "score" }, { from: "score", to: "decide" },
-  { from: "decide", to: "crm", label: "score ≥ 70" }, { from: "crm", to: "slack" }, { from: "slack", to: "email" },
-  { from: "decide", to: "nurture", label: "else" }, { from: "nurture", to: "followup" },
+export const SAMPLE_TICKETS = [
+  { id: "clear" as const, key: "ENG-482", title: "Add SEO metadata, sitemap and robots.txt", score: 86,
+    body: "Add title/description/Open Graph tags to every page, generate sitemap.xml and robots.txt. Done when Lighthouse SEO passes." },
+  { id: "vague" as const, key: "ENG-511", title: "Make the dashboard better", score: 34,
+    body: "Users say it feels off. Please improve." },
 ];
-
-export const SAMPLE_LEADS = [
-  { id: "high" as const, name: "Dana Whitfield", company: "Northwind Logistics", role: "VP Engineering", score: 87,
-    message: "We need to automate onboarding for 40 customers a month — can we talk this week?" },
-  { id: "low" as const, name: "Sam Ortiz", company: "Personal project", role: "Student", score: 31,
-    message: "Just curious how this works. Is there a free tier?" },
+export const SAMPLE_PLAN = [
+  "Add a shared metadata helper with title, description and Open Graph tags.",
+  "Generate sitemap.xml and robots.txt from the route list.",
+  "Add JSON-LD structured data to the landing page.",
+];
+export const SAMPLE_CHANGES = [
+  { action: "modify", path: "app/layout.tsx", why: "export site metadata" },
+  { action: "create", path: "app/sitemap.ts", why: "generate sitemap.xml" },
+  { action: "create", path: "app/robots.ts", why: "generate robots.txt" },
+  { action: "create", path: "lib/site.ts", why: "shared SEO constants" },
 ];
 
 /* --------------------------------------------------------------- agents */
 
 export const AGENTS = [
-  { id: "research", name: "Research Agent", icon: "search", desc: "Gathers sources, reads them and returns a cited brief.",
-    tools: ["HTTP", "GraphQL", "Notion"], task: "Summarize this week's competitor launches",
-    steps: ["Search sources", "Read & extract", "Write brief"] },
-  { id: "sales", name: "Sales Agent", icon: "handshake", desc: "Qualifies inbound leads and drafts the first reply.",
-    tools: ["CRM", "Slack", "Email"], task: "Score the lead and draft a personal reply",
-    steps: ["Read lead", "Score fit", "Draft reply"] },
-  { id: "support", name: "Customer Support Agent", icon: "headphones", desc: "Triages tickets and answers from your own docs.",
-    tools: ["Webhooks", "Notion", "Slack"], task: "Classify the ticket and suggest a fix",
-    steps: ["Classify", "Find answer", "Reply / escalate"] },
-  { id: "analyst", name: "Data Analyst Agent", icon: "chart", desc: "Pulls numbers, explains the change, flags anomalies.",
-    tools: ["GraphQL", "HTTP", "Sheets"], task: "Explain yesterday's drop in sign-ups",
-    steps: ["Query data", "Compare periods", "Explain"] },
-  { id: "marketing", name: "Marketing Agent", icon: "megaphone", desc: "Turns one brief into channel-ready drafts for review.",
-    tools: ["Notion", "Slack", "HTTP"], task: "Draft launch posts from the release notes",
-    steps: ["Read brief", "Draft variants", "Send for approval"] },
-  { id: "ops", name: "Operations Agent", icon: "settings", desc: "Watches systems and runs the routine response.",
-    tools: ["Webhooks", "SSH", "GitHub"], task: "Health check failed — open an incident",
-    steps: ["Detect", "Diagnose", "Open incident"] },
+  { id: "triage", name: "Triage agent", icon: "gauge", step: "triage",
+    desc: "Scores every ticket for readiness and routes ambiguous work to a person.",
+    tools: ["ticket summary", "description", "threshold"], task: "Is ENG-482 scoped and checkable?",
+    steps: ["Read ticket", "Score readiness", "Route: agent or human"] },
+  { id: "plan", name: "Planning agent", icon: "list", step: "agent",
+    desc: "Refines a ticket into a concrete, reviewable plan.",
+    tools: ["ticket", "run memory"], task: "Turn the ticket into a plan",
+    steps: ["Read ticket", "Refine scope", "Write plan"] },
+  { id: "draft", name: "Implementation drafter", icon: "pen", step: "agent",
+    desc: "Drafts how the plan should be implemented before any code is written.",
+    tools: ["plan", "run memory"], task: "Draft the implementation approach",
+    steps: ["Read plan", "Draft approach", "Store draft"] },
+  { id: "review", name: "Review agent", icon: "check", step: "agent",
+    desc: "Reviews the draft and reports its confidence, so the approver has a second opinion.",
+    tools: ["plan", "draft"], task: "Review the draft and state confidence",
+    steps: ["Read draft", "Check against plan", "Report confidence"] },
+  { id: "coding", name: "Coding agent", icon: "code", step: "coding_plan · coding_apply",
+    desc: "Plans the file changes, then writes them and pushes a real branch.",
+    tools: ["GitHub Contents API", "Git Data API", "CI feedback"], task: "Write 4 files and push conduit/ENG-482",
+    steps: ["Plan file changes", "Write each file", "Push branch"] },
+  { id: "prreview", name: "PR review agent", icon: "git", step: "github_review",
+    desc: "Reads a pull request's diff and writes the review a human then approves.",
+    tools: ["PR diff", "PR comment"], task: "Review pull request #129",
+    steps: ["Fetch diff", "Review changes", "Draft review"] },
 ];
 
 /* --------------------------------------------------------- integrations */
 
-// support: how Conduit reaches the tool today.
-//   native — a built-in component; api — through the HTTP / GraphQL / webhook
-//   components with your own credentials; planned — not available yet.
-export type Support = "native" | "api" | "planned";
-export const INTEGRATIONS: { name: string; mark: string; color: string; support: Support; ring: 1 | 2 }[] = [
-  { name: "Slack", mark: "S", color: "#E0A82E", support: "native", ring: 1 },
-  { name: "GitHub", mark: "GH", color: "#9CA3AF", support: "native", ring: 1 },
-  { name: "Notion", mark: "N", color: "#CBD5E1", support: "native", ring: 1 },
-  { name: "OpenAI", mark: "OA", color: "#34D399", support: "native", ring: 1 },
-  { name: "Anthropic", mark: "A", color: "#F59E6B", support: "native", ring: 1 },
-  { name: "Webhooks", mark: "WH", color: "#22D3EE", support: "native", ring: 1 },
-  { name: "REST APIs", mark: "{ }", color: "#8B5CF6", support: "native", ring: 2 },
-  { name: "PostgreSQL", mark: "PG", color: "#60A5FA", support: "native", ring: 2 },
-  { name: "Gmail", mark: "M", color: "#F87171", support: "api", ring: 2 },
-  { name: "Google Sheets", mark: "GS", color: "#34D399", support: "api", ring: 2 },
-  { name: "Airtable", mark: "AT", color: "#FBBF24", support: "api", ring: 2 },
-  { name: "HubSpot", mark: "HS", color: "#FB923C", support: "api", ring: 2 },
-  { name: "Salesforce", mark: "SF", color: "#38BDF8", support: "api", ring: 2 },
-  { name: "Discord", mark: "D", color: "#818CF8", support: "api", ring: 2 },
-  { name: "MySQL", mark: "MY", color: "#94A3B8", support: "planned", ring: 2 },
-];
-export const SUPPORT_LABEL: Record<Support, string> = {
-  native: "Built in",
-  api: "Via HTTP / webhook blocks",
-  planned: "Planned",
-};
-export const SUPPORT_SHORT: Record<Support, string> = { native: "Built in", api: "Via API", planned: "Planned" };
-
-/* ------------------------------------------------------------ use cases */
-
-export const USE_CASES = [
-  { id: "sales", tab: "Sales & Marketing", title: "Route every lead in seconds",
-    body: "Score inbound leads with an agent, enrich them, and hand hot ones to sales with a drafted reply.",
-    flow: ["Form submitted", "AI scores lead", "Enrich", "IF score ≥ 70", "CRM + Slack", "Draft email"],
-    metric: "4 min → 20 sec", metricLabel: "lead response time" },
-  { id: "support", tab: "Customer Support", title: "Triage before a human opens the ticket",
-    body: "Classify, tag and answer routine tickets from your docs; escalate the rest with context attached.",
-    flow: ["Ticket webhook", "AI classifies", "Search docs", "IF confident", "Reply", "Else escalate"],
-    metric: "62%", metricLabel: "tickets resolved without a hand-off" },
-  { id: "eng", tab: "Software Engineering", title: "Tickets in, reviewed pull requests out",
-    body: "Conduit's AI Factory triages a ticket, plans the change, writes the branch, verifies CI and opens a PR — with two human approval gates.",
-    flow: ["Ticket", "Triage", "Plan", "Approve", "Coding agent", "Verify CI", "Open PR"],
-    metric: "2 gates", metricLabel: "human approvals on every change" },
-  { id: "finance", tab: "Finance & Operations", title: "Close the loop on invoices",
-    body: "Extract invoice fields, match them to purchase orders, and send only the exceptions for approval.",
-    flow: ["Invoice received", "AI extracts fields", "Match PO", "IF mismatch", "Approval gate", "Post to ledger"],
-    metric: "3 days → 4 hrs", metricLabel: "invoice cycle time" },
-  { id: "hr", tab: "Human Resources", title: "Onboarding that runs itself",
-    body: "One signed offer triggers accounts, equipment requests, a welcome plan and day-one reminders.",
-    flow: ["Offer signed", "Create accounts", "Request equipment", "Welcome plan", "Schedule check-ins"],
-    metric: "11 steps", metricLabel: "automated per new hire" },
-  { id: "bi", tab: "Business Intelligence", title: "A daily brief nobody has to build",
-    body: "Pull metrics on a schedule, let an agent explain what moved, and post the brief where the team reads it.",
-    flow: ["Schedule 9:00", "Query metrics", "AI explains change", "IF anomaly", "Alert", "Post brief"],
-    metric: "0 dashboards", metricLabel: "to check before stand-up" },
+// Everything here is a built-in component, trigger or backend.
+export const INTEGRATIONS: { name: string; mark: string; color: string; role: string; ring: 1 | 2 }[] = [
+  { name: "Jira", mark: "J", color: "#60A5FA", role: "tickets", ring: 1 },
+  { name: "Notion", mark: "N", color: "#CBD5E1", role: "tickets", ring: 1 },
+  { name: "GitHub", mark: "GH", color: "#9CA3AF", role: "issues · PRs · CI", ring: 1 },
+  { name: "Anthropic", mark: "A", color: "#F59E6B", role: "model", ring: 1 },
+  { name: "OpenAI", mark: "OA", color: "#34D399", role: "model", ring: 1 },
+  { name: "Slack", mark: "S", color: "#E0A82E", role: "notify", ring: 1 },
+  { name: "Webhooks", mark: "WH", color: "#22D3EE", role: "trigger", ring: 2 },
+  { name: "Schedules", mark: "CR", color: "#A78BFA", role: "cron", ring: 2 },
+  { name: "HTTP", mark: "{ }", color: "#8B5CF6", role: "REST", ring: 2 },
+  { name: "GraphQL", mark: "GQ", color: "#F472B6", role: "API", ring: 2 },
+  { name: "Model gateway", mark: "GW", color: "#FBBF24", role: "your own", ring: 2 },
+  { name: "Security scan", mark: "SC", color: "#F87171", role: "PR gate", ring: 2 },
+  { name: "PostgreSQL", mark: "PG", color: "#38BDF8", role: "storage", ring: 2 },
 ];
 
-/* ------------------------------------------------------------ analytics */
+/* ------------------------------------------------------------ workflows */
 
+export const WORKFLOWS = [
+  { id: "factory", tab: "Ticket → PR", title: "AI Factory: a ticket becomes a pull request",
+    body: "The flagship workflow. Agents triage, plan and write the change; you approve the plan and the exact files; CI must pass before the PR opens.",
+    flow: ["Ticket", "Triage", "Plan", "Approve", "Plan changes", "Approve", "Apply", "Verify CI", "Open PR"],
+    fact: "2 human gates", factLabel: "on every change, before any code reaches your repo" },
+  { id: "review", tab: "PR review & merge", title: "GitHub: review, scan, approve, merge",
+    body: "A pull request is reviewed by an agent and scanned; a person approves; Conduit posts the review and merges. PRs opened by the factory land in this workflow's inbox.",
+    flow: ["PR event", "Agent review", "Security scan", "Human approval", "Post review", "Merge PR"],
+    fact: "No merge", factLabel: "without a human approving the agent's review" },
+  { id: "intake", tab: "Board intake", title: "Issues land on a board, scored",
+    body: "A GitHub issue, Jira ticket or manual task becomes a Backlog card with a confidence score. Start it yourself, or auto-start tickets above your threshold.",
+    flow: ["Issue / ticket", "Intake webhook", "Confidence score", "Backlog", "Implement", "Verify", "Done"],
+    fact: "5 stages", factLabel: "Backlog · Implement · Verify · Done · Blocked" },
+  { id: "custom", tab: "Build your own", title: "Any event, your steps, your gates",
+    body: "Draw a workflow from the same blocks: webhook or schedule triggers, HTTP and Slack actions, conditions, waits and approval gates.",
+    flow: ["Webhook / schedule", "HTTP request", "IF / filter", "Approval", "Slack"],
+    fact: "30 blocks", factLabel: "component types to compose from" },
+];
+
+/* -------------------------------------------------------------- metrics */
+
+// The fields the Metrics view reports (GET /api/metrics). Values are sample data.
 export const KPIS = [
-  { label: "Workflows executed", value: 18432, suffix: "", decimals: 0, tone: "violet" },
-  { label: "Tasks automated", value: 126870, suffix: "", decimals: 0, tone: "cyan" },
-  { label: "Successful", value: 98.7, suffix: "%", decimals: 1, tone: "ok" },
-  { label: "Failed", value: 239, suffix: "", decimals: 0, tone: "bad" },
-  { label: "Avg execution", value: 3.4, suffix: "s", decimals: 1, tone: "slate" },
-  { label: "Time saved", value: 1284, suffix: " h", decimals: 0, tone: "ok" },
+  { label: "Tasks", value: 48, suffix: "", decimals: 0, tone: "violet" },
+  { label: "Done", value: 31, suffix: "", decimals: 0, tone: "ok" },
+  { label: "Blocked", value: 4, suffix: "", decimals: 0, tone: "bad" },
+  { label: "Avg lead time", value: 42, suffix: " min", decimals: 0, tone: "slate" },
+  { label: "CI retry rate", value: 12, suffix: "%", decimals: 0, tone: "cyan" },
+  { label: "Needed a human", value: 8, suffix: "%", decimals: 0, tone: "slate" },
 ];
-
-export const EXEC_SERIES = [
-  { d: "Mon", ok: 1120, fail: 14 }, { d: "Tue", ok: 1280, fail: 19 }, { d: "Wed", ok: 1210, fail: 11 },
-  { d: "Thu", ok: 1460, fail: 22 }, { d: "Fri", ok: 1390, fail: 16 }, { d: "Sat", ok: 870, fail: 7 },
-  { d: "Sun", ok: 790, fail: 6 }, { d: "Mon", ok: 1340, fail: 15 }, { d: "Tue", ok: 1510, fail: 18 },
-  { d: "Wed", ok: 1580, fail: 13 }, { d: "Thu", ok: 1720, fail: 21 }, { d: "Fri", ok: 1650, fail: 12 },
-  { d: "Sat", ok: 980, fail: 8 }, { d: "Sun", ok: 1030, fail: 9 },
+export const BY_STAGE = [
+  { stage: "Backlog", n: 7 }, { stage: "Implement", n: 4 }, { stage: "Verify", n: 2 },
+  { stage: "Done", n: 31 }, { stage: "Blocked", n: 4 },
 ];
-export const TIME_SAVED = [
-  { team: "Sales", h: 312 }, { team: "Support", h: 286 }, { team: "Eng", h: 244 },
-  { team: "Finance", h: 198 }, { team: "HR", h: 121 }, { team: "BI", h: 123 },
+export const STAGE_DWELL = [
+  { stage: "Backlog", min: 18 }, { stage: "Implement", min: 14 }, { stage: "Verify", min: 9 },
 ];
-export const LIVE_FEED = [
-  { wf: "Lead routing", status: "ok", ms: 2140 }, { wf: "Ticket triage", status: "ok", ms: 1380 },
-  { wf: "Invoice match", status: "wait", ms: 0 }, { wf: "Daily brief", status: "ok", ms: 4820 },
-  { wf: "AI Factory · PR", status: "ok", ms: 61200 }, { wf: "Onboarding", status: "ok", ms: 3310 },
-  { wf: "Lead routing", status: "fail", ms: 910 }, { wf: "Health check", status: "ok", ms: 640 },
+export const RUN_FEED = [
+  { wf: "AI Factory · ENG-482", status: "ok", note: "PR #129 opened" },
+  { wf: "GitHub review · #129", status: "wait", note: "awaiting approval" },
+  { wf: "AI Factory · ENG-490", status: "ok", note: "CI recovered on retry" },
+  { wf: "AI Factory · ENG-511", status: "fail", note: "needs clarification" },
+  { wf: "AI Factory · ENG-479", status: "ok", note: "PR #127 opened" },
+  { wf: "GitHub review · #127", status: "ok", note: "merged" },
 ] as const;
-
-/* -------------------------------------------------------------- pricing */
-
-// Prices are PLACEHOLDERS — set real values (or remove the section) before
-// publishing. `price: null` renders as "Custom".
-export const PRICING: {
-  id: string; name: string; blurb: string; price: string | null; period: string;
-  cta: "start" | "contact"; featured?: boolean; features: string[];
-}[] = [
-  { id: "starter", name: "Starter", blurb: "For individuals exploring automation.", price: "$—", period: "/ month",
-    cta: "start",
-    features: ["Visual workflow builder", "Core components & webhooks", "Human approval gates", "Community support"] },
-  { id: "pro", name: "Professional", blurb: "For growing teams and businesses.", price: "$—", period: "/ user / month",
-    cta: "start", featured: true,
-    features: ["Everything in Starter", "AI agents on your own model keys", "Projects, roles & members",
-      "Schedules, retries & run history", "Priority support"] },
-  { id: "ent", name: "Enterprise", blurb: "Advanced orchestration, security and governance.", price: null, period: "",
-    cta: "contact",
-    features: ["Everything in Professional", "Self-hosted, single binary", "SSO sign-in & audit trail",
-      "Encrypted secrets & egress controls", "Deployment guidance"] },
-];
-export const PRICING_COMPARE: { feature: string; values: [string, string, string] }[] = [
-  { feature: "Workflows", values: ["Placeholder", "Placeholder", "Unlimited"] },
-  { feature: "AI agent steps", values: ["—", "Included", "Included"] },
-  { feature: "Human approval gates", values: ["Included", "Included", "Included"] },
-  { feature: "Projects & roles", values: ["1 project", "Multiple", "Multiple + SSO"] },
-  { feature: "Audit trail", values: ["—", "—", "Included"] },
-];
 
 /* ------------------------------------------------------------------ faq */
 
 export const FAQ = [
-  { q: "What is AI workflow automation?",
-    a: "It's a workflow — triggers, steps and conditions — where some steps are performed by an AI agent. In Conduit you draw the workflow as a graph; agent steps read context, decide and write results that later steps use." },
-  { q: "Do I need coding experience?",
-    a: "No to build and run workflows: you connect blocks on a canvas and fill in fields. Connecting a tool that isn't built in uses the HTTP or webhook block, which means knowing that tool's API URL and key." },
-  { q: "Can I connect my existing applications?",
-    a: "Yes. Slack, GitHub, Jira, Notion and the major model providers are built in. Anything with an HTTP API or webhooks connects through the HTTP, GraphQL and webhook blocks using credentials you store as encrypted secrets." },
-  { q: "How do AI agents work?",
-    a: "An agent step sends a templated prompt — filled with the trigger payload and results from earlier steps — to the model you choose (Anthropic, OpenAI or your own gateway) and stores the answer for the next step. The workflow graph, not the model, decides what happens next." },
-  { q: "Can workflows run automatically?",
-    a: "Yes. A workflow starts from a webhook, a schedule, an event from a connected tool, or a manual run. Queued runs are picked up by workers and executed without anyone watching." },
-  { q: "Can I include human approval steps?",
-    a: "Yes. An approval gate pauses the run, shows the reviewer what the agent proposed, and continues only after Approve — or follows the rejected path." },
-  { q: "How do I monitor workflow executions?",
-    a: "Every run streams live onto the canvas: each step shows its state, output and logs. Run history, a task board and metrics are built in, and a failed step can be re-run from where it stopped." },
-  { q: "Is my data secure?",
-    a: "Conduit is self-hosted, so workflows and data stay on your infrastructure. Secrets are encrypted at rest, access is role-based per project, and outbound requests to private networks are blocked unless you allow them." },
+  { q: "What does Conduit actually do?",
+    a: "It takes a ticket and produces a pull request. Agents triage the ticket, plan the change and write the code on a branch; you approve the plan and the exact file changes; CI has to pass; then the PR opens and is handed to a review workflow. Every step is a node on a graph you can watch live." },
+  { q: "Can it push code or merge without me?",
+    a: "The Ticket → PR workflow has two approval gates: one on the plan, one on the exact list of files. Nothing is written to your repository before the second approval. In the review workflow a person approves before anything is merged. A rejection sends the run to a \"needs attention\" state." },
+  { q: "Where do tickets come from?",
+    a: "Jira and Notion (fetched by the workflow), GitHub issues and Jira tickets posted to the intake webhook, any webhook, or a task you add on the board by hand." },
+  { q: "Which AI models does it use?",
+    a: "Whichever you configure: Anthropic, OpenAI, or your own gateway. You supply the API key as an encrypted project secret and pick the model per project." },
+  { q: "What happens when CI fails?",
+    a: "The Verify step reads the commit's check-runs. If they fail, the run loops back to the coding agent with the failing checks as feedback, up to two times. If it still fails, the run stops and the task is marked Blocked for a person." },
+  { q: "What if a step fails or I don't need one?",
+    a: "Any step can be skipped with a checkbox on its node, and a failed run can be re-run from the stage that failed, keeping the work that already succeeded. You can also cancel a run at any point." },
+  { q: "Is it self-hosted? Where does my code go?",
+    a: "Conduit is open source and runs as a single binary on your infrastructure, with Postgres or an in-memory store. It talks to your repository through the GitHub API with a token you provide, and sends ticket and file content to the model provider you chose." },
+  { q: "Do I have to use the AI Factory?",
+    a: "No. The same canvas builds any event-driven workflow from the built-in blocks: webhooks, schedules, HTTP and Slack calls, conditions and approval gates." },
 ];

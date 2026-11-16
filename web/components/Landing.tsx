@@ -1,13 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { MotionConfig, motion, useMotionValueEvent, useScroll, useTransform } from "framer-motion";
-import { ArrowRight, Bot, Github, Moon, Play, Plug, Sun, Zap } from "lucide-react";
+import { ArrowRight, GitPullRequest, Github, Moon, Play, Sun, Ticket, UserCheck } from "lucide-react";
 import "./landing/landing.css";
 import { DOCS_URL, NAV_LINKS, REPO_URL } from "./landing/data";
 import { HeroCanvas } from "./landing/HeroCanvas";
-import { LeadDemo } from "./landing/LeadDemo";
+import { FactoryDemo } from "./landing/FactoryDemo";
 import { Agents, Capabilities, HowItWorks, Integrations } from "./landing/Sections";
-import { Analytics, Faq, FinalCta, Pricing, UseCases } from "./landing/Sections2";
+import { Faq, FinalCta, Metrics, OpenSource, Workflows } from "./landing/Sections2";
 import { EASE, Mark } from "./landing/ui";
 
 type Theme = "dark" | "light";
@@ -61,7 +61,7 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
               {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
             <button className="cv-btn ghost sm" onClick={onSignIn} data-testid="nav-signin">Sign in</button>
-            <button className="cv-btn primary sm" onClick={onGetStarted} data-testid="nav-getstarted">Start Building Free</button>
+            <button className="cv-btn primary sm" onClick={onGetStarted} data-testid="nav-getstarted">Get started</button>
           </div>
         </header>
 
@@ -70,27 +70,28 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
           <section className="cv-hero">
             <motion.span className="cv-eyebrow"
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE }}>
-              <Zap size={13} /> AI workflow automation
+              <GitPullRequest size={13} /> Open-source AI software factory
             </motion.span>
             <motion.h1
               initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.06 }}>
-              Your Workflows.<br /><span className="cv-grad">On Autopilot.</span>
+              Tickets in.<br /><span className="cv-grad">Reviewed pull requests out.</span>
             </motion.h1>
             <motion.p className="cv-lead"
               initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.14 }}>
-              Build intelligent workflows, deploy AI agents, and connect all your business tools.
-              Automate repetitive work and focus on what actually matters.
+              Conduit turns a ticket into a pull request. AI agents triage it, plan the change and write the
+              code on a branch. You approve the plan and the exact files, CI has to pass, and every step is a
+              node on a graph you can watch.
             </motion.p>
             <motion.div className="cv-cta-row ctr"
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.22 }}>
               <button className="cv-btn primary lg" onClick={onGetStarted} data-testid="hero-getstarted">
-                Start Building Free <ArrowRight size={17} />
+                Get started <ArrowRight size={17} />
               </button>
-              <a className="cv-btn ghost lg" href="#demo" data-testid="hero-demo"><Play size={15} /> Explore Live Demo</a>
+              <a className="cv-btn ghost lg" href="#demo" data-testid="hero-demo"><Play size={15} /> Watch a ticket run</a>
             </motion.div>
             <motion.p className="cv-trust"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.34 }}>
-              No complex setup. No coding required.
+              Self-hosted · MIT licensed · bring your own model and repository
             </motion.p>
 
             <motion.div className="cv-hero-stage"
@@ -100,20 +101,20 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
             </motion.div>
 
             <ul className="cv-pillars" aria-label="What Conduit does">
-              <li><Plug size={16} /> Connect your tools.</li>
-              <li><Bot size={16} /> Deploy intelligent AI agents.</li>
-              <li><Zap size={16} /> Automate everything.</li>
+              <li><Ticket size={16} /> Jira, Notion and GitHub tickets in.</li>
+              <li><UserCheck size={16} /> A human approves twice.</li>
+              <li><GitPullRequest size={16} /> A CI-verified pull request out.</li>
             </ul>
           </section>
 
-          <LeadDemo />
+          <FactoryDemo />
           <HowItWorks />
           <Agents />
           <Integrations />
+          <Workflows />
           <Capabilities />
-          <UseCases />
-          <Analytics />
-          <Pricing onGetStarted={onGetStarted} />
+          <Metrics />
+          <OpenSource onGetStarted={onGetStarted} />
           <Faq />
           <FinalCta onGetStarted={onGetStarted} />
         </main>
@@ -129,14 +130,15 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
             </nav>
           </div>
           <p>
-            Self-hosted · single binary · email or Google / GitHub sign-in when the server has those providers
-            configured. Workflow runs, figures and outcomes shown on this page are illustrative demo data.
+            Self-hosted · single binary · MIT licensed · email or Google / GitHub sign-in when the server has those
+            providers configured. The tickets, runs and metric values shown on this page are sample data; the
+            workflows, steps and integrations are the ones that ship in the product.
           </p>
         </footer>
 
         {/* always-reachable primary action on small screens */}
         <div className={`cv-mcta${scrolled ? " show" : ""}`}>
-          <button className="cv-btn primary block" onClick={onGetStarted}>Start Building Free <ArrowRight size={16} /></button>
+          <button className="cv-btn primary block" onClick={onGetStarted}>Get started <ArrowRight size={16} /></button>
         </div>
       </div>
     </MotionConfig>

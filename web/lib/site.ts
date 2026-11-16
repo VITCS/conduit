@@ -6,6 +6,6 @@
 export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://conduit.app").replace(/\/+$/, "");
 
 export const SITE_NAME = "Conduit";
-export const SITE_TAGLINE = "AI workflow automation, on autopilot";
+export const SITE_TAGLINE = "Tickets in. Reviewed pull requests out.";
 export const SITE_DESCRIPTION =
-  "Conduit Agent is an AI workflow automation platform: connect your tools, deploy intelligent AI agents, and automate multi-step work on a visual canvas — with human approval gates, live monitoring and self-hosted deployment.";
+  "Conduit is an open-source, self-hosted AI software factory: a Jira, Notion or GitHub ticket becomes a CI-verified pull request through triage, planning, human approval and a coding agent, on a visual workflow graph you can watch live.";

@@ -89,7 +89,7 @@
 .cv-eyebrow, .cv-kicker { display: inline-flex; align-items: center; gap: 7px; font-family: var(--cv-mono); font-size: 11.5px; font-weight: 600;
   letter-spacing: .1em; text-transform: uppercase; color: var(--cv-violet-2); padding: 6px 13px; border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--cv-violet) 38%, transparent); background: color-mix(in srgb, var(--cv-violet) 10%, transparent); }
-.cv-hero h1 { margin-top: 22px; font-size: clamp(42px, 8.4vw, 96px); line-height: .98; letter-spacing: -.045em; font-weight: 700; }
+.cv-hero h1 { margin-top: 22px; font-size: clamp(40px, 6.4vw, 80px); line-height: 1.02; letter-spacing: -.045em; font-weight: 700; }
 .cv-grad { background: linear-gradient(100deg, #A78BFA 0%, #8B5CF6 30%, #22D3EE 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
   background-size: 180% 100%; animation: cvGrad 9s ease-in-out infinite alternate; }
 .cvl[data-lt="light"] .cv-grad { background-image: linear-gradient(100deg, #7C3AED 0%, #6D28D9 35%, #0891B2 100%); }
@@ -551,6 +551,49 @@
     transform: translateY(110%); transition: transform .3s ease; }
   .cv-mcta.show { transform: none; }
 }
+
+/* factory demo: approval gates, outcome, extra node states */
+.cv-fn.k-gate .cv-fn-ico { color: var(--cv-warn); background: color-mix(in srgb, var(--cv-warn) 14%, transparent); }
+.cv-fn.k-action .cv-fn-ico { color: var(--cv-cyan); background: color-mix(in srgb, var(--cv-cyan) 10%, transparent); }
+.cv-fn.s-waiting { border-color: var(--cv-warn); background: color-mix(in srgb, var(--cv-warn) 9%, var(--cv-s2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cv-warn) 20%, transparent), 0 0 26px color-mix(in srgb, var(--cv-warn) 35%, transparent); }
+.cv-fn.s-waiting .cv-fn-st { color: var(--cv-warn); }
+.cv-fn.s-waiting .cv-fn-bar { background: linear-gradient(90deg, transparent, var(--cv-warn)); }
+.cv-fn.s-failed { border-color: var(--cv-bad); background: color-mix(in srgb, var(--cv-bad) 8%, var(--cv-s2)); }
+.cv-fn.s-failed .cv-fn-st { color: var(--cv-bad); }
+.cv-st.s-waiting { color: var(--cv-warn); border-color: var(--cv-warn); }
+.cv-st.s-failed { color: var(--cv-bad); border-color: var(--cv-bad); }
+.cv-gate { border: 1px solid color-mix(in srgb, var(--cv-warn) 60%, transparent); border-radius: 14px; padding: 14px; background: color-mix(in srgb, var(--cv-warn) 7%, var(--cv-s2)); }
+.cv-gate-h { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 14.5px; color: var(--cv-warn); }
+.cv-gate-t { margin-top: 8px; font-size: 13.5px; } .cv-gate-t b { font-family: var(--cv-mono); font-size: 12px; margin-right: 6px; color: var(--cv-muted); }
+.cv-gate-plan { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--cv-muted); }
+.cv-gate-files { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.cv-gate-files li { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cv-gate-files em { font-style: normal; font-family: var(--cv-mono); font-size: 10px; padding: 1px 6px; border-radius: 6px; color: var(--cv-cyan); border: 1px solid color-mix(in srgb, var(--cv-cyan) 45%, transparent); }
+.cv-gate-files em.create { color: var(--cv-ok); border-color: color-mix(in srgb, var(--cv-ok) 45%, transparent); }
+.cv-gate-files code { font-family: var(--cv-mono); color: var(--cv-fg); } .cv-gate-files span { color: var(--cv-faint); }
+.cv-gate-note { margin-top: 10px; font-size: 12px; color: var(--cv-faint); }
+.cv-gate-b { display: flex; gap: 8px; margin-top: 14px; }
+.cv-gate-b button { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 650; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--cv-line2); background: var(--cv-s1); color: var(--cv-fg); }
+.cv-gate-b button.ok { background: var(--cv-ok); border-color: transparent; color: #04130D; }
+.cv-gate-b button:hover { filter: brightness(1.08); }
+.cv-outcome { margin-top: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cv-ok) 55%, transparent); background: color-mix(in srgb, var(--cv-ok) 8%, transparent); font-size: 13px; }
+.cv-outcome.bad { border-color: color-mix(in srgb, var(--cv-bad) 55%, transparent); background: color-mix(in srgb, var(--cv-bad) 8%, transparent); }
+.cv-outcome b { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--cv-ok); } .cv-outcome.bad b { color: var(--cv-bad); }
+.cv-outcome p { margin-top: 5px; color: var(--cv-muted); }
+.cv-agent-live code { font-family: var(--cv-mono); font-size: 10.5px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--cv-line2); color: var(--cv-muted); }
+.cv-int-grid em { color: var(--cv-faint); overflow: hidden; text-overflow: ellipsis; padding-left: 8px; flex: 1 1 0; min-width: 0; text-align: right; }
+.cv-int-grid .cv-int { flex: 0 0 auto; } .cv-int-grid .cv-int-name { overflow: visible; }
+.cv-int-note { color: var(--cv-faint); font-size: 13px; max-width: 520px; }
+
+/* open source */
+.cv-oss { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: center; padding: clamp(18px, 3vw, 30px); border-radius: 20px; border: 1px solid var(--cv-line); background: var(--cv-s1); }
+.cv-oss-copy ul { list-style: none; margin: 0 0 24px; padding: 0; display: flex; flex-direction: column; gap: 12px; color: var(--cv-muted); font-size: 15.5px; }
+.cv-oss-copy li { display: flex; gap: 10px; align-items: flex-start; } .cv-oss-copy li svg { color: var(--cv-ok); flex: 0 0 auto; margin-top: 4px; }
+.cv-term { border: 1px solid var(--cv-line2); border-radius: 14px; overflow: hidden; background: #070A11; min-width: 0; }
+.cv-term-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 12px; color: #94A3B8; }
+.cv-term pre { margin: 0; padding: 16px; overflow-x: auto; font-family: var(--cv-mono); font-size: 12.5px; line-height: 1.75; color: #E2E8F0; }
+.cv-term .c { color: #64748B; } .cv-term .p { color: #22D3EE; user-select: none; }
+@media (max-width: 820px) { .cv-oss { grid-template-columns: 1fr; } }
 
 @media (prefers-reduced-motion: reduce) {
   .cvl { scroll-behavior: auto; }

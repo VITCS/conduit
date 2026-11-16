@@ -1,54 +1,51 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "framer-motion";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowRight, Check, ChevronDown, ChevronRight, MessageSquare, TrendingUp } from "lucide-react";
-import {
-  CONTACT_URL, EXEC_SERIES, FAQ, KPIS, LIVE_FEED, PRICING, PRICING_COMPARE, TIME_SAVED, USE_CASES,
-} from "./data";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, Github, ShieldCheck } from "lucide-react";
+import { BY_STAGE, DOCS_URL, FAQ, KPIS, REPO_URL, RUN_FEED, STAGE_DWELL, WORKFLOWS } from "./data";
 import { CountUp, DemoTag, EASE, Reveal, SectionHead } from "./ui";
 
-/* -------------------------------------------------------------- use cases */
+/* -------------------------------------------------------------- workflows */
 
-export function UseCases() {
-  const [active, setActive] = useState(USE_CASES[0].id);
-  const uc = USE_CASES.find((u) => u.id === active)!;
+export function Workflows() {
+  const [active, setActive] = useState(WORKFLOWS[0].id);
+  const wf = WORKFLOWS.find((u) => u.id === active)!;
   return (
-    <section className="cv-sec" id="usecases">
-      <SectionHead kicker="Use cases" title="Automation for every team." />
+    <section className="cv-sec" id="workflows">
+      <SectionHead kicker="Workflows" title="Two workflows ship ready. The canvas builds the rest." />
       <Reveal>
-        <div className="cv-tabs" role="tablist" aria-label="Teams">
-          {USE_CASES.map((u) => (
-            <button key={u.id} role="tab" id={`uc-tab-${u.id}`} aria-selected={active === u.id}
-              aria-controls="uc-panel" className={active === u.id ? "on" : ""} onClick={() => setActive(u.id)}>
+        <div className="cv-tabs" role="tablist" aria-label="Workflows">
+          {WORKFLOWS.map((u) => (
+            <button key={u.id} role="tab" id={`wf-tab-${u.id}`} aria-selected={active === u.id}
+              aria-controls="wf-panel" className={active === u.id ? "on" : ""} onClick={() => setActive(u.id)}>
               {u.tab}
               {active === u.id && <motion.span layoutId="cvTabPill" className="pill" transition={{ duration: 0.3, ease: EASE }} />}
             </button>
           ))}
         </div>
-        <div className="cv-uc" role="tabpanel" id="uc-panel" aria-labelledby={`uc-tab-${uc.id}`}>
+        <div className="cv-uc" role="tabpanel" id="wf-panel" aria-labelledby={`wf-tab-${wf.id}`}>
           <AnimatePresence mode="wait">
-            <motion.div key={uc.id} className="cv-uc-in"
+            <motion.div key={wf.id} className="cv-uc-in"
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.28, ease: EASE }}>
               <div className="cv-uc-copy">
-                <h3>{uc.title}</h3>
-                <p>{uc.body}</p>
+                <h3>{wf.title}</h3>
+                <p>{wf.body}</p>
                 <div className="cv-uc-metric">
-                  <TrendingUp size={16} />
-                  <div><b>{uc.metric}</b><span>{uc.metricLabel}</span></div>
-                  <DemoTag>Illustrative</DemoTag>
+                  <ShieldCheck size={16} />
+                  <div><b>{wf.fact}</b><span>{wf.factLabel}</span></div>
                 </div>
               </div>
-              <div className="cv-uc-flow" aria-label={`Workflow: ${uc.flow.join(", then ")}`}>
-                {uc.flow.map((s, i) => (
-                  <motion.div key={s} className="cv-uc-step"
+              <div className="cv-uc-flow" aria-label={`Workflow: ${wf.flow.join(", then ")}`}>
+                {wf.flow.map((s, i) => (
+                  <motion.div key={`${s}-${i}`} className="cv-uc-step"
                     initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3, delay: 0.12 + i * 0.09 }}>
-                    <span className={`cv-mini-node ${i === 0 ? "c" : /AI|agent|Triage|Plan/i.test(s) ? "v" : /^IF|Approve|Approval|Else/i.test(s) ? "g" : ""}`}>
+                    transition={{ duration: 0.3, delay: 0.12 + i * 0.07 }}>
+                    <span className={`cv-mini-node ${i === 0 ? "c" : /agent|Triage|^Plan|Apply|score/i.test(s) ? "v" : /Approv/i.test(s) ? "g" : ""}`}>
                       <i>{String(i + 1).padStart(2, "0")}</i>{s}
                     </span>
-                    {i < uc.flow.length - 1 && <ChevronRight size={14} className="arr" />}
+                    {i < wf.flow.length - 1 && <ChevronRight size={14} className="arr" />}
                   </motion.div>
                 ))}
               </div>
@@ -60,24 +57,25 @@ export function UseCases() {
   );
 }
 
-/* -------------------------------------------------------------- analytics */
+/* ---------------------------------------------------------------- metrics */
 
 const tipStyle = {
   background: "var(--cv-s1)", border: "1px solid var(--cv-line2)", borderRadius: 10,
   color: "var(--cv-fg)", fontSize: 12, boxShadow: "0 10px 30px rgba(0,0,0,.35)",
 };
+const axis = { fill: "var(--cv-faint)", fontSize: 11 };
 
-function LiveFeed({ on }: { on: boolean }) {
+function RunFeed({ on }: { on: boolean }) {
   const reduced = useReducedMotion();
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!on || reduced) return;
-    const id = window.setInterval(() => setTick((t) => t + 1), 2400);
+    const id = window.setInterval(() => setTick((t) => t + 1), 2600);
     return () => window.clearInterval(id);
   }, [on, reduced]);
-  const rows = Array.from({ length: 5 }, (_, i) => {
-    const n = tick + 4 - i; // newest first
-    return { n, ...LIVE_FEED[n % LIVE_FEED.length] };
+  const rows = Array.from({ length: 4 }, (_, i) => {
+    const n = tick + 3 - i; // newest first
+    return { n, ...RUN_FEED[n % RUN_FEED.length] };
   });
   return (
     <ul className="cv-feed">
@@ -87,8 +85,7 @@ function LiveFeed({ on }: { on: boolean }) {
             initial={{ opacity: 0, y: -14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}>
             <i /><span className="wf">{r.wf}</span>
-            <span className="id">#{2300 + r.n}</span>
-            <span className="st">{r.status === "ok" ? `${(r.ms / 1000).toFixed(1)}s` : r.status === "wait" ? "awaiting approval" : "failed · retried"}</span>
+            <span className="st">{r.note}</span>
           </motion.li>
         ))}
       </AnimatePresence>
@@ -96,24 +93,23 @@ function LiveFeed({ on }: { on: boolean }) {
   );
 }
 
-export function Analytics() {
+export function Metrics() {
   const ref = useRef<HTMLDivElement>(null);
   const seen = useInView(ref, { once: true, margin: "-120px" });
   const live = useInView(ref, { margin: "-80px" });
   return (
-    <section className="cv-sec" id="analytics">
+    <section className="cv-sec" id="metrics">
       <SectionHead
-        kicker="Analytics & monitoring"
-        title="Know what ran, what failed and what it saved."
-        sub="A live view of every workflow: executions, outcomes, timings and history."
+        kicker="Board & metrics"
+        title="See where work is, and where it gets stuck."
+        sub="Every ticket is a card that moves Backlog → Implement → Verify → Done. The Metrics view reports the numbers below from your own runs."
       />
       <Reveal>
         <div className="cv-dash" ref={ref}>
           <div className="cv-dash-bar">
             <span className="cv-dots" aria-hidden><i /><i /><i /></span>
-            <b>Workspace overview</b><span className="range">Last 14 days</span>
-            <DemoTag />
-            <span className="cv-stage-status run"><i /> live</span>
+            <b>Metrics</b><span className="range">Project · sample</span>
+            <DemoTag>Sample values</DemoTag>
           </div>
           <div className="cv-kpis">
             {KPIS.map((k) => (
@@ -125,47 +121,40 @@ export function Analytics() {
           </div>
           <div className="cv-dash-grid">
             <div className="cv-dash-card big">
-              <h4>Executions <small>successful vs failed</small></h4>
+              <h4>Tasks by stage <small>where work is right now</small></h4>
               <div className="cv-chart">
                 {seen && (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={EXEC_SERIES} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="cvOk" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0" stopColor="#8B5CF6" stopOpacity={0.45} />
-                          <stop offset="1" stopColor="#8B5CF6" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
+                    <BarChart data={BY_STAGE} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
                       <CartesianGrid stroke="var(--cv-line)" vertical={false} />
-                      <XAxis dataKey="d" tick={{ fill: "var(--cv-faint)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "var(--cv-faint)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <Tooltip contentStyle={tipStyle} cursor={{ stroke: "var(--cv-line2)" }} />
-                      <Area type="monotone" dataKey="ok" name="Successful" stroke="#8B5CF6" strokeWidth={2} fill="url(#cvOk)" animationDuration={1200} />
-                      <Area type="monotone" dataKey="fail" name="Failed" stroke="#F87171" strokeWidth={1.6} fill="transparent" animationDuration={1200} />
-                    </AreaChart>
+                      <XAxis dataKey="stage" tick={axis} axisLine={false} tickLine={false} />
+                      <YAxis tick={axis} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={tipStyle} cursor={{ fill: "var(--cv-line)" }} />
+                      <Bar dataKey="n" name="Tasks" fill="#8B5CF6" radius={[5, 5, 0, 0]} animationDuration={1000} />
+                    </BarChart>
                   </ResponsiveContainer>
                 )}
               </div>
             </div>
             <div className="cv-dash-card">
-              <h4>Time saved <small>hours by team</small></h4>
+              <h4>Average time in stage <small>minutes</small></h4>
               <div className="cv-chart">
                 {seen && (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={TIME_SAVED} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
+                    <BarChart data={STAGE_DWELL} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
                       <CartesianGrid stroke="var(--cv-line)" vertical={false} />
-                      <XAxis dataKey="team" tick={{ fill: "var(--cv-faint)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "var(--cv-faint)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="stage" tick={axis} axisLine={false} tickLine={false} />
+                      <YAxis tick={axis} axisLine={false} tickLine={false} />
                       <Tooltip contentStyle={tipStyle} cursor={{ fill: "var(--cv-line)" }} />
-                      <Bar dataKey="h" name="Hours" fill="#22D3EE" radius={[5, 5, 0, 0]} animationDuration={1000} />
+                      <Bar dataKey="min" name="Minutes" fill="#22D3EE" radius={[5, 5, 0, 0]} animationDuration={1000} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
               </div>
             </div>
             <div className="cv-dash-card wide">
-              <h4>Execution history <small>most recent first</small></h4>
-              <LiveFeed on={live} />
+              <h4>Recent runs <small>most recent first</small></h4>
+              <RunFeed on={live} />
             </div>
           </div>
         </div>
@@ -174,44 +163,45 @@ export function Analytics() {
   );
 }
 
-/* ---------------------------------------------------------------- pricing */
+/* ------------------------------------------------------------ open source */
 
-export function Pricing({ onGetStarted }: { onGetStarted: () => void }) {
+const OSS_POINTS = [
+  "MIT licensed. Read it, fork it, change it.",
+  "One Go binary with the web UI embedded. No separate frontend to deploy.",
+  "PostgreSQL for durable state, or in-memory to try it out.",
+  "Your repository token and model key stay in your own deployment, encrypted.",
+];
+
+export function OpenSource({ onGetStarted }: { onGetStarted: () => void }) {
   return (
-    <section className="cv-sec" id="pricing">
-      <SectionHead kicker="Pricing" title="Start small. Scale when it works." />
-      <div className="cv-prices">
-        {PRICING.map((p, i) => (
-          <Reveal key={p.id} delay={i * 0.08} className={`cv-price${p.featured ? " featured" : ""}`}>
-            {p.featured && <span className="cv-price-flag">Most popular</span>}
-            <h3>{p.name}</h3>
-            <p className="blurb">{p.blurb}</p>
-            <div className="amt">
-              <b>{p.price ?? "Custom"}</b>{p.price && <span>{p.period}</span>}
-            </div>
-            {p.cta === "start" ? (
-              <button className={`cv-btn ${p.featured ? "primary" : "ghost"} block`} onClick={onGetStarted}>Start Building Free</button>
-            ) : (
-              <a className="cv-btn ghost block" href={CONTACT_URL} target="_blank" rel="noreferrer">Talk to Our Team</a>
-            )}
-            <ul>
-              {p.features.map((f) => <li key={f}><Check size={14} />{f}</li>)}
-            </ul>
-          </Reveal>
-        ))}
-      </div>
+    <section className="cv-sec" id="opensource">
+      <SectionHead kicker="Open source" title="Self-hosted. Yours to run." />
       <Reveal>
-        <div className="cv-compare" role="region" aria-label="Plan comparison" tabIndex={0}>
-          <table>
-            <thead><tr><th scope="col">Compare</th>{PRICING.map((p) => <th scope="col" key={p.id}>{p.name}</th>)}</tr></thead>
-            <tbody>
-              {PRICING_COMPARE.map((r) => (
-                <tr key={r.feature}><th scope="row">{r.feature}</th>{r.values.map((v, i) => <td key={i}>{v}</td>)}</tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="cv-oss">
+          <div className="cv-oss-copy">
+            <ul>
+              {OSS_POINTS.map((p) => <li key={p}><Check size={15} />{p}</li>)}
+            </ul>
+            <div className="cv-cta-row">
+              <button className="cv-btn primary" onClick={onGetStarted}>Get started <ArrowRight size={16} /></button>
+              <a className="cv-btn ghost" href={REPO_URL} target="_blank" rel="noreferrer"><Github size={15} /> View on GitHub</a>
+              <a className="cv-btn ghost" href={DOCS_URL}><BookOpen size={15} /> Technical design</a>
+            </div>
+          </div>
+          <div className="cv-term" aria-label="Quickstart commands">
+            <div className="cv-term-bar"><span className="cv-dots" aria-hidden><i /><i /><i /></span><b>Quickstart</b></div>
+            <pre><code>
+              <span className="c"># run with Docker (app + Postgres)</span>{"\n"}
+              <span className="p">$</span> git clone {REPO_URL}{"\n"}
+              <span className="p">$</span> cd conduit{"\n"}
+              <span className="p">$</span> make up{"\n\n"}
+              <span className="c"># or build the single binary from source</span>{"\n"}
+              <span className="p">$</span> make build{"\n"}
+              <span className="p">$</span> ./conduitd{"\n\n"}
+              <span className="c"># then open http://localhost:8080</span>
+            </code></pre>
+          </div>
         </div>
-        <p className="cv-note">Prices and plan limits shown are placeholders. Conduit itself is open source and self-hosted.</p>
       </Reveal>
     </section>
   );
@@ -223,7 +213,7 @@ export function Faq() {
   const [open, setOpen] = useState<number | null>(0);
   return (
     <section className="cv-sec narrow" id="faq">
-      <SectionHead kicker="FAQ" title="Questions, answered." />
+      <SectionHead kicker="FAQ" title="Questions, answered plainly." />
       <div className="cv-faq">
         {FAQ.map((f, i) => {
           const isOpen = open === i;
@@ -280,11 +270,11 @@ export function FinalCta({ onGetStarted }: { onGetStarted: () => void }) {
         {NET.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={i % 4 === 0 ? 3.2 : 2} className={i % 3 === 0 ? "p v" : "p"} style={{ animationDelay: `${(i % 7) * 0.6}s` }} />)}
       </svg>
       <Reveal className="cv-final-in">
-        <h2>Stop managing tasks.<br /><span className="cv-grad">Start orchestrating intelligence.</span></h2>
-        <p>Your next level of productivity starts with one workflow.</p>
+        <h2>Keep the judgment.<br /><span className="cv-grad">Hand off the keystrokes.</span></h2>
+        <p>Point Conduit at a repository, give it a ticket, and review the pull request it opens.</p>
         <div className="cv-cta-row ctr">
-          <button className="cv-btn primary lg" onClick={onGetStarted}>Start Building Free <ArrowRight size={17} /></button>
-          <a className="cv-btn ghost lg" href={CONTACT_URL} target="_blank" rel="noreferrer"><MessageSquare size={16} /> Talk to Our Team</a>
+          <button className="cv-btn primary lg" onClick={onGetStarted}>Get started <ArrowRight size={17} /></button>
+          <a className="cv-btn ghost lg" href={REPO_URL} target="_blank" rel="noreferrer"><Github size={16} /> View on GitHub</a>
         </div>
       </Reveal>
     </section>
