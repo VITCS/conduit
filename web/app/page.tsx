@@ -19,7 +19,7 @@ import {
   type NodeTypes,
   type EdgeTypes,
 } from "@xyflow/react";
-import { Sparkles, GitPullRequest } from "lucide-react";
+import { Sparkles, GitPullRequest, Workflow as WorkflowIcon, KanbanSquare, BarChart3, Hand, SquareTerminal, Database, FileText } from "lucide-react";
 
 import { ConduitNode } from "@/components/ConduitNode";
 import { ConduitEdge } from "@/components/ConduitEdge";
@@ -29,6 +29,7 @@ import { RunRail } from "@/components/RunRail";
 import { Palette } from "@/components/Palette";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { Board } from "@/components/Board";
+import { useDialogs } from "@/components/Dialogs";
 import { Metrics } from "@/components/Metrics";
 import { MembersPanel } from "@/components/MembersPanel";
 import { Landing } from "@/components/Landing";
@@ -133,6 +134,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [secretNames, setSecretNames] = useState<string[]>([]);
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
   const [toast, setToast] = useState("");
+  const { confirm, prompt, dialog } = useDialogs();
 
   // Project config (vars + secret names) used to show resolved values on nodes.
   const loadProjectConfig = useCallback(async () => {
@@ -252,7 +254,13 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   );
 
   const newProject = useCallback(async () => {
-    const name = window.prompt("New project name");
+    const name = await prompt({
+      title: "New project",
+      message: "A project has its own workflows, board, variables and secrets.",
+      label: "Project name",
+      placeholder: "e.g. Storefront",
+      confirmLabel: "Create project",
+    });
     if (!name) return;
     try {
       const p = await api.createProject(name);
@@ -262,14 +270,18 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     } catch (e) {
       showToast("Create failed: " + (e as Error).message);
     }
-  }, [switchProject, showToast]);
+  }, [switchProject, showToast, prompt]);
 
   const deleteProject = useCallback(
     async (id: string) => {
       const proj = projects.find((p) => p.id === id);
-      if (!window.confirm(`Delete project "${proj?.name || id}" and all of its workflows and runs? This cannot be undone.`)) {
-        return;
-      }
+      const ok = await confirm({
+        title: `Delete project “${proj?.name || id}”?`,
+        message: "This deletes the project and all of its workflows and runs. This cannot be undone.",
+        confirmLabel: "Delete project",
+        danger: true,
+      });
+      if (!ok) return;
       try {
         await api.deleteProject(id);
         const list = await api.listProjects();
@@ -280,7 +292,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         showToast("Delete failed: " + (e as Error).message);
       }
     },
-    [projects, switchProject, showToast],
+    [projects, switchProject, showToast, confirm],
   );
 
   // --- reflect statuses onto node data + edge styling ---
@@ -785,7 +797,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         {waitingNode && (
           <div className="approval-banner" role="alert" data-testid="approval-banner">
             <div className="ab-row">
-              <span className="ab-dot" />
+              <span className="ab-ico"><Hand size={16} /></span>
               <span className="ab-text">
                 <b>Approval required</b> — “{(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "a step"}”
                 is waiting for your decision.
@@ -826,9 +838,29 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           </div>
         )}
         <div className="viewbar">
-          <button className={`vbtn${appView === "editor" ? " on" : ""}`} onClick={() => setAppView("editor")} data-testid="view-editor">Editor</button>
-          <button className={`vbtn${appView === "board" ? " on" : ""}`} onClick={() => setAppView("board")} data-testid="view-board">Board</button>
-          <button className={`vbtn${appView === "metrics" ? " on" : ""}`} onClick={() => setAppView("metrics")} data-testid="view-metrics">Metrics</button>
+          <div className="vseg" role="tablist" aria-label="View">
+            <button role="tab" aria-selected={appView === "editor"} className={`vbtn${appView === "editor" ? " on" : ""}`} onClick={() => setAppView("editor")} data-testid="view-editor"><WorkflowIcon size={14} /> Workflow</button>
+            <button role="tab" aria-selected={appView === "board"} className={`vbtn${appView === "board" ? " on" : ""}`} onClick={() => setAppView("board")} data-testid="view-board"><KanbanSquare size={14} /> Board</button>
+            <button role="tab" aria-selected={appView === "metrics"} className={`vbtn${appView === "metrics" ? " on" : ""}`} onClick={() => setAppView("metrics")} data-testid="view-metrics"><BarChart3 size={14} /> Metrics</button>
+          </div>
+          {appView === "editor" && (
+            <div className="tab-group" role="tablist" aria-label="Workflow panel">
+              {(["canvas", "console", "memory", "files"] as Tab[]).map((t) => {
+                const TabIcon = t === "canvas" ? WorkflowIcon : t === "console" ? SquareTerminal : t === "memory" ? Database : FileText;
+                return (
+                  <button key={t} role="tab" aria-selected={tab === t} className="tab" data-on={tab === t} onClick={() => setTab(t)}>
+                    <TabIcon size={13} /> {t[0].toUpperCase() + t.slice(1)}
+                    {t === "console" && logs.length > 0 && <span className="tab-n">{logs.length}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {appView === "editor" && (
+            <div className={`conn${conn === "live" ? " live" : ""}`} title="Run stream status">
+              <span className="dot" /> {conn}
+            </div>
+          )}
         </div>
         {appView === "board" ? (
           <Board onOpenRun={(id) => { setAppView("editor"); pickRun(id); }} onToast={showToast} />
@@ -852,21 +884,6 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           />
 
           <section className="center">
-            <div className="tabs">
-              <div className="left-tools">
-                <button className="chip" onClick={() => showToast("Agent assist is a prototype stub")}>
-                  <Sparkles size={15} /> Agent
-                </button>
-              </div>
-              <div className="tab-group">
-                {(["canvas", "console", "memory", "files"] as Tab[]).map((t) => (
-                  <button key={t} className="tab" data-on={tab === t} onClick={() => setTab(t)}>
-                    {t[0].toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className={`stage${tab === "canvas" ? "" : " hidden"}`}>
               <ReactFlow
                 nodes={nodes}
@@ -887,13 +904,14 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
                 minZoom={0.3}
                 maxZoom={1.8}
               >
-                <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--grid)" />
+                <Background variant={BackgroundVariant.Dots} gap={24} size={1.6} color="var(--grid)" />
                 <Controls />
-                <MiniMap pannable zoomable nodeStrokeWidth={2} nodeColor="var(--border-strong)" maskColor="rgba(0,0,0,.06)" />
+                <MiniMap pannable zoomable nodeStrokeWidth={0} nodeBorderRadius={6} nodeColor="var(--border-strong)" maskColor="var(--mask)" />
               </ReactFlow>
-              <div className={`conn${conn === "live" ? " live" : ""}`}>
-                <span className="dot" /> {conn}
-              </div>
+              <button className="chip canvas-assist" onClick={() => showToast("Agent assist is a prototype stub")}>
+                <Sparkles size={14} /> Agent
+              </button>
+              {editMode && <div className="canvas-hint">Edit mode — drag nodes, connect ports, click an edge to set its outcome</div>}
             </div>
 
             {tab === "console" && (
@@ -964,7 +982,8 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         )}
         {showSettings && <SettingsPanel onClose={() => { setShowSettings(false); loadProjectConfig(); }} onToast={showToast} />}
         {showMembers && <MembersPanel projectId={currentProject} onClose={() => setShowMembers(false)} onToast={showToast} />}
-        {toast && <div className="toast">{toast}</div>}
+        {dialog}
+        {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </EditorContext.Provider>
   );

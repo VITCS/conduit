@@ -99,3 +99,32 @@ test("create account lands the new user in their own workspace", async ({ page }
   // Signed in: the app canvas is shown.
   await expect(page.getByTestId("run-btn")).toBeVisible();
 });
+
+test("project create/delete use in-app dialogs, never a browser prompt or confirm", async ({ page }) => {
+  let native = 0;
+  page.on("dialog", (d) => { native++; d.dismiss(); });
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+  const name = `E2E ${Date.now()}`;
+
+  // "+ New project…" opens the in-app prompt; cancelling creates nothing.
+  await page.locator(".project-switch").selectOption("__new__");
+  await expect(page.getByTestId("prompt-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("prompt-dialog")).toBeHidden();
+
+  await page.locator(".project-switch").selectOption("__new__");
+  await page.getByTestId("dialog-input").fill(name);
+  await page.getByTestId("dialog-confirm").click();
+  await expect(page.locator(".project-switch option:checked")).toHaveText(name);
+
+  // Deleting asks in an in-app confirm; Cancel keeps the project, Confirm removes it.
+  await page.getByLabel("Delete this project").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText(name);
+  await page.getByTestId("dialog-cancel").click();
+  await expect(page.locator(".project-switch option:checked")).toHaveText(name);
+
+  await page.getByLabel("Delete this project").click();
+  await page.getByTestId("dialog-confirm").click();
+  await expect(page.locator(".project-switch")).not.toContainText(name);
+  expect(native).toBe(0);
+});

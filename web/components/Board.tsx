@@ -1,16 +1,25 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Play, ExternalLink, Trash2, GitBranch, Gauge, AlertTriangle, X, Search } from "lucide-react";
+import {
+  Plus, Play, ExternalLink, Trash2, GitBranch, Gauge, AlertTriangle, X, Search, Inbox, Hammer, ShieldCheck,
+  CircleCheckBig, OctagonAlert, GitPullRequest, Activity, type LucideIcon,
+} from "lucide-react";
 import { api } from "@/lib/api";
+import { useDialogs } from "@/components/Dialogs";
 import type { Task, TaskStage, SSEvent, Run } from "@/lib/types";
 
-const COLUMNS: { stage: TaskStage; label: string }[] = [
-  { stage: "backlog", label: "Backlog" },
-  { stage: "implement", label: "Implement" },
-  { stage: "verify", label: "Verify" },
-  { stage: "done", label: "Done" },
-  { stage: "blocked", label: "Blocked" },
+const COLUMNS: { stage: TaskStage; label: string; icon: LucideIcon; empty: string }[] = [
+  { stage: "backlog", label: "Backlog", icon: Inbox, empty: "Nothing waiting. Add a task or send a ticket to intake." },
+  { stage: "implement", label: "Implement", icon: Hammer, empty: "No task is being worked on." },
+  { stage: "verify", label: "Verify", icon: ShieldCheck, empty: "Nothing in verification." },
+  { stage: "done", label: "Done", icon: CircleCheckBig, empty: "Finished tasks land here." },
+  { stage: "blocked", label: "Blocked", icon: OctagonAlert, empty: "Nothing needs attention." },
 ];
+
+// Confidence band used only for colouring the meter on a card.
+function confBand(n: number): "hi" | "mid" | "lo" {
+  return n >= 75 ? "hi" : n >= 50 ? "mid" : "lo";
+}
 
 export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => void; onToast: (m: string) => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -19,6 +28,7 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
   const [sourceFilter, setSourceFilter] = useState("");
   const [open, setOpen] = useState<Task | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const { confirm, dialog } = useDialogs();
 
   const refresh = useCallback(async () => {
     try {
@@ -80,7 +90,13 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
   }
 
   async function remove(t: Task) {
-    if (!window.confirm(`Delete task “${t.title}”?`)) return;
+    const ok = await confirm({
+      title: "Delete this task?",
+      message: <>“{t.title}” will be removed from the board. Its past runs are not affected.</>,
+      confirmLabel: "Delete task",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteTask(t.id);
       setTasks((prev) => prev.filter((x) => x.id !== t.id));
@@ -91,20 +107,33 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
   return (
     <div className="board">
       <div className="board-head">
-        <h2>Factory board</h2>
-        <span className="board-sub">{filtered.length} of {tasks.length}</span>
-        <div className="board-search">
-          <Search size={14} />
-          <input placeholder="Search title / ref…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <div className="board-titles">
+          <h2>Factory board</h2>
+          <span className="board-sub">
+            {filtered.length === tasks.length ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}` : `${filtered.length} of ${tasks.length} tasks`}
+          </span>
         </div>
-        <select className="board-filter" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-          <option value="">All sources</option>
-          {sources.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <button className="btn primary" onClick={() => setNewOpen(true)}><Plus size={15} /> New task</button>
+        <div className="board-tools">
+          <div className="board-search">
+            <Search size={14} />
+            <input placeholder="Search title or reference" aria-label="Search tasks" value={query} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          <select className="board-filter" aria-label="Filter by source" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+            <option value="">All sources</option>
+            {sources.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button className="btn primary" onClick={() => setNewOpen(true)}><Plus size={15} /> New task</button>
+        </div>
       </div>
       {loading ? (
-        <div className="board-empty">Loading…</div>
+        <div className="board-cols" aria-busy="true">
+          {COLUMNS.map((col) => (
+            <div className={`board-col col-${col.stage}`} key={col.stage}>
+              <div className="col-head"><span className="col-ico"><col.icon size={14} /></span><span className="col-title">{col.label}</span></div>
+              <div className="col-cards"><div className="tcard skeleton" /><div className="tcard skeleton short" /></div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="board-cols">
           {COLUMNS.map((col) => {
@@ -112,7 +141,7 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
             return (
               <div className={`board-col col-${col.stage}`} key={col.stage}>
                 <div className="col-head">
-                  <span className="col-dot" />
+                  <span className="col-ico"><col.icon size={14} /></span>
                   <span className="col-title">{col.label}</span>
                   <span className="col-count">{items.length}</span>
                 </div>
@@ -120,7 +149,7 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
                   {items.map((t) => (
                     <TaskCard key={t.id} t={t} onOpen={() => setOpen(t)} onStart={start} onOpenRun={onOpenRun} />
                   ))}
-                  {items.length === 0 && <div className="col-empty">—</div>}
+                  {items.length === 0 && <div className="col-empty">{query || sourceFilter ? "No matching tasks." : col.empty}</div>}
                 </div>
               </div>
             );
@@ -138,6 +167,7 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
         />
       )}
       {newOpen && <NewTaskModal onClose={() => setNewOpen(false)} onCreate={createTask} onToast={onToast} />}
+      {dialog}
     </div>
   );
 }
@@ -145,31 +175,43 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
 function TaskCard({ t, onOpen, onStart, onOpenRun }: {
   t: Task; onOpen: () => void; onStart: (t: Task) => void; onOpenRun: (id: string) => void;
 }) {
+  const conf = typeof t.confidence === "number" && t.confidence > 0 ? t.confidence : 0;
+  const hasActions = t.stage === "backlog" || !!t.current_run_id || !!t.pr_url;
   return (
-    <div className="tcard" onClick={onOpen}>
+    <div className={`tcard s-${t.stage}`} onClick={onOpen} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(); }}>
       <div className="tcard-top">
         <span className={`tsrc ${t.source || "manual"}`}>{t.source || "manual"}</span>
         {t.source_ref && <span className="tref">{t.source_ref}</span>}
+        {t.stage === "implement" && <span className="tlive" title="A run is working on this task"><Activity size={11} /> running</span>}
       </div>
       <div className="tcard-title">{t.title}</div>
-      <div className="tcard-meta">
-        {typeof t.confidence === "number" && t.confidence > 0 && (
-          <span className="tmeta" title="Triage confidence"><Gauge size={12} /> {t.confidence}</span>
-        )}
-        {t.branch && <span className="tmeta"><GitBranch size={12} /> {t.branch}</span>}
-        {t.stage === "blocked" && <span className="tmeta warn"><AlertTriangle size={12} /> needs attention</span>}
-      </div>
-      <div className="tcard-actions" onClick={(e) => e.stopPropagation()}>
-        {t.stage === "backlog" && (
-          <button className="btn ok sm" onClick={() => onStart(t)}><Play size={13} /> Start</button>
-        )}
-        {t.current_run_id && (
-          <button className="btn sm" onClick={() => onOpenRun(t.current_run_id!)}>View run</button>
-        )}
-        {t.pr_url && (
-          <a className="btn sm" href={t.pr_url} target="_blank" rel="noreferrer"><ExternalLink size={12} /> PR</a>
-        )}
-      </div>
+      {conf > 0 && (
+        <div className={`tconf ${confBand(conf)}`} title="Triage confidence">
+          <Gauge size={12} />
+          <span className="tconf-track"><i style={{ width: `${Math.min(100, conf)}%` }} /></span>
+          <b>{conf}</b>
+        </div>
+      )}
+      {(t.branch || t.stage === "blocked") && (
+        <div className="tcard-meta">
+          {t.branch && <span className="tmeta"><GitBranch size={12} /> {t.branch}</span>}
+          {t.stage === "blocked" && <span className="tmeta warn"><AlertTriangle size={12} /> needs attention</span>}
+        </div>
+      )}
+      {hasActions && (
+        <div className="tcard-actions" onClick={(e) => e.stopPropagation()}>
+          {t.stage === "backlog" && (
+            <button className="btn ok sm" onClick={() => onStart(t)}><Play size={13} /> Start</button>
+          )}
+          {t.current_run_id && (
+            <button className="btn sm" onClick={() => onOpenRun(t.current_run_id!)}>View run</button>
+          )}
+          {t.pr_url && (
+            <a className="btn sm" href={t.pr_url} target="_blank" rel="noreferrer"><GitPullRequest size={12} /> PR <ExternalLink size={11} /></a>
+          )}
+        </div>
+      )}
     </div>
   );
 }

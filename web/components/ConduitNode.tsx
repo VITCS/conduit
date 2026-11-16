@@ -21,9 +21,36 @@ export function ConduitNode({ id, data, selected }: NodeProps) {
       <Handle type="target" position={Position.Left} />
       <div className="n-head">
         <span className={`n-ico${running ? " spin" : ""}`}>
-          <Icon name={d.icon} size={15} />
+          <Icon name={d.icon} size={16} />
         </span>
-        <span className="n-title">{d.title}</span>
+        <span className="n-titles">
+          <span className="n-title">{d.title}</span>
+          <span className="n-ref">{d.typeName}</span>
+        </span>
+        <span className={`n-dot ${meta.cls}`} title={meta.label} aria-hidden />
+      </div>
+      {d.config.length > 0 && (
+        <div className="n-cfg">
+          {d.config.map((f, i) => {
+            const r = resolveRef(f.value, vars, secretNames);
+            return (
+              <div className="n-cfg-row" key={i}>
+                <span className="ic">
+                  <Icon name={f.icon} size={12} />
+                </span>
+                <span>
+                  <b>{f.key}</b> {r.text}
+                </span>
+                {r.source !== "literal" && SOURCE_LABEL[r.source] && (
+                  <span className={`src ${r.source}`}>{SOURCE_LABEL[r.source]}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="n-foot">
+        <span className={`badge ${meta.cls}`}>{meta.label}</span>
         {canBypass && (
           <label
             className="n-bypass"
@@ -32,31 +59,10 @@ export function ConduitNode({ id, data, selected }: NodeProps) {
             onMouseDown={(e) => e.stopPropagation()}
           >
             <input type="checkbox" checked={disabled} onChange={() => toggleNodeDisabled(id)} />
+            <span className="sw" aria-hidden />
             <span>skip</span>
           </label>
         )}
-      </div>
-      <div className="n-cfg">
-        {d.config.map((f, i) => {
-          const r = resolveRef(f.value, vars, secretNames);
-          return (
-            <div className="n-cfg-row" key={i}>
-              <span className="ic">
-                <Icon name={f.icon} size={12} />
-              </span>
-              <span>
-                <b>{f.key}</b> {r.text}
-              </span>
-              {r.source !== "literal" && SOURCE_LABEL[r.source] && (
-                <span className={`src ${r.source}`}>{SOURCE_LABEL[r.source]}</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="n-foot">
-        <span className={`badge ${meta.cls}`}>{meta.label}</span>
-        <span className="n-ref">{d.typeName}</span>
       </div>
       <Handle type="source" position={Position.Right} />
     </div>

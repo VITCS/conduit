@@ -1,5 +1,5 @@
 "use client";
-import { Menu, Play, Square, Save, Pencil, Sun, Moon, LogOut, Users, Sliders, Trash2 } from "lucide-react";
+import { PanelLeft, Play, Square, Save, Pencil, Sun, Moon, LogOut, Users, Sliders, Trash2, ChevronsUpDown, FolderKanban } from "lucide-react";
 import { useEffect, useState } from "react";
 
 function Logo() {
@@ -62,43 +62,46 @@ export function Topbar(props: {
   return (
     <header className="topbar">
       <button className="iconbtn" onClick={props.onToggleRail} title="Toggle runs" aria-label="Toggle runs">
-        <Menu size={18} />
+        <PanelLeft size={18} />
       </button>
       <div className="brand">
         <Logo />
         <span className="wordmark">Conduit Agent</span>
         <span className="beta">BETA</span>
       </div>
-      <select
-        className="project-switch"
-        value={props.currentProject}
-        onChange={(e) => {
-          if (e.target.value === "__new__") props.onNewProject();
-          else props.onSwitchProject(e.target.value);
-        }}
-        title="Project"
-        aria-label="Project"
+      <span className="project-pick">
+        <FolderKanban size={14} className="pp-ico" />
+        <select
+          className="project-switch"
+          value={props.currentProject}
+          onChange={(e) => {
+            if (e.target.value === "__new__") props.onNewProject();
+            else props.onSwitchProject(e.target.value);
+          }}
+          title="Project"
+          aria-label="Project"
       >
-        {props.projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-        <option value="__new__">+ New project…</option>
-      </select>
+          {props.projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+          <option value="__new__">+ New project…</option>
+        </select>
+        <ChevronsUpDown size={13} className="pp-chev" />
+      </span>
       {canDeleteProject && (
         <button
-          className="iconbtn"
+          className="iconbtn danger"
           onClick={() => props.onDeleteProject(props.currentProject)}
           title="Delete this project"
           aria-label="Delete this project"
-          style={{ color: "var(--fail)" }}
         >
           <Trash2 size={16} />
         </button>
       )}
       <div className="wf-search" role="search">
-        <Pencil size={14} style={{ opacity: 0 }} />
+        <Pencil size={13} />
         <input value={props.name} onChange={(e) => props.onName(e.target.value)} aria-label="Workflow name" spellCheck={false} />
       </div>
       <div className="topbar-right">
@@ -116,20 +119,22 @@ export function Topbar(props: {
             <Save size={15} /> {props.dirty ? "Save *" : "Save"}
           </button>
         )}
-        <button className="btn" onClick={props.onOpenMembers} title="Manage members">
-          <Users size={15} /> Members
-        </button>
-        <button className="btn" onClick={props.onOpenSettings} title="Variables & secrets">
-          <Sliders size={15} /> Settings
-        </button>
-        <button className="btn" onClick={toggleTheme} aria-label="Toggle theme" title="Toggle theme">
-          {dark ? <Sun size={15} /> : <Moon size={15} />}
-        </button>
-        <button className="btn" data-on={props.editMode} onClick={props.onToggleEdit}>
+        <button className="btn" data-on={props.editMode} onClick={props.onToggleEdit} title="Toggle edit mode">
           <Pencil size={15} /> Edit
         </button>
+        <span className="tb-sep" aria-hidden />
+        <button className="iconbtn" onClick={props.onOpenMembers} title="Members" aria-label="Members">
+          <Users size={16} />
+        </button>
+        <button className="iconbtn" onClick={props.onOpenSettings} title="Settings — variables & secrets" aria-label="Settings">
+          <Sliders size={16} />
+        </button>
+        <button className="iconbtn" onClick={toggleTheme} aria-label="Toggle theme" title="Toggle theme">
+          {dark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
         {props.user && (
-          <span className="user-chip">
+          <span className="user-chip" title={props.user.email}>
+            <span className="avatar" aria-hidden>{(props.user.name || props.user.email || "?").trim().charAt(0).toUpperCase()}</span>
             <b>{props.user.name || props.user.email}</b>
             <span className="role">{props.user.role}</span>
           </span>
