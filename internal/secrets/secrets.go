@@ -12,9 +12,11 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Store is the subset of the persistence layer the manager needs. Secrets are
@@ -101,3 +103,37 @@ func (m *Manager) List(projectID string) ([]string, error) { return m.store.List
 
 // Delete removes a secret from a project.
 func (m *Manager) Delete(projectID, name string) error { return m.store.DeleteSecret(projectID, name) }
+
+// sealedPrefix marks a string value encrypted by SealString, so plaintext values
+// written before encryption was enabled can still be read.
+const sealedPrefix = "enc:v1:"
+
+// SealString encrypts a short string for storage in a text column.
+func (m *Manager) SealString(plain string) (string, error) {
+	nonce := make([]byte, m.aead.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	return sealedPrefix + base64.RawStdEncoding.EncodeToString(m.aead.Seal(nonce, nonce, []byte(plain), nil)), nil
+}
+
+// OpenString reverses SealString. A value without the sealed prefix is a legacy
+// plaintext value and is returned unchanged.
+func (m *Manager) OpenString(stored string) (string, error) {
+	if !strings.HasPrefix(stored, sealedPrefix) {
+		return stored, nil
+	}
+	ct, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(stored, sealedPrefix))
+	if err != nil {
+		return "", fmt.Errorf("sealed value: %w", err)
+	}
+	ns := m.aead.NonceSize()
+	if len(ct) < ns {
+		return "", errors.New("sealed value: ciphertext too short")
+	}
+	pt, err := m.aead.Open(nil, ct[:ns], ct[ns:], nil)
+	if err != nil {
+		return "", fmt.Errorf("sealed value: decrypt failed (wrong key?): %w", err)
+	}
+	return string(pt), nil
+}

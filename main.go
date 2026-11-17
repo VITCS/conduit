@@ -114,17 +114,22 @@ func run() error {
 		return err
 	}
 
-	eng := engine.New(st)
-
 	// Secrets: encrypted credential store; wire the resolver so components can
 	// expand ${secret:NAME} references in their config.
+	rawStore := st
 	secretMgr, persistentKey, err := secrets.NewManager(st, os.Getenv("CONDUIT_SECRET_KEY"))
 	if err != nil {
 		return err
 	}
 	if !persistentKey {
 		log.Printf("secrets: CONDUIT_SECRET_KEY not set — using an ephemeral key (secrets won't survive restart)")
+	} else {
+		// With a persistent key, project variables are encrypted at rest too. (With an
+		// ephemeral key they stay plaintext so they survive a restart.)
+		st = encVarStore{Store: st, m: secretMgr}
 	}
+
+	eng := engine.New(st)
 	components.ResolveSecret = secretMgr.Lookup
 	// ${var:NAME} resolves to project config variables (non-secret, set once per project).
 	components.ResolveVar = func(projectID, name string) (string, bool) {
@@ -164,7 +169,7 @@ func run() error {
 	defer bgCancel()
 
 	// Multi-instance live events: with Postgres, fan events out via LISTEN/NOTIFY.
-	if pg, ok := st.(*store.Pg); ok {
+	if pg, ok := rawStore.(*store.Pg); ok {
 		pg.StartEventRelay(bgCtx)
 		log.Printf("events: Postgres LISTEN/NOTIFY relay enabled (multi-instance)")
 	}

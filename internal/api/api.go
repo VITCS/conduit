@@ -338,6 +338,36 @@ func (s *Server) createPersonalProject(u model.User) model.Project {
 	return proj
 }
 
+// ensureUserWorkspace gives a non-admin user their own copy of the shipped AI
+// Factory and GitHub review workflows, in two projects they own. Settings
+// (variables) and secrets are scoped to those projects, so they stay with this
+// login. Idempotent: safe to call on every sign-in; it installs what is missing
+// and cleanly upgrades untouched copies, never an edited one.
+func (s *Server) ensureUserWorkspace(u model.User) error {
+	if u.ID == "" || u.Role == model.RoleOwner || u.Role == model.RoleAdmin {
+		return nil
+	}
+	key := seed.UserKey(u.ID)
+	who := displayName(u.Name, u.Email)
+	for _, p := range []model.Project{
+		{ID: seed.UserFactoryProjectID(key), Name: who + " · AI Factory"},
+		{ID: seed.UserGitHubProjectID(key), Name: who + " · GitHub"},
+	} {
+		if _, ok, _ := s.Store.GetProject(p.ID); !ok {
+			p.CreatedAt = time.Now()
+			if err := s.Store.CreateProject(p); err != nil {
+				return err
+			}
+		}
+		if _, ok, _ := s.Store.GetProjectMember(p.ID, u.ID); !ok {
+			if err := s.Store.AddProjectMember(model.ProjectMember{ProjectID: p.ID, UserID: u.ID, Role: model.RoleOwner, CreatedAt: time.Now()}); err != nil {
+				return err
+			}
+		}
+	}
+	return seed.SyncUserWorkflows(s.Store, key, nil)
+}
+
 // register is the public self-serve signup. It creates a member user and a
 // personal project they own (so they land in a usable workspace), then logs them
 // in. Disabled unless AllowSignup is set.

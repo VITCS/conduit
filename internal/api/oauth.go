@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -159,12 +160,18 @@ func (s *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 				fail(cerr.Error())
 				return
 			}
-			s.createPersonalProject(nu)
 			u = nu
 		}
 		_ = s.Store.AddUserIdentity(model.UserIdentity{
 			Provider: name, Subject: subject, UserID: u.ID, Email: email, CreatedAt: time.Now(),
 		})
+	}
+
+	// Google/GitHub users get (or keep) their own copy of the shipped workflows,
+	// with their settings and secrets stored in projects only they own.
+	// Owners/admins (e.g. the bootstrap admin) are never touched.
+	if err := s.ensureUserWorkspace(u); err != nil {
+		slog.Warn("oauth: could not provision user workspace", "user", u.ID, "err", err)
 	}
 
 	token, err := s.Auth.IssueJWT(u)

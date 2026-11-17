@@ -70,49 +70,56 @@ func SyncBuiltins(st workflowStore, logger *slog.Logger) error {
 		logger = slog.Default()
 	}
 	for _, b := range Builtins() {
-		want := b.wf
-		want.SeedHash = Fingerprint(want)
-
-		got, ok, err := st.GetWorkflow(want.ID)
-		if err != nil {
+		if err := syncOne(st, b.wf, b.legacy, logger); err != nil {
 			return err
 		}
-		if !ok {
-			if err := st.PutWorkflow(want); err != nil {
-				return err
-			}
-			logger.Info("seed: installed built-in workflow", "id", want.ID, "rev", want.Rev)
-			continue
-		}
+	}
+	return nil
+}
 
-		gotFP := Fingerprint(got)
-		switch {
-		case gotFP == want.SeedHash:
-			// Same content. Make sure Rev/SeedHash are stamped so a future, newer
-			// Rev can be recognized as a clean upgrade.
-			if got.Rev != want.Rev || got.SeedHash != want.SeedHash {
-				if err := st.PutWorkflow(want); err != nil {
-					return err
-				}
-				logger.Info("seed: stamped built-in workflow", "id", want.ID, "rev", want.Rev)
-			}
-		case got.SeedHash != "" && gotFP == got.SeedHash && want.Rev > got.Rev:
-			// Previously stamped and untouched since: a provably clean upgrade.
-			if err := st.PutWorkflow(want); err != nil {
-				return err
-			}
-			logger.Info("seed: upgraded built-in workflow", "id", want.ID, "from_rev", got.Rev, "to_rev", want.Rev)
-		case got.SeedHash == "" && b.legacy != nil && b.legacy(got):
-			// A pre-versioning built-in in its original shipped shape (user never
-			// edited it) → refresh to the current definition, now stamped.
-			if err := st.PutWorkflow(want); err != nil {
-				return err
-			}
-			logger.Info("seed: refreshed legacy built-in workflow", "id", want.ID, "name", got.Name, "to_rev", want.Rev)
-		default:
-			// User-edited (or newer than we ship) — never overwrite.
-			logger.Debug("seed: left built-in workflow as-is", "id", want.ID)
+// syncOne applies the install/stamp/upgrade rules to a single shipped workflow.
+func syncOne(st workflowStore, want model.Workflow, legacy func(model.Workflow) bool, logger *slog.Logger) error {
+	want.SeedHash = Fingerprint(want)
+
+	got, ok, err := st.GetWorkflow(want.ID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		if err := st.PutWorkflow(want); err != nil {
+			return err
 		}
+		logger.Info("seed: installed built-in workflow", "id", want.ID, "rev", want.Rev)
+		return nil
+	}
+
+	gotFP := Fingerprint(got)
+	switch {
+	case gotFP == want.SeedHash:
+		// Same content. Make sure Rev/SeedHash are stamped so a future, newer
+		// Rev can be recognized as a clean upgrade.
+		if got.Rev != want.Rev || got.SeedHash != want.SeedHash {
+			if err := st.PutWorkflow(want); err != nil {
+				return err
+			}
+			logger.Info("seed: stamped built-in workflow", "id", want.ID, "rev", want.Rev)
+		}
+	case got.SeedHash != "" && gotFP == got.SeedHash && want.Rev > got.Rev:
+		// Previously stamped and untouched since: a provably clean upgrade.
+		if err := st.PutWorkflow(want); err != nil {
+			return err
+		}
+		logger.Info("seed: upgraded built-in workflow", "id", want.ID, "from_rev", got.Rev, "to_rev", want.Rev)
+	case got.SeedHash == "" && legacy != nil && legacy(got):
+		// A pre-versioning built-in in its original shipped shape (user never
+		// edited it) → refresh to the current definition, now stamped.
+		if err := st.PutWorkflow(want); err != nil {
+			return err
+		}
+		logger.Info("seed: refreshed legacy built-in workflow", "id", want.ID, "name", got.Name, "to_rev", want.Rev)
+	default:
+		// User-edited (or newer than we ship) — never overwrite.
+		logger.Debug("seed: left built-in workflow as-is", "id", want.ID)
 	}
 	return nil
 }

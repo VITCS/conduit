@@ -609,3 +609,29 @@ func TestPRHandoffCreatesReviewRequest(t *testing.T) {
 		t.Errorf("self-review created a request; requests = %d, want still 1", len(reqs))
 	}
 }
+
+// A user's own AI Factory hands its PR to that user's own review workflow.
+func TestPRHandoffGoesToUsersOwnReviewWorkflow(t *testing.T) {
+	st := store.NewMem()
+	key := seed.UserKey("usr_alice")
+	if err := seed.SyncUserWorkflows(st, key, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutWorkflow(seed.GitHubWorkflow()); err != nil {
+		t.Fatal(err)
+	}
+	e := New(st)
+	prNode := model.Node{ID: "pr", Type: "github_pr", Title: "Open Pull Request"}
+	out := map[string]any{"number": 7, "repo": "alice/site", "html_url": "https://github.com/alice/site/pull/7"}
+	run := &model.Run{ID: "run_a", ProjectID: seed.UserFactoryProjectID(key), WorkflowID: seed.UserFactoryWorkflowID(key),
+		Steps: map[string]*model.StepRun{}}
+	if _, err := st.CreateRun(run); err != nil {
+		t.Fatal(err)
+	}
+	e.maybeHandoffPR(run.ID, prNode, out)
+	mine, _ := st.ListReviewRequests(seed.UserGitHubProjectID(key), "pending")
+	shared, _ := st.ListReviewRequests(seed.GitHubProjectID, "pending")
+	if len(mine) != 1 || mine[0].WorkflowID != seed.UserGitHubWorkflowID(key) || len(shared) != 0 {
+		t.Fatalf("user inbox = %d, shared inbox = %d; want 1 and 0", len(mine), len(shared))
+	}
+}

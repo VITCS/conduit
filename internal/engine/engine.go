@@ -755,11 +755,12 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 // output carries no PR number.
 func (e *Engine) maybeHandoffPR(runID string, node model.Node, out map[string]any) {
 	run, ok, _ := e.store.GetRun(runID)
-	if !ok || run.ProjectID == seed.GitHubProjectID {
+	if !ok {
 		return
 	}
-	wf, ok, _ := e.store.GetWorkflow(seed.GitHubWorkflowID)
-	if !ok {
+	// A per-user factory hands off to that user's own review workflow.
+	wf, ok, _ := e.store.GetWorkflow(seed.ReviewWorkflowFor(run.ProjectID))
+	if !ok || run.ProjectID == wf.ProjectID {
 		return
 	}
 	number := toInt(out["number"])

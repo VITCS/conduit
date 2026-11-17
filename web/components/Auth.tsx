@@ -181,11 +181,7 @@ export function Auth({
           {busy ? (isSignup ? "Creating account…" : "Signing in…") : isSignup ? "Create account" : "Sign in"}
         </button>
 
-        {!isSignup ? (
-          <p className="hint" style={{ textAlign: "center" }}>
-            First run defaults to <code>admin@conduit.local</code> / <code>conduit</code> — change it after signing in.
-          </p>
-        ) : (
+        {isSignup && (
           <p className="hint" style={{ textAlign: "center" }}>
             You&apos;ll get your own workspace to build workflows in.
           </p>

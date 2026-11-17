@@ -31,7 +31,7 @@ func (s *Server) taskWorkflow(t model.Task) (model.Workflow, bool) {
 	}
 	wfs, _ := s.Store.ListWorkflows(t.ProjectID)
 	for _, wf := range wfs {
-		if wf.ID == "wf_factory" {
+		if wf.ID == "wf_factory" || strings.HasPrefix(wf.ID, "wf_factory-") {
 			return wf, true
 		}
 	}
