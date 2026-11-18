@@ -1,12 +1,15 @@
 # Conduit Agent intro video
 
-Two cuts of the same 35-second, 30 fps intro. Neither has audio, so both read correctly
+Two cuts of the same 35-second, 30 fps intro. Each opens on its thumbnail (0.6 s, then a
+0.5 s cross-fade into the video), so the frame a feed shows before play is the thumbnail. Neither has audio, so both read correctly
 when they autoplay muted.
 
 | File | Size | Use it for |
 |---|---|---|
 | `conduit-intro.mp4` | 1920×1080 (16:9) | LinkedIn, X, YouTube, the README |
 | `conduit-intro-vertical.mp4` | 1080×1920 (9:16) | Instagram Reels, YouTube Shorts, TikTok |
+| `thumbnail.png` | 1920×1080 | Custom cover for the landscape video (LinkedIn, YouTube) |
+| `thumbnail-vertical.png` | 1080×1920 | Custom cover for the vertical video |
 | `preview.gif` | 960×540, 9 s loop | The animated preview at the top of the project README |
 
 | Time | Scene |
@@ -40,11 +43,21 @@ node docs/video/render.js docs/video/conduit-intro-vertical.mp4 --src intro-vert
 node docs/video/render.js out.mp4 --stills 5,12   # just PNG stills at those seconds
 ```
 
+Then add the thumbnail opening (and refresh the thumbnail images) to both cuts.
+A video that already opens on the thumbnail is skipped, so this is safe to re-run:
+
+```bash
+node docs/video/thumbnail.js              # use --png-only for just the images
+```
+
+The thumbnail design is `thumb.html`; it frames a screenshot of the finished sample run.
+
 Needs Playwright (Chromium), ffmpeg, the Inter font, and `web/node_modules` installed
 (for JetBrains Mono).
 
-After re-rendering the landscape video, regenerate the README preview (the sample-run scene):
+After re-rendering the landscape video and adding the thumbnail, regenerate the README
+preview (the sample-run scene; the offset allows for the 0.6 s thumbnail opening):
 
 ```bash
-cd docs/video && ffmpeg -y -ss 8.7 -t 9.3 -i conduit-intro.mp4 -vf "fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" -loop 0 preview.gif
+cd docs/video && ffmpeg -y -ss 9.3 -t 9.3 -i conduit-intro.mp4 -vf "fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" -loop 0 preview.gif
 ```

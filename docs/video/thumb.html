@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Conduit Agent — video thumbnail</title>
+<!--
+  Thumbnail / cover for the intro videos. thumbnail.js opens this page twice:
+    ?layout=wide  → 1920×1080   ?layout=tall → 1080×1920
+  and passes a screenshot of the finished sample run (window.RUN_IMG).
+-->
+<style>
+  @font-face { font-family: "JB"; font-weight: 500; src: url("../../web/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JB"; font-weight: 600; src: url("../../web/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2") format("woff2"); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #080b12; overflow: hidden; }
+  body { font-family: "Inter", system-ui, sans-serif; color: #e8ecf4; -webkit-font-smoothing: antialiased; }
+  #t { position: relative; overflow: hidden; background: #080b12; }
+  .aur { position: absolute; border-radius: 50%; filter: blur(100px); }
+  .grid { position: absolute; inset: 0; background-image:
+      linear-gradient(to right, rgba(52,66,92,.32) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(52,66,92,.32) 1px, transparent 1px);
+    background-size: 64px 64px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 40% 40%, #000 15%, transparent 75%); mask-image: radial-gradient(ellipse 80% 70% at 40% 40%, #000 15%, transparent 75%); }
+  .abs { position: absolute; }
+  .brand { display: flex; align-items: center; gap: 18px; font-weight: 700; }
+  .brand span { color: #a3aec2; font-weight: 500; }
+  .kicker { display: inline-flex; font-family: "JB", monospace; letter-spacing: .16em; text-transform: uppercase; color: #b9a2ff;
+    border: 1px solid rgba(139,92,246,.5); background: rgba(139,92,246,.12); border-radius: 999px; }
+  h1 { font-weight: 800; letter-spacing: -.05em; line-height: .98; }
+  .grad { background: linear-gradient(95deg, #8b5cf6, #6d8cf5 45%, #22d3ee); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .chips { display: flex; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 12px; font-weight: 650; border-radius: 999px; border: 1px solid #34425c; background: rgba(21,28,42,.9); }
+  .chip i { border-radius: 50%; background: #34d399; display: grid; place-items: center; }
+  .shot { border-radius: 26px; overflow: hidden; border: 1px solid rgba(139,92,246,.55);
+    box-shadow: 0 0 0 1px rgba(255,255,255,.04), 0 40px 120px rgba(0,0,0,.7), 0 0 120px rgba(139,92,246,.28); }
+  .shot img { display: block; width: 100%; }
+  .badge { font-family: "JB", monospace; font-weight: 600; color: #04130d; background: #34d399; border-radius: 12px; }
+</style>
+</head>
+<body>
+<div id="t"></div>
+<script>
+const tall = /layout=tall/.test(location.search);
+const W = tall ? 1080 : 1920, H = tall ? 1920 : 1080;
+window.SIZE = { width: W, height: H };
+const t = document.getElementById("t");
+t.style.width = W + "px"; t.style.height = H + "px";
+const mark = (s) => `<svg width="${s}" height="${s}" viewBox="0 0 32 32" fill="none"><defs><linearGradient id="g" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop stop-color="#8B5CF6"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="9" fill="url(#g)" opacity=".16"/><rect x="1" y="1" width="30" height="30" rx="9" stroke="url(#g)" stroke-width="1.4"/><path d="M8 16h5.5c3.6 0 3.6-6.5 7.2-6.5M13.5 16c3.6 0 3.6 6.5 7.2 6.5" stroke="url(#g)" stroke-width="2.3" stroke-linecap="round"/><circle cx="22.6" cy="9.5" r="2.3" fill="#22D3EE"/><circle cx="22.6" cy="22.5" r="2.3" fill="#8B5CF6"/></svg>`;
+const tick = (s) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="#04130d" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
+const chips = (fs, ic) => ["2 human approvals", "CI must pass", "Open source · MIT"]
+  .map((c) => `<span class="chip" style="font-size:${fs}px;padding:${fs * .55}px ${fs * .9}px ${fs * .55}px ${fs * .6}px"><i style="width:${ic}px;height:${ic}px">${tick(ic * .62)}</i>${c}</span>`).join("");
+
+window.build = function (runImg) {
+  if (!tall) {
+    t.innerHTML = `
+      <div class="aur" style="left:-220px;top:-300px;width:1200px;height:900px;background:rgba(139,92,246,.36)"></div>
+      <div class="aur" style="left:1150px;top:560px;width:900px;height:700px;background:rgba(34,211,238,.18)"></div>
+      <div class="grid"></div>
+      <div class="abs shot" style="left:975px;top:260px;width:890px;transform:perspective(1800px) rotateY(-9deg) rotateX(2deg)"><img src="${runImg}"></div>
+      <div class="abs badge" style="left:1620px;top:212px;font-size:24px;padding:10px 18px">✓ PR #129 opened</div>
+      <div class="abs brand" style="left:110px;top:120px;font-size:42px">${mark(64)}<div>Conduit <span>Agent</span></div></div>
+      <div class="abs kicker" style="left:110px;top:232px;font-size:22px;padding:10px 20px">Open-source AI software factory</div>
+      <h1 class="abs" style="left:104px;top:330px;font-size:118px">Tickets in.<br><span class="grad">Reviewed PRs<br>out.</span></h1>
+      <div class="abs chips" style="left:110px;top:760px;width:800px;gap:16px">${chips(27, 30)}</div>
+      <div class="abs" style="left:110px;top:950px;font-family:JB,monospace;font-size:24px;color:#6f7c94">github.com/VITCS/conduit</div>`;
+  } else {
+    t.innerHTML = `
+      <div class="aur" style="left:-300px;top:-260px;width:1100px;height:1000px;background:rgba(139,92,246,.36)"></div>
+      <div class="aur" style="left:250px;top:1350px;width:900px;height:800px;background:rgba(34,211,238,.18)"></div>
+      <div class="grid"></div>
+      <div class="abs brand" style="left:0;right:0;top:130px;justify-content:center;font-size:44px">${mark(70)}<div>Conduit <span>Agent</span></div></div>
+      <div class="abs" style="left:0;right:0;top:245px;text-align:center"><span class="kicker" style="font-size:22px;padding:10px 20px">Open-source AI software factory</span></div>
+      <h1 class="abs" style="left:0;right:0;top:330px;text-align:center;font-size:150px">Tickets in.<br><span class="grad">Reviewed<br>PRs out.</span></h1>
+      <div class="abs chips" style="left:60px;right:60px;top:810px;justify-content:center;gap:14px">${chips(26, 28)}</div>
+      <div class="abs shot" style="left:150px;top:1010px;width:780px"><img src="${runImg}"></div>
+      <div class="abs badge" style="right:110px;top:968px;font-size:24px;padding:10px 18px">✓ PR #129 opened</div>`;
+  }
+};
+</script>
+</body>
+</html>
