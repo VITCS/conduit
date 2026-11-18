@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -302,6 +303,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
+	// Existing email accounts get their workflow copies on their next sign-in
+	// (a no-op once provisioned, and never for owners/admins such as the admin).
+	if err := s.ensureUserWorkspace(u); err != nil {
+		slog.Warn("login: could not provision user workspace", "user", u.ID, "err", err)
+	}
 	token, err := s.Auth.IssueJWT(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -327,18 +333,7 @@ func (s *Server) authConfig(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// createPersonalProject gives a freshly-registered user a workspace they own, so
-// they land somewhere usable. Best-effort; a failure doesn't block sign-in.
-func (s *Server) createPersonalProject(u model.User) model.Project {
-	base := slugify(firstNonEmptyStr(u.Name, strings.SplitN(u.Email, "@", 2)[0]))
-	proj := model.Project{ID: base + "-" + shortID(), Name: displayName(u.Name, u.Email) + "'s workspace", CreatedAt: time.Now()}
-	if err := s.Store.CreateProject(proj); err == nil {
-		_ = s.Store.AddProjectMember(model.ProjectMember{ProjectID: proj.ID, UserID: u.ID, Role: model.RoleOwner, CreatedAt: time.Now()})
-	}
-	return proj
-}
-
-// ensureUserWorkspace gives a non-admin user their own copy of the shipped AI
+// ensureUserWorkspace gives a non-admin user (Google, GitHub or email sign-up) their own copy of the shipped AI
 // Factory and GitHub review workflows, in two projects they own. Settings
 // (variables) and secrets are scoped to those projects, so they stay with this
 // login. Idempotent: safe to call on every sign-in; it installs what is missing
@@ -405,8 +400,16 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Give the new user a personal project they own, so they have somewhere to work.
-	proj := s.createPersonalProject(u)
+	// Like Google/GitHub sign-ups, an email sign-up gets its own copy of the AI
+	// Factory and GitHub review workflows, with settings/secrets in its projects.
+	if err := s.ensureUserWorkspace(u); err != nil {
+		slog.Warn("register: could not provision user workspace", "user", u.ID, "err", err)
+	}
+	key := seed.UserKey(u.ID)
+	proj := model.Project{ID: seed.UserFactoryProjectID(key)}
+	if p, ok, _ := s.Store.GetProject(proj.ID); ok {
+		proj = p
+	}
 
 	token, err := s.Auth.IssueJWT(u)
 	if err != nil {

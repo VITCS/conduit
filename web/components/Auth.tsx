@@ -183,7 +183,7 @@ export function Auth({
 
         {isSignup && (
           <p className="hint" style={{ textAlign: "center" }}>
-            You&apos;ll get your own workspace to build workflows in.
+            You&apos;ll get your own copy of the AI Factory and GitHub review workflows.
           </p>
         )}
       </form>

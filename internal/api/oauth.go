@@ -167,7 +167,7 @@ func (s *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Google/GitHub users get (or keep) their own copy of the shipped workflows,
+	// Every non-admin user gets (or keeps) their own copy of the shipped workflows,
 	// with their settings and secrets stored in projects only they own.
 	// Owners/admins (e.g. the bootstrap admin) are never touched.
 	if err := s.ensureUserWorkspace(u); err != nil {

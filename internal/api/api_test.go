@@ -532,12 +532,23 @@ func TestRegisterEndpoint(t *testing.T) {
 	if out.User.PasswordHash != "" {
 		t.Error("password hash leaked in register response")
 	}
-	// A personal project was created and the user owns it.
-	if out.Project["id"] == "" {
-		t.Fatal("register did not return a personal project")
+	// Like Google/GitHub users, the new user gets their own AI Factory + GitHub
+	// projects (owned by them) holding copies of the shipped workflows, and the
+	// response points the UI at their AI Factory project.
+	key := seed.UserKey(out.User.ID)
+	if out.Project["id"] != seed.UserFactoryProjectID(key) {
+		t.Fatalf("register returned project %q, want the user's AI Factory project", out.Project["id"])
 	}
-	if _, ok, _ := st.GetProject(out.Project["id"]); !ok {
-		t.Error("personal project was not created")
+	for _, c := range []struct{ project, workflow string }{
+		{seed.UserFactoryProjectID(key), seed.UserFactoryWorkflowID(key)},
+		{seed.UserGitHubProjectID(key), seed.UserGitHubWorkflowID(key)},
+	} {
+		if m, ok, _ := st.GetProjectMember(c.project, out.User.ID); !ok || m.Role != model.RoleOwner {
+			t.Errorf("user does not own %s", c.project)
+		}
+		if wf, ok, _ := st.GetWorkflow(c.workflow); !ok || wf.ProjectID != c.project {
+			t.Errorf("workflow %s missing from %s", c.workflow, c.project)
+		}
 	}
 
 	// Short password → 400.
@@ -933,5 +944,43 @@ func TestCreateRunConsumesPendingReviewRequestForGitHubWorkflow(t *testing.T) {
 	got, _, _ := st.GetReviewRequest(rr.ID)
 	if got.Status != "started" || got.RunID != run.ID {
 		t.Errorf("request not marked started: status=%s runID=%s want %s", got.Status, got.RunID, run.ID)
+	}
+}
+
+// An email account created before per-user workflows existed gets them on its
+// next password sign-in; the bootstrap admin never does.
+func TestPasswordLoginProvisionsExistingMemberNotAdmin(t *testing.T) {
+	st := store.NewMem()
+	authSvc := auth.New(st, "s")
+	if _, err := authSvc.EnsureBootstrapAdmin("admin@conduit.local", "conduit"); err != nil {
+		t.Fatal(err)
+	}
+	old, err := authSvc.CreateUser("old@user.com", "Old", "password123", model.RoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &api.Server{Store: st, Engine: engine.New(st), Auth: authSvc, Web: fstest.MapFS{}, AllowSignup: true}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	before, _ := st.ListProjects()
+	if c := postJSON(t, ts.URL+"/api/auth/login", map[string]string{"email": "admin@conduit.local", "password": "conduit"}, nil); c != 200 {
+		t.Fatalf("admin login = %d", c)
+	}
+	if after, _ := st.ListProjects(); len(after) != len(before) {
+		t.Fatalf("admin login created projects: %d -> %d", len(before), len(after))
+	}
+
+	for i := 0; i < 2; i++ { // second login must not duplicate anything
+		if c := postJSON(t, ts.URL+"/api/auth/login", map[string]string{"email": "old@user.com", "password": "password123"}, nil); c != 200 {
+			t.Fatalf("member login = %d", c)
+		}
+	}
+	key := seed.UserKey(old.ID)
+	if _, ok, _ := st.GetWorkflow(seed.UserFactoryWorkflowID(key)); !ok {
+		t.Fatal("existing member was not given the AI Factory workflow on login")
+	}
+	if after, _ := st.ListProjects(); len(after) != len(before)+2 {
+		t.Fatalf("projects after two member logins = %d, want %d", len(after), len(before)+2)
 	}
 }

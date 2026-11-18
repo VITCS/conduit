@@ -96,8 +96,11 @@ test("create account lands the new user in their own workspace", async ({ page }
   await page.locator("#email").fill(email);
   await page.locator("#password").fill("password123");
   await page.getByTestId("auth-submit").click();
-  // Signed in: the app canvas is shown.
+  // Signed in, in their own copy of the AI Factory (not an empty workspace).
   await expect(page.getByTestId("run-btn")).toBeVisible();
+  await expect(page.locator(".project-switch option:checked")).toHaveText("E2E User · AI Factory");
+  await expect(page.getByLabel("Workflow name")).toHaveValue(/AI Factory/);
+  await expect(page.locator(".project-switch option")).toContainText(["E2E User · AI Factory", "E2E User · GitHub"]);
 });
 
 test("project create/delete use in-app dialogs, never a browser prompt or confirm", async ({ page }) => {
