@@ -1,23 +1,26 @@
-# Conduit Agent — Getting Started & Real‑World Guide
+# Conduit Agent — Getting Started Guide
 
-This guide takes you from zero to running Conduit Agent (locally and with Docker) and
-then **uses it as a real user would**, with a concrete, timed scenario that shows
-why it's useful.
+This guide takes you from zero to running Conduit Agent (locally or with Docker),
+then walks through it the way you would actually use it: a ticket goes in and a
+reviewed pull request comes out.
 
-Conduit Agent is an **event‑driven automation control plane**: you build a workflow as a
-visual graph of components (triggers → steps → status), run it, watch every step
-live, gate risky steps on a human, keep secrets and state, and get metrics + an
-audit trail — all from one binary.
+**Conduit Agent is an open-source, self-hosted AI software factory.** Agents triage
+a ticket, plan the change and write the code on a branch; you approve the plan and
+the exact files; CI has to pass; then a pull request opens and goes to review.
+Every step is a node on a visual graph you can watch live, skip, or re-run from
+where it failed. Underneath is a general workflow engine, so the same canvas also
+builds other event-driven automations, with secrets, approvals, metrics and an
+audit trail, all from one binary.
 
 - [1. Run it locally (from source)](#1-run-it-locally-from-source)
 - [2. Run it with Docker](#2-run-it-with-docker)
-- [3. First sign‑in](#3-first-sign-in)
-- [4. Real‑world walkthrough: PR preview environments](#4-real-world-walkthrough-pr-preview-environments)
-- [5. Trigger it the way production does: a webhook](#5-trigger-it-the-way-production-does-a-webhook)
-- [6. Make it real: open an actual GitHub pull request](#6-make-it-real-open-an-actual-github-pull-request)
-- [7. Build your own automation from scratch](#7-build-your-own-automation-from-scratch)
-- [8. The AI Factory: issue → reviewed PR](#8-the-ai-factory-issue--reviewed-pr)
-- [9. Run control: cancel and approval](#9-run-control-cancel-and-approval)
+- [3. First sign-in](#3-first-sign-in)
+- [4. The AI Factory: ticket → reviewed PR](#4-the-ai-factory-ticket--reviewed-pr)
+- [5. Run control: approve, skip, re-run, cancel](#5-run-control-approve-skip-re-run-cancel)
+- [6. Beyond the factory: PR preview environments](#6-beyond-the-factory-pr-preview-environments)
+- [7. Trigger it the way production does: a webhook](#7-trigger-it-the-way-production-does-a-webhook)
+- [8. Make it real: open an actual GitHub pull request](#8-make-it-real-open-an-actual-github-pull-request)
+- [9. Build your own automation from scratch](#9-build-your-own-automation-from-scratch)
 - [10. Why this saves you time](#10-why-this-saves-you-time)
 
 ---
@@ -68,26 +71,115 @@ The compose file sets safe local defaults (`CONDUIT_SECRET_KEY`,
 `CONDUIT_JWT_SECRET`, bootstrap admin). For production, change those — see
 [SECURITY.md](SECURITY.md).
 
-## 3. First sign‑in
+## 3. First sign-in
 
-Open **http://localhost:8080**. On first run Conduit creates an admin:
+Open **http://localhost:8080** and choose **Sign in** or **Get started**.
 
-- **Email:** `admin@conduit.local`
-- **Password:** `conduit`
+- **Google or GitHub** sign-in appears when the server has those OAuth providers
+  configured; **email and password** sign-up always works (unless
+  `CONDUIT_ALLOW_SIGNUP=false`).
+- **Every account gets its own workspace:** two projects you own,
+  *"&lt;your name&gt; · AI Factory"* and *"&lt;your name&gt; · GitHub"*, each holding your
+  own copy of the built-in workflow. Your settings and secrets live in those
+  projects, are encrypted at rest, and are not visible to other users.
+- **The server's administrator** signs in with the bootstrap admin account,
+  created on first run (`CONDUIT_ADMIN_EMAIL` / `CONDUIT_ADMIN_PASSWORD`, default
+  `admin@conduit.local` / `conduit`). The admin sees every project, including the
+  shared *Default* project with the *"Preview Environments · DigitalOcean"* example.
 
-Sign in. You land on the **canvas** with a seeded workflow,
-*"Preview Environments · DigitalOcean"*. The top bar has a **project switcher**
-(Default, AI Factory), **Run / Cancel**, **Members**, **Secrets**, theme, **Edit**,
-and your user. The left rail lists the workflow's steps (and, via *Run history*,
-past runs). The center is the live graph.
+Once signed in, the top bar has the **project picker**, the workflow name,
+**Run / Cancel** and **Edit**, plus icon buttons for **Members**, **Settings**
+(variables and secrets) and the theme. Below it, switch between **Workflow**,
+**Board** and **Metrics**; in the Workflow view, the **Canvas / Console / Memory /
+Files** tabs, with the steps of the current run listed in the left rail.
 
-> Change the admin password after first login (create a new owner user from
-> **Members → create user**, then sign in as them), and set your own
-> `CONDUIT_JWT_SECRET` / `CONDUIT_SECRET_KEY` for anything shared.
+> If you run the server for anyone but yourself, change the admin password and
+> set your own `CONDUIT_JWT_SECRET` / `CONDUIT_SECRET_KEY` first — see
+> [SECURITY.md](SECURITY.md). Settings and secrets only survive a restart when
+> `CONDUIT_SECRET_KEY` is set and the server uses Postgres.
 
 ---
 
-## 4. Real‑world walkthrough: PR preview environments
+## 4. The AI Factory: ticket → reviewed PR
+
+Open your **AI Factory** project (project picker). Its workflow,
+*"AI Factory · Ticket → PR"*, is the whole pipeline:
+
+```
+Ticket (board task / Jira / Notion / webhook)
+  → Triage · Confidence ──low──▶ Needs clarification (a person, not a model)
+  → Refine & Plan → Draft Implementation → Review Confidence   (agents)
+  → Human Approval            ← gate 1: the plan
+  → Plan Changes → Approve Changes   ← gate 2: the exact files
+  → Apply Changes  (writes the files, pushes a branch via the GitHub API)
+  → Verify Checks (CI) ──fail──▶ back to Apply with the failures, up to twice
+  → Open Pull Request → Post PR to Ticket → Record Delivery
+```
+
+**1. Configure it once.** Open **Settings** and add, at minimum:
+
+| Kind | Name | Example |
+| --- | --- | --- |
+| Variable | `owner`, `repo` | `acme`, `web` — the repository to change |
+| Variable | `llm_provider`, `llm_model` | `anthropic`, your model ID (or `openai` / `custom`) |
+| Secret | `github_token` | a token with **contents: write** and **pull requests: write** |
+| Secret | `llm_key` | your model provider's API key |
+
+Jira or Notion as the ticket source need their own settings (`jira_base`,
+`jira_email`, `jira_token`, …); the full table is in the README's
+[AI Factory section](README.md#the-ai-factory--ticket--reviewed-pr).
+
+**2. Give it a ticket.** Open **Board → New task**. Write the problem and, ideally,
+a checkable outcome — for example *"Add SEO metadata, sitemap.xml and robots.txt.
+Done when Lighthouse SEO passes."* Clear tickets score higher at triage. The card
+lands in **Backlog**; click **Start**.
+
+**3. Watch and approve.** The run opens on the canvas and each node moves from
+*yet to start* to *in progress* to *done* live.
+
+- At **Human Approval**, a banner appears with what the agents suggested: the plan
+  and the review. Approve it, or reject to stop the run.
+- At **Approve Changes**, you see the exact files the coding agent will create or
+  modify. Nothing is written to your repository before you approve this.
+- **Apply Changes** pushes a branch; **Verify Checks** waits for your repository's
+  CI on that commit. A failing check goes back to the coding agent as feedback.
+- **Open Pull Request** opens the PR and posts it to the ticket. The board card
+  moves through **Implement → Verify → Done**, with the branch and PR link on it.
+
+**4. Review the PR.** The pull request is handed to your **GitHub** project's
+review inbox. Switch to that project and press **Run review** on the banner: an
+agent reviews the diff, a security scan runs, and a person approves before
+Conduit posts the review and merges.
+
+> **No credentials yet?** Without `llm_key`, triage falls back to an offline
+> heuristic, and you can skip any step you are not ready to run (see §5). The
+> README's [smoke test](README.md#4-try-it-endtoend-smoke-test-no-credentials)
+> walks the whole shape offline.
+
+Tickets can also arrive automatically: point GitHub issues or Jira at the intake
+webhook and they land in Backlog, scored, optionally auto-starting above a
+confidence threshold (README, *Run it — two ways*).
+
+---
+
+## 5. Run control: approve, skip, re-run, cancel
+
+- **Approve / Reject.** When a run reaches an approval gate, a **persistent banner**
+  appears across the top of the app with *Approve / Reject / View step* and what the
+  agent suggested, plus a best-effort desktop notification, so a held run is hard
+  to miss. (Allow notifications when your browser asks.)
+- **Skip a step.** Each node has a **skip** switch. A skipped step is bypassed on
+  the next run — handy for *Verify Checks (CI)* on a repository without CI, or for
+  a token that cannot read check-runs. The change saves immediately.
+- **Re-run from a failed stage.** Select the failed node and press **Re-run from
+  here**: the run continues from that stage and keeps the work that already succeeded.
+- **Cancel** (top bar, while a run is active) stops it at the next step boundary,
+  whether it is queued, executing, or waiting on a person, and the button returns
+  to **Run**. It is idempotent and the UI re-syncs with the server.
+
+---
+
+## 6. Beyond the factory: PR preview environments
 
 **The problem.** Your team wants every pull request to get its own disposable
 preview environment — provision a server, deploy the branch, health‑check it, and
@@ -95,7 +187,9 @@ post the URL on the PR — but you don't want deploys firing outside business ho
 or without an on‑call sign‑off, and you want a record of what was created so it can
 be cleaned up later.
 
-That is exactly the seeded **Preview Environments** workflow. Here's the graph:
+The same engine runs this without any AI: it is the **Preview Environments**
+example in the shared *Default* project (visible to the admin; anyone can build
+it with §9). Here's the graph:
 
 ```
 On Pull Request → Business Hours Gate → Provision Server → Configure App → Health Check
@@ -125,12 +219,12 @@ a human approval, branch‑on‑failure, live visibility, and durable state — 
 writing or babysitting a shell script.
 
 > The seeded steps are **simulated** so the demo runs offline and deterministically.
-> §6 and §7 show how to make steps perform *real* actions (a live GitHub PR, a
+> §8 and §9 show how to make steps perform *real* actions (a live GitHub PR, a
 > real HTTP/Slack call, a live LLM).
 
 ---
 
-## 5. Trigger it the way production does: a webhook
+## 7. Trigger it the way production does: a webhook
 
 In production you don't press "Run" — your Git host does, when a PR opens. Conduit
 exposes a webhook per workflow. Webhooks authenticate with an **API token**.
@@ -164,7 +258,7 @@ at `/api/hooks/{workflowId}?token=…` and every PR drives a run.
 
 ---
 
-## 6. Make it real: open an actual GitHub pull request
+## 8. Make it real: open an actual GitHub pull request
 
 The seeded demo is simulated; this section does something **real** against GitHub,
 end to end. We'll build *"on webhook → open a pull request in my repo."*
@@ -180,7 +274,7 @@ access tokens → Fine-grained tokens*. Give it access to your repo with
 **Pull requests: Read and write** (add **Contents: Read and write** if an earlier
 step creates the `head` branch). Copy it.
 
-**b) Store it as a project secret** named `github_token` (top bar → **Secrets**):
+**b) Store it as a project secret** named `github_token` (top bar → **Settings** → Secrets):
 
 ```bash
 curl -s -X PUT localhost:8080/api/secrets/github_token \
@@ -229,13 +323,13 @@ is really there.
 
 ---
 
-## 7. Build your own automation from scratch
+## 9. Build your own automation from scratch
 
 Let's build something genuinely useful and **make one step do a real thing**:
 *"When called, run a health check against a real URL and post the result to Slack;
 if the check fails, still notify."* Secrets keep the Slack URL out of the graph.
 
-**a) Store the Slack webhook as a secret** (top bar → **Secrets**, or API):
+**a) Store the Slack webhook as a secret** (top bar → **Settings** → Secrets, or API):
 
 ```bash
 curl -s -X PUT localhost:8080/api/secrets/slack_url \
@@ -271,56 +365,26 @@ You now have a real monitor‑and‑alert automation — versioned as a graph, w
 live run view, retries (set `retries` on the HTTP node), and an audit record of
 who changed it.
 
-## 8. The AI Factory: issue → reviewed PR
-
-Switch the project (top‑bar switcher) to **AI Factory**. The seeded
-*"AI Factory · Issue → Reviewed PR"* workflow models agent‑assisted engineering:
-
-```
-On Issue Labeled → Refine & Plan (agent) → Implement (agent) → Verify (CI)
-                                                                   ├─ success → Review Confidence (agent) → Human Approval → Open PR → Record
-                                                                   └─ failed  → Send Back to Agent
-```
-
-Press **Run**: the three **AI Agent** steps produce simulated responses, CI
-verifies, and the run pauses at **Human Approval**. Approve it and it "opens a PR"
-and records the delivery. To make the agents real, edit an agent node and set
-`live = true`, `provider` (`anthropic` / `openai` / `custom`), `model`, and
-`api_key = ${secret:my_llm_key}` (store the key in **Secrets** first). Prompts can
-pull run context with `${input.issue}` and `${memory.key}`.
-
-To make the final "Open PR" step open a *real* pull request, swap it for a
-**GitHub PR** node configured as in §6 — the agents draft the change, the human
-approves, and Conduit opens the actual PR.
-
-This shows Conduit coordinating AI agents, CI, and a human reviewer in one visible,
-gated pipeline rather than a pile of scripts and manual steps.
-
-## 9. Run control: cancel and approval
-
-- **Cancel** (top bar, while a run is active) stops it immediately and the button
-  returns to **Run** — whether the run is queued, executing, or waiting on a human.
-  It's idempotent and the UI reconciles with the backend, so it never gets stuck.
-- **Approval** raises a **persistent banner** across the top of the app —
-  *Approve / Reject / View step* — the moment a run reaches an approval gate, plus a
-  best-effort desktop notification, so a held run is impossible to miss no matter
-  which tab you're on. (Allow notifications when your browser asks, to get the
-  desktop alert too.)
-
 ## 10. Why this saves you time
 
-Without Conduit, the §4 pipeline is a bash/CI script: no live view, approvals
-hacked in with `sleep`/manual steps, no retry/branch logic, secrets in env files,
-no record of what ran or who approved. With Conduit you get, out of the box:
+Without Conduit, turning a well-written ticket into a pull request means someone
+reads it, plans it, writes the change, waits for CI, fixes what broke and opens the
+PR. With Conduit, the agents do the typing while a person keeps every decision:
 
-- **A visual, versioned workflow** you can read and change without redeploying code.
-- **Live execution** — every step's status, payload, and logs, as it happens.
-- **Human gates** (approval) and **branching** (`success` / `failed`) as first‑class.
-- **Retries, scheduling (cron), and webhooks** without extra glue.
-- **Encrypted, project‑scoped secrets** referenced as `${secret:…}`.
-- **Multi‑tenant projects + RBAC**, **metrics** (`/metrics`), and an **audit log**.
-- **One binary / one `make up`** to run the whole thing, scaling out with workers.
+- **Two approval gates** on every change: the plan, then the exact files. Nothing
+  reaches your repository without a person agreeing to it.
+- **Triage first**, so vague tickets go to a person instead of producing a
+  confident-looking wrong change.
+- **CI has to pass**, with failures fed back to the coding agent automatically.
+- **A live, visual pipeline** — every step's status, output and logs as it happens,
+  with skip, re-run-from-failure and cancel.
+- **Your model, your repository, your server** — Anthropic, OpenAI or your own
+  gateway; self-hosted; per-user encrypted settings and secrets.
+- **One engine for the rest**: webhooks, cron schedules, HTTP and Slack steps,
+  conditions and approvals for any other automation, with RBAC, metrics
+  (`/metrics`) and an audit log, from one binary and one `make up`.
 
 Next: the full command/endpoint reference is in [README.md](README.md), the
-reproducible test guide in [TESTING.md](TESTING.md), and the security model +
-production checklist in [SECURITY.md](SECURITY.md).
+reproducible test guide in [TESTING.md](TESTING.md), the security model and
+production checklist in [SECURITY.md](SECURITY.md), and what comes next in
+[ROADMAP.md](ROADMAP.md).
