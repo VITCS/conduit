@@ -11,19 +11,38 @@
   &nbsp;·&nbsp; <a href="docs/video/conduit-intro-vertical.mp4">vertical 9:16 cut</a>
 </p>
 
-A small, runnable control plane for **event-driven automation workflows** — a
-visual DAG of components you execute, watch live, and gate on human approval.
+**Tickets in. Reviewed pull requests out.**
 
-Conduit Agent is an original take on the pattern popularized by control-plane
-tools like SuperPlane: a workflow is a graph of typed **components** (trigger → steps →
-status), wired with `success` / `failed` / `approved` edges. A **run** walks that
-graph, executes each component, streams status to the UI, and pauses at approval
-gates until someone signs off.
+Conduit Agent is an open-source, self-hosted **AI software factory**. Give it a
+ticket and it produces a pull request, with a person approving at every step that
+matters:
 
-This repo is a **full-stack app** that ships as a **single Go binary**: the Go
-backend (engine + REST + SSE) serves an API, and a **Next.js** frontend is
-statically exported and embedded into that same binary — no Node runtime in
-production.
+1. **A ticket arrives** from Jira, Notion, a GitHub issue, a webhook, or a task on
+   the built-in board.
+2. **Triage scores it.** A vague ticket goes to a person as "needs clarification"
+   instead of to a model.
+3. **Agents plan the change**, draft the implementation and review it.
+4. **You approve the plan**, then the agents produce the exact list of file changes.
+5. **You approve those files.** Nothing is written to your repository before this.
+6. **A coding agent writes each file and pushes a branch** through the GitHub API.
+7. **CI has to pass.** A failing check goes back to the coding agent as feedback,
+   up to twice.
+8. **The pull request opens**, the link is posted on the ticket, and the PR lands in
+   a GitHub review workflow where an agent reviews it and a person approves the merge.
+
+Every step is a node on a visual graph you can watch live, skip, or re-run from
+the stage that failed. You bring your own repository and model (Anthropic, OpenAI,
+or your own gateway). Each person who signs in gets their own copy of the
+workflows, with their settings and secrets encrypted and kept to their login.
+
+Under the hood it is a general workflow engine: a workflow is a graph of typed
+**components** (trigger → steps → status) wired with `success` / `failed` /
+`approved` edges, so the same canvas builds any event-driven workflow — webhooks,
+schedules, HTTP and Slack calls, conditions and approval gates.
+
+It ships as a **single Go binary**: the Go backend (engine + REST + SSE) serves the
+API, and a **Next.js** frontend is statically exported and embedded into the same
+binary, so there is no Node runtime in production. MIT licensed.
 
 ```
 conduit/
@@ -36,9 +55,9 @@ conduit/
 └── internal/
     ├── model/              # Workflow, Node, Edge, Run, StepRun, Event
     ├── store/              # Store interface + Mem (in-memory) and Pg (Postgres) + pub/sub broker
-    ├── components/         # executors: http, ssh, timegate, if, wait, memory, status…
+    ├── components/         # executors: triage, agent, coding_plan/apply, github_*, jira, notion, http, if, …
     ├── engine/             # DAG walker; runs nodes, follows edges, gates on approval
-    ├── seed/               # the default "Preview Environments" workflow
+    ├── seed/               # built-in workflows (AI Factory, GitHub review, Preview Environments) + per-user copies
     └── api/                # HTTP routes (REST) + Server-Sent Events stream
 ```
 
@@ -417,9 +436,9 @@ cross-project reads are 404.
 
 ## Roadmap
 
-The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROADMAP.md)**
-(phased: scheduling & parallelism → integrations & secrets → multi-tenancy & auth
-→ realtime/scale → agents → release hardening).
+What has shipped, phase by phase, and what comes next is in **[ROADMAP.md](ROADMAP.md)**
+(execution & triggers → scheduling & parallelism → integrations & secrets →
+multi-tenancy & auth → realtime/scale → the AI Factory → release hardening).
 
 **Phase 1 (shipped):** execution robustness & inbound triggers —
 
@@ -489,13 +508,17 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
   so exactly one worker across all instances runs it; a dead worker's lease
   expires and the run is reclaimed. Size the pool with `CONDUIT_WORKERS`.
 
-**Phase 6 (shipped):** agents / factory —
+**Phase 6 (shipped):** the AI Factory —
 
-- An **`agent`** component that prompts an LLM — **simulated by default** (offline),
-  or **live** against Anthropic / OpenAI / a custom gateway using a project secret
-  for the API key. Prompts template run state via `${input.key}` / `${memory.key}`.
-- A seeded **AI Factory** workflow (in the `ai-factory` project) modeling
-  *issue → refine → implement → verify → review → approve → open PR*.
+- **Agents** (`agent`, `triage`) against Anthropic / OpenAI / a custom gateway, with
+  prompts templated from run state, project settings and secrets.
+- A real **ticket → PR pipeline**: Jira / Notion / GitHub-issue / board intake →
+  triage → plan → two human approvals → a coding agent that pushes a branch → CI
+  verification with retry → pull request → GitHub review workflow handoff.
+- **Run control**: skip any step, re-run from the failed stage, cancel, live status.
+- **Per-user workspaces**: each signed-in user gets their own copy of the workflows,
+  with settings and secrets encrypted at rest. See
+  [The AI Factory](#the-ai-factory--ticket--reviewed-pr) below.
 
 **Phase 7 (shipped — `v1.0.0`):** release hardening —
 
@@ -504,9 +527,9 @@ The plan to grow Conduit toward full SuperPlane parity is in **[ROADMAP.md](ROAD
   security headers. See **[SECURITY.md](SECURITY.md)** for the security model and
   production checklist.
 
-Post-1.0 (tracked in SECURITY.md): resumable execution (reclaim resumes rather
-than re-runs; also enables cross-instance approval), httpOnly-cookie sessions,
-OTel traces, agent tool-use + coding-agent sandbox, and OIDC/SSO.
+Next: lower model spend per run, bring-your-own coding agent, more model backends,
+resumable execution and security hardening — see
+[What's next](ROADMAP.md#whats-next).
 
 Previously shipped: **Postgres persistence**, a **`go test` suite**, the
 **Next.js/React Flow UI** embedded in the single binary, **editor saves**, an

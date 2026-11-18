@@ -1,7 +1,15 @@
-# Conduit Agent Roadmap — from mini-clone to full product
+# Conduit Agent Roadmap
 
-This is the development plan to take Conduit Agent from the current working slice to a
-full-featured, production-grade control plane in the spirit of SuperPlane.
+Conduit Agent is an open-source AI software factory: a ticket goes in, agents plan
+and write the change under human approval, CI verifies it, and a reviewed pull
+request comes out. This file records how it got here, phase by phase, and what
+comes next.
+
+The phases below built the foundation first (a workflow engine with approval
+gates, integrations, multi-tenancy, scale), then the AI Factory on top of it. The
+engine idea itself, typed components on a graph with human approval gates, was
+inspired by workflow control planes such as SuperPlane. Conduit is its own
+codebase and product.
 
 ## Where we are (shipped)
 
@@ -12,10 +20,15 @@ full-featured, production-grade control plane in the spirit of SuperPlane.
 - Next.js 16 / React Flow UI (canvas editor, run rail, inspector, console,
   memory), embedded into a single Go binary.
 - One-command Docker (`make up`), CI, test suite, docs.
+- The AI Factory: ticket intake and board, triage, planning and coding agents,
+  two human approval gates, CI verification, pull request and review handoff,
+  per-user workspaces (Phase 6).
 
-## Target feature set (SuperPlane parity)
+## Platform scope
 
-Grouped by theme, with the components/concepts each phase adds.
+The longer-term scope of the engine and platform, grouped by theme. Much of it has
+shipped (see the phases below); the rest is open, and is listed under
+[What's next](#whats-next) where it is actively planned.
 
 | Area | Target |
 |------|--------|
@@ -27,7 +40,7 @@ Grouped by theme, with the components/concepts each phase adds.
 | Multi-tenancy | organizations → projects → workflows; members & invitations |
 | AuthZ/AuthN | login (OIDC), API tokens, RBAC (roles/permissions) |
 | Realtime/scale | Postgres `LISTEN/NOTIFY` event bus, multiple instances, run queue/workers |
-| Agents | LLM/coding-agent components (the "factory" angle) — optional track |
+| Agents | triage, planning and review agents, a coding agent that pushes real branches, CI verification, PR review — the AI Factory |
 | Ops | metrics (Prometheus/OTel), structured logging, audit log, rate limits |
 
 ---
@@ -139,20 +152,33 @@ its suspension point rather than re-running (today a reclaim re-executes; fine f
 idempotent/simulated steps). Cross-instance approval resolution needs that
 resumable state machine and is tracked with it.
 
-### Phase 6 — Agents / factory  ✅ (this release)
+### Phase 6 — The AI Factory  ✅
 
-- **`agent` component**: prompts an LLM. Simulated by default (offline,
-  deterministic); with `live:true` it calls a real provider — adapters for
-  **Anthropic**, **OpenAI**, and a **custom** gateway — using a project-scoped
-  secret for the API key.
-- **Prompt templating**: `${input.key}` and `${memory.key}` resolve from the run,
-  giving agents memory-backed context.
-- **AI Factory sample**: a seeded workflow in the `ai-factory` project modeling
-  the "issue → reviewed PR" flow (refine → implement → verify → review confidence
-  → human approval → open PR → record), reusing agents + approval + the engine.
+The first release modelled the "ticket → reviewed PR" flow with simulated agents.
+It is now a real pipeline that opens real pull requests:
 
-Deferred: streaming agent output, tool-use/function-calling, and a real
-coding-agent sandbox (the `impl` step is an agent call today).
+- **Model adapters**: the `agent` component calls **Anthropic**, **OpenAI** or a
+  **custom** gateway with a project-scoped secret; provider and model are project
+  settings. Prompt templating (`${input.…}`, `${memory.…}`, `${var:…}`,
+  `${secret:…}`) gives agents run context.
+- **Ticket intake**: Jira and Notion source nodes, a webhook intake
+  (`/api/intake/{project}`) for GitHub issues and Jira tickets, and a **board**
+  (Backlog → Implement → Verify → Done / Blocked) with optional auto-start above a
+  confidence threshold.
+- **Triage**: scores a ticket's readiness and routes vague work to "needs
+  clarification" instead of an agent.
+- **Coding agent**: `coding_plan` proposes the exact file changes; after a second
+  human approval, `coding_apply` writes each file and pushes a branch through the
+  GitHub Git Data API (no local checkout), with truncation detection.
+- **CI verification**: `github_checks` waits for the commit's check-runs and loops
+  back to the coding agent with the failures, up to twice.
+- **Pull request + review handoff**: `github_pr` opens the PR, posts it back to the
+  ticket, and sends it to the GitHub review workflow's inbox (agent review →
+  security scan → human approval → merge), which a person starts.
+- **Run control**: skip any step with a checkbox on its node, re-run a failed run
+  from the stage that failed, cancel at any point, and watch status live.
+- **Per-user workspaces**: everyone who signs in gets their own copy of the
+  AI Factory and review workflows, with settings and secrets encrypted at rest.
 
 ### Phase 7 — Release hardening  ✅ (this release)
 
@@ -165,9 +191,27 @@ coding-agent sandbox (the `impl` step is an agent call today).
 - **SECURITY.md**: security model, production checklist, and tracked limitations.
 - Tagged **`v1.0.0`**.
 
-Post-1.0 (tracked in SECURITY.md): resumable execution (reclaim resumes rather
-than re-runs; also enables cross-instance approval), httpOnly-cookie sessions,
-OTel traces, agent tool-use + coding-agent sandbox, OIDC/SSO.
+---
+
+## What's next
+
+Planned, not shipped. Order is a rough priority.
+
+- **Lower model spend per run** — separate fast and strong model tiers per step,
+  prompt caching for the per-file coding calls, merging the three pre-approval
+  agent calls, a per-run token budget, and usage in the Metrics view.
+- **Bring your own coding agent** — hand the coding step to a tool an organization
+  already licenses (for example the GitHub Copilot coding agent or Claude Code in
+  GitHub Actions), or to a local runner on a developer's machine, while Conduit
+  keeps triage, approvals, CI and review.
+- **More model backends** — AWS Bedrock, Google Vertex AI and Azure, so teams can
+  use an existing cloud agreement instead of a separate API key.
+- **Resumable execution** — a reclaimed run resumes instead of restarting, which
+  also enables approving from any instance.
+- **More sources and targets** — GitLab, Linear and other trackers behind the same
+  connector interface.
+- **Security hardening** — httpOnly-cookie sessions, OIDC/SSO, OTel traces (see
+  [SECURITY.md](SECURITY.md)).
 
 ---
 
