@@ -1,7 +1,12 @@
 # Conduit Agent intro video
 
-`conduit-intro.mp4` is a 35-second, 1920×1080, 30 fps intro for social posts and the README.
-It has no audio, so it reads correctly when it autoplays muted.
+Two cuts of the same 35-second, 30 fps intro. Neither has audio, so both read correctly
+when they autoplay muted.
+
+| File | Size | Use it for |
+|---|---|---|
+| `conduit-intro.mp4` | 1920×1080 (16:9) | LinkedIn, X, YouTube, the README |
+| `conduit-intro-vertical.mp4` | 1080×1920 (9:16) | Instagram Reels, YouTube Shorts, TikTok |
 
 | Time | Scene |
 |---|---|
@@ -17,11 +22,20 @@ The ticket, run number and confidence score are sample data and are labelled "sa
 
 ## Editing and re-rendering
 
-`intro.html` holds every scene; each frame is a pure function of time (`render(t)`).
-Open it in a browser to preview it live, then re-render:
+`intro.html` (landscape) and `intro-vertical.html` (portrait) hold every scene. They share
+the same scenes, text and timing, but the layout differs, so a wording change goes in both.
+Each frame is a pure function of time (`render(t)`). Open either file in a browser to
+preview it live, then re-render:
 
 ```bash
 node docs/video/render.js                         # writes docs/video/conduit-intro.mp4
+```
+
+```bash
+node docs/video/render.js docs/video/conduit-intro-vertical.mp4 --src intro-vertical.html
+```
+
+```bash
 node docs/video/render.js out.mp4 --stills 5,12   # just PNG stills at those seconds
 ```
 

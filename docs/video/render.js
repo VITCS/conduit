@@ -1,5 +1,6 @@
 // Renders intro.html to an MP4, one frame at a time (deterministic, no dropped frames).
-//   node docs/video/render.js [out.mp4] [--fps 30] [--stills 2,10,20]
+//   node docs/video/render.js [out.mp4] [--src intro.html] [--fps 30] [--stills 2,10,20]
+// The page sets its own size via window.SIZE (default 1920×1080).
 // Requires Playwright (Chromium) and ffmpeg on PATH.
 const { chromium } = require("playwright");
 const { execFileSync } = require("child_process");
@@ -10,18 +11,21 @@ const opt = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[
 const out = path.resolve(args.find((a) => a.endsWith(".mp4")) || path.join(__dirname, "conduit-intro.mp4"));
 const fps = Number(opt("--fps", 30));
 const stills = opt("--stills", "");
+const src = opt("--src", "intro.html");
 
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-  await page.goto("file://" + path.join(__dirname, "intro.html") + "?capture");
+  await page.goto("file://" + path.join(__dirname, src) + "?capture");
+  const size = await page.evaluate(() => window.SIZE || { width: 1920, height: 1080 });
+  await page.setViewportSize(size);
   await page.evaluate(() => document.fonts.ready);
   const duration = await page.evaluate(() => window.DURATION);
 
   if (stills) {
     for (const s of stills.split(",").map(Number)) {
       await page.evaluate((t) => window.render(t), s);
-      await page.screenshot({ path: path.join(path.dirname(out), `still-${s}.png`) });
+      await page.screenshot({ path: path.join(path.dirname(out), `${path.basename(src, ".html")}-${s}.png`) });
     }
     await browser.close();
     return;

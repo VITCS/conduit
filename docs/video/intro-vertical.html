@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Conduit Agent — intro video (vertical)</title>
+<!--
+  Source for the vertical (9:16, 1080×1920) cut of the ~35 s Conduit Agent intro.
+  Same scenes and timing as intro.html, re-laid out for phones (Reels, Shorts, TikTok).
+  Every frame is a pure function of time: render(t) sets the whole scene for t
+  seconds, so render.js can step through it frame by frame and encode an MP4.
+  Open this file in a browser to preview it in real time.
+  Run values (ENG-482, PR #129, confidence 86) are sample data, labelled on screen.
+-->
+<style>
+  @font-face { font-family: "JB"; font-weight: 400; src: url("../../web/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JB"; font-weight: 500; src: url("../../web/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: "JB"; font-weight: 600; src: url("../../web/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #080b12; --s1: #0f1522; --s2: #151c2a; --s3: #1c2536; --line: #212b3d; --line2: #34425c;
+    --fg: #e8ecf4; --muted: #a3aec2; --faint: #6f7c94;
+    --violet: #8b5cf6; --violet2: #b9a2ff; --cyan: #22d3ee; --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
+    --mono: "JB", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--bg); }
+  body { font-family: "Inter", system-ui, sans-serif; color: var(--fg); -webkit-font-smoothing: antialiased; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
+  .abs { position: absolute; }
+  .scene { position: absolute; inset: 0; opacity: 0; }
+
+  /* backdrop */
+  .aur { position: absolute; border-radius: 50%; filter: blur(90px); }
+  .grid { position: absolute; inset: -60px; background-image:
+      linear-gradient(to right, rgba(52,66,92,.35) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(52,66,92,.35) 1px, transparent 1px);
+    background-size: 60px 60px;
+    -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 45%, #000 20%, transparent 75%);
+            mask-image: radial-gradient(ellipse 75% 65% at 50% 45%, #000 20%, transparent 75%); }
+
+  .grad { background: linear-gradient(95deg, #8b5cf6, #6d8cf5 45%, #22d3ee); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .kicker { display: inline-flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 22px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--violet2); padding: 10px 22px; border-radius: 999px; border: 1px solid rgba(139,92,246,.45); background: rgba(139,92,246,.1); }
+  .caption { position: absolute; left: 60px; right: 60px; bottom: 80px; text-align: center; font-size: 46px; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
+  .caption span { display: block; margin-top: 6px; }
+  .caption b { color: var(--fg); } .caption span { color: var(--muted); font-weight: 500; }
+  .tag { font-family: var(--mono); font-size: 16px; letter-spacing: .1em; color: var(--faint); border: 1px dashed var(--line2); border-radius: 999px; padding: 4px 12px; }
+
+  /* hub scene */
+  .panel { position: absolute; border: 1px solid var(--line2); border-radius: 26px; background: rgba(15,21,34,.78); box-shadow: 0 30px 80px rgba(0,0,0,.55); }
+  .hn { position: absolute; transform: translate(-50%,-50%); display: flex; align-items: center; gap: 14px; padding: 14px 20px 14px 14px; white-space: nowrap;
+    border-radius: 16px; border: 1px solid var(--line2); background: var(--s2); }
+  .hn .ico { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; flex: 0 0 auto; }
+  .hn .ico svg { width: 24px; height: 24px; }
+  .hn b { display: block; font-size: 22px; font-weight: 600; line-height: 1.2; }
+  .hn small { display: block; font-family: var(--mono); font-size: 15px; color: var(--faint); }
+  .hn .ok { position: absolute; top: -13px; right: -13px; width: 30px; height: 30px; border-radius: 50%; background: var(--ok); display: grid; place-items: center; }
+  .hn .ok svg { width: 18px; height: 18px; }
+  .hub { position: absolute; width: 230px; height: 230px; border-radius: 50%; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 35%, #2a1a5e, #140f2e 70%); border: 2px solid rgba(139,92,246,.7); }
+  .hub b { font-size: 34px; font-weight: 700; } .hub small { font-family: var(--mono); font-size: 16px; color: var(--violet2); margin-top: 6px; }
+  .think { position: absolute; transform: translate(-50%,-50%); font-size: 19px; font-weight: 600; color: #e9e1ff; padding: 10px 18px; border-radius: 999px;
+    background: rgba(76,48,160,.85); border: 1px solid rgba(185,162,255,.5); white-space: nowrap; }
+  .log { position: absolute; font-family: var(--mono); }
+  .log h4 { grid-column: 1 / -1; font-size: 16px; letter-spacing: .14em; color: var(--faint); font-weight: 500; padding: 20px 26px 14px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .log .l { display: flex; gap: 14px; font-size: 21px; white-space: nowrap; padding: 9px 26px; color: var(--fg); }
+  .log .l i { font-style: normal; color: var(--cyan); width: 84px; flex: 0 0 auto; }
+  .card { position: absolute; display: flex; align-items: center; gap: 18px; padding: 24px 26px; border-radius: 20px; border: 1px solid var(--line2); background: var(--s1); }
+  .card .ci { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; }
+  .card b { display: block; font-size: 26px; white-space: nowrap; } .card small { display: block; font-size: 22px; color: var(--muted); margin-top: 4px; }
+  .toast { position: absolute; display: flex; align-items: center; gap: 16px; padding: 22px 26px; border-radius: 20px; font-size: 27px; font-weight: 600;
+    border: 1px solid rgba(52,211,153,.55); background: rgba(52,211,153,.1); }
+
+  /* gate scene */
+  .gate { position: absolute; left: 50%; top: 860px; width: 960px; transform: translate(-50%,-50%); padding: 38px 42px; border-radius: 28px;
+    border: 1px solid rgba(251,191,36,.6); background: linear-gradient(180deg, rgba(251,191,36,.08), rgba(15,21,34,.95)); box-shadow: 0 40px 100px rgba(0,0,0,.6); }
+  .gate h3 { display: flex; align-items: center; gap: 14px; font-size: 34px; font-weight: 650; color: var(--warn); }
+  .gate .t { margin-top: 14px; font-size: 24px; color: var(--muted); } .gate .t b { font-family: var(--mono); color: var(--fg); font-size: 21px; margin-right: 10px; }
+  .files { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .files div { display: flex; align-items: baseline; gap: 16px; font-size: 22px; }
+  .files em { font-style: normal; font-family: var(--mono); font-size: 16px; padding: 3px 10px; border-radius: 8px; color: var(--cyan); border: 1px solid rgba(34,211,238,.45); }
+  .files em.c { color: var(--ok); border-color: rgba(52,211,153,.45); }
+  .files code { font-family: var(--mono); color: var(--fg); } .files span { color: var(--faint); }
+  .gb { display: flex; gap: 14px; margin-top: 30px; }
+  .gb button { font: inherit; font-size: 24px; font-weight: 650; padding: 14px 30px; border-radius: 14px; border: 1px solid var(--line2); background: var(--s2); color: var(--fg); }
+  .gb button.ap { background: var(--ok); color: #04130d; border-color: transparent; }
+  .res { margin-top: 30px; display: flex; align-items: center; gap: 12px; font-size: 26px; font-weight: 600; color: var(--ok); }
+  .checks { position: absolute; left: 50%; top: 1210px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; width: 900px; }
+  .chk { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 22px; padding: 12px 20px; border-radius: 999px; border: 1px solid var(--line2); background: var(--s1); }
+  .chk i { width: 14px; height: 14px; border-radius: 50%; background: var(--faint); }
+  .cursor { position: absolute; width: 44px; height: 44px; }
+
+  /* steps scene */
+  .step { position: absolute; left: 70px; width: 940px; height: 340px; padding: 26px; display: flex; gap: 30px; align-items: center; border-radius: 28px; border: 1px solid var(--line2);
+    background: linear-gradient(180deg, var(--s1), rgba(15,21,34,.4)); }
+  .step .art { flex: 0 0 380px; height: 280px; border-radius: 18px; border: 1px solid var(--line); background: rgba(8,11,18,.6); display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 0 26px; }
+  .step .n { font-family: var(--mono); font-size: 22px; color: var(--cyan); }
+  .step h3 { font-size: 33px; line-height: 1.15; letter-spacing: -.02em; margin-top: 10px; }
+  .step p { font-size: 22px; color: var(--muted); margin-top: 12px; line-height: 1.45; }
+  .row { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 19px; padding: 10px 14px; border-radius: 12px; background: var(--s2); }
+  .row em { margin-left: auto; font-style: normal; letter-spacing: .2em; color: var(--faint); }
+  .pill { display: inline-flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 600; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--line2); background: var(--s2); }
+  .pill svg { color: var(--ok); }
+  .okrow { display: flex; align-items: center; gap: 12px; font-size: 21px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--s2); }
+  .okrow i { width: 24px; height: 24px; border-radius: 50%; background: var(--ok); display: grid; place-items: center; }
+
+  /* integrations */
+  .int { position: absolute; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .int .m { width: 84px; height: 84px; border-radius: 22px; display: grid; place-items: center; font-family: var(--mono); font-size: 24px; font-weight: 600; border: 1px solid; }
+  .int span { font-size: 20px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .orbit { position: absolute; border-radius: 50%; border: 1px dashed rgba(52,66,92,.8); transform: translate(-50%,-50%); }
+
+  /* cta */
+  .cta-btn { display: inline-flex; align-items: center; gap: 14px; font-size: 32px; font-weight: 650; padding: 22px 40px; border-radius: 18px; color: #fff;
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed); box-shadow: 0 18px 50px -12px rgba(139,92,246,.9); }
+  .repo { display: inline-flex; align-items: center; gap: 14px; font-family: var(--mono); font-size: 28px; padding: 20px 32px; border-radius: 18px; border: 1px solid var(--line2); background: var(--s1); }
+  .facts { display: flex; justify-content: center; gap: 46px; font-size: 26px; color: var(--muted); }
+  .facts span { display: inline-flex; align-items: center; gap: 12px; } .facts svg { color: var(--ok); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+const DURATION = 35;      // seconds
+const W = 1080, H = 1920;
+window.SIZE = { width: W, height: H };
+
+/* ---------- helpers ---------- */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, p) => a + (b - a) * p;
+const easeOut = (p) => 1 - Math.pow(1 - clamp(p), 3);
+const easeInOut = (p) => { p = clamp(p); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+// 0→1 between a and a+d
+const prog = (t, a, d) => clamp((t - a) / d);
+// visibility of a scene window [a,b] with fades
+const win = (t, a, b, fi = .45, fo = .45) => Math.min(prog(t, a, fi), 1 - prog(t, b - fo, fo));
+const el = (tag, cls, html, parent) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; (parent || stage).appendChild(e); return e; };
+const css = (e, o) => { for (const k in o) e.style[k] = o[k]; };
+const rise = (e, p, dy = 34) => css(e, { opacity: easeOut(p), transform: (e.dataset.base || "") + ` translateY(${(1 - easeOut(p)) * dy}px)` });
+
+const ICON = {
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="#04130d" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  checkG: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  ticket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M9 9h6M9 15h6"/></svg>',
+  issue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>',
+  notion: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+  bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M8 4h8M9 14h.01M15 14h.01"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 11l2 2 4-4"/></svg>',
+  branch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="7" r="2.5"/><path d="M6 7.5v9M18 9.5c0 5-12 3-12 7"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+  pr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M6 7.5v9M18 16.5V9a3 3 0 0 0-3-3h-4M13 3.5 10.5 6 13 8.5"/></svg>',
+  hand: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
+  key: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14.5 8.5l2 2"/></svg>',
+  star: '<svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>',
+};
+const markSVG = (s) => `<svg width="${s}" height="${s}" viewBox="0 0 32 32" fill="none"><defs><linearGradient id="mg${s}" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop stop-color="#8B5CF6"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="9" fill="url(#mg${s})" opacity=".16"/><rect x="1" y="1" width="30" height="30" rx="9" stroke="url(#mg${s})" stroke-width="1.4"/><path d="M8 16h5.5c3.6 0 3.6-6.5 7.2-6.5M13.5 16c3.6 0 3.6 6.5 7.2 6.5" stroke="url(#mg${s})" stroke-width="2.3" stroke-linecap="round"/><circle cx="22.6" cy="9.5" r="2.3" fill="#22D3EE"/><circle cx="22.6" cy="22.5" r="2.3" fill="#8B5CF6"/></svg>`;
+
+const stage = document.getElementById("stage");
+
+/* ---------- backdrop (always on) ---------- */
+const a1 = el("div", "aur"); css(a1, { width: "1100px", height: "800px", background: "rgba(139,92,246,.32)" });
+const a2 = el("div", "aur"); css(a2, { width: "900px", height: "700px", background: "rgba(34,211,238,.16)" });
+const grid = el("div", "grid");
+
+/* =========================================================================
+   S1 — hook (0 – 4.4)
+   ========================================================================= */
+const s1 = el("div", "scene");
+const s1a = el("div", "abs", "Every team has a backlog of tickets.", s1);
+css(s1a, { left: "80px", right: "80px", top: "640px", textAlign: "center", fontSize: "58px", lineHeight: 1.2, fontWeight: 600, letterSpacing: "-.03em", color: "var(--muted)" });
+const s1b = el("div", "abs", 'What if each one became a <span class="grad">reviewed pull request</span>?', s1);
+css(s1b, { left: "70px", right: "70px", top: "850px", textAlign: "center", fontSize: "82px", fontWeight: 700, letterSpacing: "-.035em", lineHeight: 1.1, zIndex: 2 });
+// a little stack of tickets flying in behind the line
+const s1t = [];
+for (let i = 0; i < 6; i++) {
+  const c = el("div", "abs", `<span style="font-family:var(--mono);font-size:18px;color:var(--faint)">ENG-${470 + i * 7}</span>`, s1);
+  css(c, { width: "180px", height: "64px", borderRadius: "14px", border: "1px solid var(--line2)", background: "var(--s1)", display: "grid", placeItems: "center" });
+  s1t.push(c);
+}
+
+/* =========================================================================
+   S2 — brand (4.4 – 8.6)
+   ========================================================================= */
+const s2 = el("div", "scene");
+const s2m = el("div", "abs", markSVG(120), s2); css(s2m, { left: "470px", top: "470px" });
+const s2n = el("div", "abs", 'Conduit <span style="color:var(--muted);font-weight:500">Agent</span>', s2);
+css(s2n, { left: 0, right: 0, top: "630px", textAlign: "center", fontSize: "50px", fontWeight: 700 });
+const s2h1 = el("div", "abs", "Tickets in.", s2);
+css(s2h1, { left: 0, right: 0, top: "760px", textAlign: "center", fontSize: "128px", fontWeight: 700, letterSpacing: "-.045em", lineHeight: 1 });
+const s2h2 = el("div", "abs grad", "Reviewed pull requests out.", s2);
+css(s2h2, { left: "40px", right: "40px", top: "905px", textAlign: "center", fontSize: "128px", fontWeight: 700, letterSpacing: "-.045em", lineHeight: 1.05 });
+const s2k = el("div", "abs", '<span class="kicker">Open-source AI software factory</span>', s2);
+css(s2k, { left: 0, right: 0, top: "1250px", textAlign: "center" });
+
+/* =========================================================================
+   S3 — the run, around the hub (8.6 – 18.0)
+   ========================================================================= */
+const s3 = el("div", "scene");
+const s3p = el("div", "panel", "", s3); css(s3p, { left: "40px", top: "130px", width: "1000px", height: "1560px" });
+const s3bar = el("div", "abs", `<span style="display:inline-flex;gap:10px;margin-right:22px"><i style="width:14px;height:14px;border-radius:50%;background:#34425c"></i><i style="width:14px;height:14px;border-radius:50%;background:#34425c"></i><i style="width:14px;height:14px;border-radius:50%;background:#34425c"></i></span><span style="font-family:var(--mono);font-size:22px;color:var(--muted)">AI Factory · run #482</span><span class="tag" style="margin-left:16px">SAMPLE RUN</span>`, s3);
+css(s3bar, { left: "76px", top: "160px", display: "flex", alignItems: "center" });
+const s3st = el("div", "abs", "", s3); css(s3st, { right: "76px", top: "164px", fontFamily: "var(--mono)", fontSize: "22px" });
+const s3line = el("div", "abs", "", s3); css(s3line, { left: "41px", right: "41px", top: "222px", height: "1px", background: "var(--line)" });
+
+const HUB = { x: 540, y: 790 };
+const NODES = [
+  { id: "jira", label: "Jira", sub: "ticket source", x: 205, y: 790, tone: "#60A5FA", icon: "ticket" },
+  { id: "issues", label: "GitHub Issues", sub: "ticket source", x: 260, y: 525, tone: "#94A3B8", icon: "issue" },
+  { id: "model", label: "AI model", sub: "plan · code · review", x: 540, y: 440, tone: "#A78BFA", icon: "bot" },
+  { id: "you", label: "You", sub: "2 approval gates", x: 840, y: 525, tone: "#FBBF24", icon: "user" },
+  { id: "repo", label: "Git branch", sub: "pushed via API", x: 870, y: 790, tone: "#22D3EE", icon: "branch" },
+  { id: "ci", label: "CI checks", sub: "verified", x: 840, y: 1055, tone: "#34D399", icon: "shield" },
+  { id: "pr", label: "Pull request", sub: "opened", x: 540, y: 1140, tone: "#34D399", icon: "pr" },
+  { id: "notion", label: "Notion", sub: "ticket source", x: 240, y: 1055, tone: "#94A3B8", icon: "notion" },
+];
+const svgNS = "http://www.w3.org/2000/svg";
+const s3svg = document.createElementNS(svgNS, "svg"); s3svg.setAttribute("width", W); s3svg.setAttribute("height", H); s3svg.style.position = "absolute"; s3svg.style.inset = 0; s3.appendChild(s3svg);
+s3svg.innerHTML = `<defs><filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <radialGradient id="hg"><stop offset="0" stop-color="#8B5CF6" stop-opacity=".45"/><stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/></radialGradient></defs>
+  <circle cx="${HUB.x}" cy="${HUB.y}" r="260" fill="url(#hg)"/>
+  <circle cx="${HUB.x}" cy="${HUB.y}" r="190" fill="none" stroke="#2a3550" stroke-dasharray="4 8"/>`;
+const lines = {}, lit = {};
+for (const n of NODES) {
+  const base = document.createElementNS(svgNS, "line");
+  for (const [k, v] of Object.entries({ x1: HUB.x, y1: HUB.y, x2: n.x, y2: n.y, stroke: "#2a3550", "stroke-width": 2 })) base.setAttribute(k, v);
+  s3svg.appendChild(base);
+  const on = document.createElementNS(svgNS, "line");
+  for (const [k, v] of Object.entries({ x1: HUB.x, y1: HUB.y, x2: n.x, y2: n.y, stroke: n.id === "model" ? "#8B5CF6" : "#22D3EE", "stroke-width": 3.5, filter: "url(#glow)" })) on.setAttribute(k, v);
+  on.style.opacity = 0; s3svg.appendChild(on); lit[n.id] = on;
+}
+const pulse = document.createElementNS(svgNS, "circle"); pulse.setAttribute("r", 9); pulse.setAttribute("filter", "url(#glow)"); s3svg.appendChild(pulse);
+const hub = el("div", "hub", "<b>Conduit</b><small>AI Factory</small>", s3); css(hub, { left: HUB.x + "px", top: HUB.y + "px" });
+const hnEls = {};
+for (const n of NODES) {
+  const e = el("div", "hn", `<span class="ico" style="color:${n.tone};background:${n.tone}22;border:1px solid ${n.tone}55">${ICON[n.icon]}</span><span><b>${n.label}</b><small>${n.sub}</small></span><span class="ok">${ICON.check}</span>`, s3);
+  css(e, { left: n.x + "px", top: n.y + "px" }); hnEls[n.id] = e;
+}
+const think = el("div", "think", "", s3); css(think, { left: HUB.x + "px", top: "605px" });
+// left cards
+const cTicket = el("div", "card", `<span class="ci" style="color:#22D3EE;background:rgba(34,211,238,.14)">${ICON.ticket.replace('<svg', '<svg width="28" height="28"')}</span><div><b>ENG-482</b><small>sample ticket</small></div>`, s3);
+css(cTicket, { left: "76px", top: "252px", width: "450px" });
+const cGates = el("div", "card", `<span class="ci" style="color:#34D399;background:rgba(52,211,153,.14)">${ICON.user.replace('<svg', '<svg width="28" height="28"')}</span><div><b></b><small>human in the loop</small></div>`, s3);
+css(cGates, { left: "554px", top: "252px", width: "450px" });
+// run log
+const log = el("div", "panel log", "<h4>RUN LOG</h4>", s3); css(log, { left: "76px", top: "1225px", width: "928px", height: "330px", borderRadius: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", alignContent: "start" });
+const STEPS = [
+  { node: "jira", dir: "in", tag: "intake", text: "ENG-482 from Jira", color: "#22D3EE" },
+  { node: "model", tag: "triage", text: "confidence 86", color: "#8B5CF6", bubble: "Triage + planning…" },
+  { node: "you", tag: "gate 1", text: "plan approved", color: "#FBBF24", bubble: "Waiting for your approval…" },
+  { node: "model", tag: "code", text: "plan · 4 files", color: "#8B5CF6", bubble: "Coding agent writing files…" },
+  { node: "you", tag: "gate 2", text: "files approved", color: "#FBBF24", bubble: "Waiting for your approval…" },
+  { node: "repo", tag: "apply", text: "branch pushed", color: "#22D3EE" },
+  { node: "ci", tag: "verify", text: "CI checks passed", color: "#34D399" },
+  { node: "pr", tag: "ship", text: "PR #129 opened", color: "#34D399" },
+];
+const logOrder = [0, 4, 1, 5, 2, 6, 3, 7];
+const logLines = logOrder.map((i) => STEPS[i]).map((s) => { const l = el("div", "l", `<i>${s.tag}</i><span>${s.text}</span>`, log); if (s.tag === "ship") l.style.color = "#34D399"; return l; });
+const toast = el("div", "toast", `<span style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:rgba(52,211,153,.18);color:#34D399">${ICON.checkG}</span>Pull request ready for review`, s3);
+css(toast, { left: "76px", top: "1578px", width: "928px", fontSize: "28px", padding: "18px 26px" });
+const s3cap = el("div", "caption", "<b>Agents triage, plan and code.</b><span>You approve twice.</span>", s3);
+
+/* =========================================================================
+   S4 — the approval gate (18.0 – 24.0)
+   ========================================================================= */
+const s4 = el("div", "scene");
+const s4k = el("div", "abs", '<span class="kicker">Human in the loop</span>', s4); css(s4k, { left: 0, right: 0, top: "430px", textAlign: "center" });
+const gate = el("div", "gate", `
+  <h3>${ICON.hand} Approve these file changes?</h3>
+  <p class="t"><b>ENG-482</b>Add SEO metadata, sitemap and robots.txt</p>
+  <div class="files">
+    <div><em>modify</em><code>app/layout.tsx</code><span>export site metadata</span></div>
+    <div><em class="c">create</em><code>app/sitemap.ts</code><span>generate sitemap.xml</span></div>
+    <div><em class="c">create</em><code>app/robots.ts</code><span>generate robots.txt</span></div>
+    <div><em class="c">create</em><code>lib/site.ts</code><span>shared SEO constants</span></div>
+  </div>
+  <div class="gb"><button class="ap">✓ Approve</button><button>✕ Reject</button></div>
+  <div class="res">${ICON.checkG} Approved — branch conduit/ENG-482 pushed</div>`, s4);
+const gateBtn = gate.querySelector(".ap"), gateBtns = gate.querySelector(".gb"), gateRes = gate.querySelector(".res");
+const checks = el("div", "checks", ["build", "test", "lint"].map((c) => `<div class="chk"><i></i>${c}</div>`).join("") + `<div class="chk" style="color:var(--ok);border-color:rgba(52,211,153,.5)">→ PR #129 opened</div>`, s4);
+const chkEls = [...checks.children];
+const cursor = el("div", "cursor", `<svg viewBox="0 0 24 24" width="44" height="44"><path d="M4 2l16 9-7 2-3 7z" fill="#fff" stroke="#080b12" stroke-width="1.5" stroke-linejoin="round"/></svg>`, s4);
+const s4cap = el("div", "caption", "<b>Nothing reaches your repo until you approve it.</b><span>CI must pass.</span>", s4);
+
+/* =========================================================================
+   S5 — three steps (24.0 – 28.8)
+   ========================================================================= */
+const s5 = el("div", "scene");
+const s5k = el("div", "abs", '<span class="kicker">Getting started</span>', s5); css(s5k, { left: 0, right: 0, top: "250px", textAlign: "center" });
+const s5h = el("div", "abs", "Three things to set up.<br>Then it runs.", s5);
+css(s5h, { left: "60px", right: "60px", top: "330px", textAlign: "center", fontSize: "74px", fontWeight: 700, letterSpacing: "-.035em", lineHeight: 1.1 });
+const STEP_CARDS = [
+  { n: "01", h: "Connect a repo and a model", p: "GitHub token and a model API key, stored encrypted.",
+    art: `<div class="row">${ICON.key}github_token<em>••••••</em></div><div class="row">${ICON.key}llm_key<em>••••••</em></div><div class="row" style="color:var(--muted)">repo: your-org/your-repo</div>` },
+  { n: "02", h: "Give it a ticket", p: "A board task, or tickets from Jira, Notion or GitHub issues.",
+    art: `<div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${["Board task", "Jira", "Notion", "GitHub issue"].map((x) => `<span class="pill">${ICON.checkG.replace('width="26" height="26"', 'width="18" height="18"')}${x}</span>`).join("")}</div>` },
+  { n: "03", h: "Approve, then review the PR", p: "You approve the plan and the exact files. CI verifies it.",
+    art: ["Plan approved", "File changes approved", "CI checks passed"].map((x) => `<div class="okrow"><i>${ICON.check.replace("<svg", '<svg width="15" height="15"')}</i>${x}</div>`).join("") },
+];
+const stepEls = STEP_CARDS.map((c, i) => {
+  const e = el("div", "step", `<div class="art">${c.art}</div><div><div class="n">${c.n}</div><h3>${c.h}</h3><p>${c.p}</p></div>`, s5);
+  css(e, { top: 560 + i * 380 + "px" }); return e;
+});
+
+/* =========================================================================
+   S6 — integrations (28.8 – 31.8)
+   ========================================================================= */
+const s6 = el("div", "scene");
+const s6h = el("div", "abs", "Plugs into the tools your team already ships with.", s6);
+css(s6h, { left: "70px", right: "70px", top: "250px", textAlign: "center", fontSize: "68px", fontWeight: 700, letterSpacing: "-.03em", lineHeight: 1.12 });
+const C6 = { x: 540, y: 1100 };
+const o1 = el("div", "orbit", "", s6); css(o1, { left: C6.x + "px", top: C6.y + "px", width: "500px", height: "500px" });
+const o2 = el("div", "orbit", "", s6); css(o2, { left: C6.x + "px", top: C6.y + "px", width: "820px", height: "820px" });
+const hub6 = el("div", "hub", "<b>Conduit</b><small>workflow engine</small>", s6); css(hub6, { left: C6.x + "px", top: C6.y + "px", width: "210px", height: "210px" });
+const INTS = [
+  ["Jira", "J", "#60A5FA", 1], ["Notion", "N", "#CBD5E1", 1], ["GitHub", "GH", "#9CA3AF", 1], ["Anthropic", "A", "#F59E6B", 1], ["OpenAI", "OA", "#34D399", 1], ["Slack", "S", "#E0A82E", 1],
+  ["Webhooks", "WH", "#22D3EE", 2], ["Schedules", "CR", "#A78BFA", 2], ["HTTP", "{ }", "#8B5CF6", 2], ["GraphQL", "GQ", "#F472B6", 2], ["Model gateway", "GW", "#FBBF24", 2], ["Security scan", "SC", "#F87171", 2], ["PostgreSQL", "PG", "#38BDF8", 2],
+];
+const intEls = INTS.map(([name, mark, color, ring], i) => {
+  const e = el("div", "int", `<span class="m" style="color:${color};border-color:${color}66;background:${color}18">${mark}</span><span>${name}</span>`, s6);
+  return { e, ring, i: ring === 1 ? i : i - 6, n: ring === 1 ? 6 : 7 };
+});
+
+/* =========================================================================
+   S7 — call to action (31.8 – 35)
+   ========================================================================= */
+const s7 = el("div", "scene");
+const s7m = el("div", "abs", markSVG(140) + '<span style="font-size:64px;font-weight:700;margin-top:26px">Conduit <span style="color:var(--muted);font-weight:500">Agent</span></span>', s7);
+css(s7m, { left: 0, right: 0, top: "420px", display: "flex", flexDirection: "column", alignItems: "center" });
+const s7h = el("div", "abs", 'Keep the judgment.<br><span class="grad">Hand off the keystrokes.</span>', s7);
+css(s7h, { left: "40px", right: "40px", top: "760px", textAlign: "center", fontSize: "80px", fontWeight: 700, letterSpacing: "-.035em", lineHeight: 1.12 });
+const s7f = el("div", "abs facts", ["Open source", "Self-hosted", "MIT licensed", "Bring your own model"].map((x) => `<span>${ICON.checkG}${x}</span>`).join(""), s7);
+css(s7f, { left: "120px", right: "120px", top: "1050px", flexWrap: "wrap", gap: "22px 48px", fontSize: "30px" });
+const s7c = el("div", "abs", `<span class="repo">${ICON.star}github.com/VITCS/conduit</span>`, s7);
+css(s7c, { left: 0, right: 0, top: "1250px", textAlign: "center", color: "#FBBF24" });
+const s7s = el("div", "abs", "Star the repo · run it with <span style=\"font-family:var(--mono);color:var(--fg)\">make up</span>", s7);
+css(s7s, { left: 0, right: 0, top: "1400px", textAlign: "center", fontSize: "32px", color: "var(--muted)" });
+
+/* =========================================================================
+   render(t)
+   ========================================================================= */
+const SC = { s1: [0, 4.4], s2: [4.4, 8.6], s3: [8.6, 18.0], s4: [18.0, 24.0], s5: [24.0, 28.8], s6: [28.8, 31.8], s7: [31.8, 35.0] };
+window.DURATION = DURATION;
+window.render = function render(t) {
+  // backdrop drift
+  css(a1, { left: -200 + Math.sin(t * .25) * 120 + "px", top: -200 + Math.cos(t * .2) * 80 + "px" });
+  css(a2, { left: 300 + Math.cos(t * .22) * 120 + "px", top: 1350 + Math.sin(t * .3) * 80 + "px" });
+  css(grid, { transform: `translate(${(t * 12) % 60}px, ${(t * 12) % 60}px)` });
+
+  const vis = (s, k, fi, fo) => { const [a, b] = SC[k]; const v = win(t, a, b, fi, fo); s.style.opacity = v; s.style.display = v > 0 ? "block" : "none"; return t - a; };
+
+  /* S1 */
+  let l = vis(s1, "s1", .3, .4);
+  rise(s1a, prog(l, .2, .7)); rise(s1b, prog(l, 1.5, .8));
+  s1t.forEach((c, i) => {
+    const p = easeOut(prog(l, .1 + i * .18, 1.1));
+    const x = [70, 830, 140, 780, 60, 820][i], y = [260, 360, 1420, 1500, 1660, 1640][i];
+    css(c, { left: x + "px", top: lerp(y + 60, y, p) + "px", opacity: p * .7, transform: `rotate(${[-6, 5, 4, -5, -3, 3][i]}deg)` });
+  });
+
+  /* S2 */
+  l = vis(s2, "s2", .4, .45);
+  const pm = easeOut(prog(l, 0, .7));
+  css(s2m, { opacity: pm, transform: `scale(${lerp(.6, 1, pm)})` });
+  rise(s2n, prog(l, .25, .6)); rise(s2h1, prog(l, .55, .7), 46); rise(s2h2, prog(l, 1.0, .7), 46); rise(s2k, prog(l, 1.6, .6));
+
+  /* S3 */
+  l = vis(s3, "s3", .5, .45);
+  const sIn = easeOut(prog(l, 0, .7));
+  css(s3p, { opacity: sIn, transform: `scale(${lerp(.97, 1, sIn)})` });
+  const T0 = .9, STEP = .98;
+  const k = Math.floor((l - T0) / STEP);           // current step index
+  const within = (l - T0) / STEP - k;              // 0..1 inside it
+  const done = l >= T0 + STEPS.length * STEP;
+  const visited = new Set(STEPS.slice(0, clamp(done ? STEPS.length : k, 0, STEPS.length)).map((s) => s.node));
+  const cur = !done && k >= 0 ? STEPS[k] : null;
+  if (cur) visited.add(cur.node);
+  for (const n of NODES) {
+    const e = hnEls[n.id], active = cur && cur.node === n.id, isDone = visited.has(n.id) && !active;
+    css(e, { borderColor: active ? n.tone : isDone ? "rgba(52,211,153,.6)" : "var(--line2)",
+      boxShadow: active ? `0 0 0 6px ${n.tone}22, 0 0 40px ${n.tone}55` : "none",
+      opacity: easeOut(prog(l, .2 + NODES.indexOf(n) * .05, .5)) });
+    e.querySelector(".ok").style.opacity = isDone || (done && visited.has(n.id)) ? 1 : 0;
+    lit[n.id].style.opacity = visited.has(n.id) ? .95 : 0;
+  }
+  if (cur) {
+    const n = NODES.find((x) => x.id === cur.node), p = easeInOut(clamp(within / .62));
+    const from = cur.dir === "in" ? n : HUB, to = cur.dir === "in" ? HUB : n;
+    pulse.setAttribute("cx", lerp(from.x, to.x, p)); pulse.setAttribute("cy", lerp(from.y, to.y, p));
+    pulse.setAttribute("fill", cur.color); pulse.style.opacity = within < .7 ? 1 : 0;
+  } else pulse.style.opacity = 0;
+  think.textContent = cur && cur.bubble ? cur.bubble : ""; think.style.opacity = cur && cur.bubble ? 1 : 0;
+  css(hub, { boxShadow: `0 0 ${done ? 60 : 30 + 20 * Math.sin(l * 4)}px rgba(139,92,246,${done ? .55 : .4})`, borderColor: done ? "rgba(52,211,153,.8)" : "rgba(139,92,246,.7)" });
+  const shown = done ? STEPS.length : clamp(k + (within > .55 ? 1 : 0), 0, STEPS.length);
+  logLines.forEach((ln, j) => css(ln, { opacity: logOrder[j] < shown ? 1 : 0 }));
+  const gatesDone = STEPS.slice(0, shown).filter((s) => s.node === "you").length;
+  cGates.querySelector("b").textContent = `${gatesDone} of 2 approvals`;
+  cTicket.querySelector("small").textContent = shown >= 2 ? "confidence 86" : "sample ticket";
+  rise(cTicket, prog(l, .4, .6)); rise(cGates, prog(l, .55, .6)); rise(log, prog(l, .5, .6));
+  const td = prog(l, T0 + STEPS.length * STEP + .05, .5);
+  rise(toast, td);
+  s3st.innerHTML = done ? '<span style="color:#34D399">● completed</span>' : cur && cur.node === "you" ? '<span style="color:#FBBF24">● waiting for approval</span>' : l > T0 ? '<span style="color:#22D3EE">● running</span>' : '<span style="color:var(--faint)">● waiting for a ticket</span>';
+  rise(s3cap, prog(l, 1.2, .6), 20);
+
+  /* S4 */
+  l = vis(s4, "s4", .45, .45);
+  rise(s4k, prog(l, .1, .5));
+  gate.dataset.base = "translate(-50%,-50%)";
+  const gi = easeOut(prog(l, .15, .6));
+  css(gate, { opacity: gi, transform: `translate(-50%,-50%) scale(${lerp(.94, 1, gi)})` });
+  // cursor path → Approve button, click at 2.3s
+  if (!window._btn && gateBtns.style.display !== "none" && l > .9) { const r = gateBtn.getBoundingClientRect(); window._btn = { x: r.left + r.width * .45, y: r.top + r.height * .55 }; }
+  const bx = window._btn ? window._btn.x : 300, by = window._btn ? window._btn.y : 1000;
+  const cp = easeInOut(prog(l, 1.0, 1.2));
+  css(cursor, { left: lerp(900, bx, cp) + "px", top: lerp(1650, by, cp) + "px", opacity: prog(l, .8, .3) * (1 - prog(l, 3.0, .3)) });
+  const click = l >= 2.3, press = prog(l, 2.2, .1) * (1 - prog(l, 2.35, .12));
+  gateBtn.style.transform = `scale(${1 - press * .08})`;
+  gateBtns.style.display = click ? "none" : "flex";
+  gateRes.style.display = click ? "flex" : "none";
+  css(gate, { borderColor: click ? "rgba(52,211,153,.6)" : "rgba(251,191,36,.6)" });
+  chkEls.forEach((c, i) => {
+    const p = prog(l, 2.8 + i * .45, .35);
+    css(c, { opacity: easeOut(p), transform: `translateY(${(1 - easeOut(p)) * 16}px)` });
+    const dot = c.querySelector("i");
+    if (dot) { const ok = l > 3.0 + i * .45; dot.style.background = ok ? "#34D399" : "#22D3EE"; dot.style.boxShadow = ok ? "0 0 10px #34D399" : "none"; }
+  });
+  rise(s4cap, prog(l, .6, .6), 20);
+
+  /* S5 */
+  l = vis(s5, "s5", .4, .45);
+  rise(s5k, prog(l, 0, .5)); rise(s5h, prog(l, .15, .6));
+  stepEls.forEach((e, i) => rise(e, prog(l, .5 + i * .3, .7), 50));
+
+  /* S6 */
+  l = vis(s6, "s6", .4, .45);
+  rise(s6h, prog(l, 0, .5));
+  css(hub6, { opacity: easeOut(prog(l, .1, .5)) });
+  intEls.forEach(({ e, ring, i, n }) => {
+    const p = easeOut(prog(l, .2 + (ring === 1 ? i * .07 : .4 + i * .06), .6));
+    const r = (ring === 1 ? 250 : 410) * lerp(.55, 1, p);
+    const ang = ((360 / n) * i - 90 + (ring === 1 ? 0 : 25) + l * (ring === 1 ? 6 : -4)) * Math.PI / 180;
+    css(e, { left: C6.x + r * Math.cos(ang) + "px", top: C6.y + r * Math.sin(ang) + "px", opacity: p });
+  });
+
+  /* S7 */
+  l = vis(s7, "s7", .45, .01);
+  const p7 = easeOut(prog(l, 0, .7));
+  css(s7m, { opacity: p7, transform: `scale(${lerp(.9, 1, p7)})` });
+  rise(s7h, prog(l, .3, .6), 40); rise(s7f, prog(l, .7, .6)); rise(s7c, prog(l, 1.0, .6)); rise(s7s, prog(l, 1.3, .6));
+};
+
+// Live preview when opened directly (render.js drives it frame by frame instead).
+if (!/[?&]capture/.test(location.search)) {
+  const start = performance.now();
+  (function loop() { render(((performance.now() - start) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
