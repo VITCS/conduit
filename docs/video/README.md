@@ -7,6 +7,7 @@ when they autoplay muted.
 |---|---|---|
 | `conduit-intro.mp4` | 1920×1080 (16:9) | LinkedIn, X, YouTube, the README |
 | `conduit-intro-vertical.mp4` | 1080×1920 (9:16) | Instagram Reels, YouTube Shorts, TikTok |
+| `preview.gif` | 960×540, 9 s loop | The animated preview at the top of the project README |
 
 | Time | Scene |
 |---|---|
@@ -41,3 +42,9 @@ node docs/video/render.js out.mp4 --stills 5,12   # just PNG stills at those sec
 
 Needs Playwright (Chromium), ffmpeg, the Inter font, and `web/node_modules` installed
 (for JetBrains Mono).
+
+After re-rendering the landscape video, regenerate the README preview (the sample-run scene):
+
+```bash
+cd docs/video && ffmpeg -y -ss 8.7 -t 9.3 -i conduit-intro.mp4 -vf "fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" -loop 0 preview.gif
+```

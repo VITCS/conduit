@@ -1,5 +1,16 @@
 # Conduit Agent
 
+<p align="center">
+  <a href="docs/video/conduit-intro.mp4">
+    <img src="docs/video/preview.gif" width="960"
+      alt="Conduit Agent sample run: a Jira ticket is triaged and planned by an AI model, a person approves twice, a branch is pushed, CI passes and a pull request opens.">
+  </a>
+</p>
+<p align="center">
+  ▶ <a href="docs/video/conduit-intro.mp4"><b>Watch the 35-second intro</b></a>
+  &nbsp;·&nbsp; <a href="docs/video/conduit-intro-vertical.mp4">vertical 9:16 cut</a>
+</p>
+
 A small, runnable control plane for **event-driven automation workflows** — a
 visual DAG of components you execute, watch live, and gate on human approval.
 
