@@ -190,6 +190,9 @@ holding the port, remove it once: `docker rm -f $(docker ps -aq --filter name=ap
 | `CONDUIT_GITHUB_CLIENT_ID` / `CONDUIT_GITHUB_CLIENT_SECRET` | — | enable **Sign in with GitHub**; redirect URI `…/api/auth/oauth/github/callback` |
 | `CONDUIT_RATE_LIMIT` | `20` | per-IP request/second limit on `/api` (0 disables) |
 | `CONDUIT_WORKERS` | `4` | run-executor workers per instance |
+| `CONDUIT_CLAUDE_BIN` | `claude` | path to the Claude Code CLI used by `coding_engine=claude_code` |
+| `CONDUIT_CLAUDE_SERVER_LOGIN` | `false` | let projects use this server's own logged-in Claude Code (`claude_auth=server_login`). Only for a single-user / trusted self-host. |
+| `CONDUIT_WORK_DIR` | system temp | where Claude Code checkouts are created (and removed afterwards) |
 | `CONDUIT_ALLOW_PRIVATE_EGRESS` | `false` | allow outbound executors to reach private/loopback addresses (SSRF guard off) |
 
 ### Production notes
@@ -314,6 +317,40 @@ open **Settings**, and set:
 
 > The branch base is `main` by default. For a GitHub‑only review/merge flow the
 > `github` project additionally uses `scan_token` (the security‑scan gate).
+
+### Choose how code is written: Claude Code or the direct API
+
+**Settings → Coding agent** picks the engine for *Plan changes* and *Apply changes*.
+Both keep the same approval gates; nothing is pushed before the file list is approved.
+
+| | **Claude Code** (`coding_engine=claude_code`) | **Direct API** (`coding_engine=api`, default) |
+| --- | --- | --- |
+| How it works | A real Claude Code session in a fresh clone of the repo: it reads and searches the whole codebase, edits files, and can run the commands you allow (e.g. the test suite) before finishing | One model call to plan, then one call per file with that file's current content |
+| Sign-in / billing | Your **Claude subscription** (`claude setup-token` → secret `claude_code_oauth_token`) *or* an **Anthropic API key** (secret `anthropic_api_key`, falling back to an Anthropic `llm_key`) | Your `llm_provider` / `llm_model` / `llm_key` (Anthropic, OpenAI or a custom gateway) |
+| Pushing | Conduit commits and pushes after checking that only approved files changed; an unapproved file fails the step and nothing is pushed | Conduit builds the commit through the GitHub API |
+| Needs on the server | `git` and the Claude Code CLI (both in the default Docker image) | nothing extra (works with the `slim` image) |
+
+Claude Code settings (all optional except the sign-in):
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `claude_auth` | automatic | `subscription`, `api_key`, or `server_login` (the server's own `claude` login — only when the operator sets `CONDUIT_CLAUDE_SERVER_LOGIN=true`, e.g. a single-user self-host). Automatic picks a subscription token, then an API key. |
+| `claude_model` | CLI default | `sonnet`, `opus`, `haiku`, or a full model ID |
+| `claude_allowed_commands` | none | comma-separated command prefixes it may run, e.g. `npm ci, npm test`. Empty = no shell at all; CI still tests the branch. `git push` is never allowed. |
+| `claude_timeout_minutes` | 10 plan / 20 apply | stop a session that runs longer |
+| `claude_max_budget_usd` | none | spend cap per session (API-key billing only) |
+
+**Save & test connection** in that tab runs one tiny prompt with the project's sign-in
+and reports whether it worked.
+
+How a session is isolated: a throwaway clone and an empty home directory; an
+environment built from an allowlist (no server secrets — not the database URL, the
+encryption keys or the GitHub token, which only Conduit's own `git` uses);
+deny-by-default permissions with reads and edits limited to the checkout; no web
+tools, no MCP servers, and the repository's own `.claude` settings ignored (its
+`CLAUDE.md` is still read). The plan session is read-only. Live progress
+("Claude Code · Edit app/layout.tsx") streams to the run's console, and **Cancel**
+stops the session and anything it started.
 
 ### 2. Run it — two ways
 

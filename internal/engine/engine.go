@@ -703,7 +703,13 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 		// so a connector doing network I/O never blocks the store (or deadlocks by
 		// calling back into it). Memory changes come back via res.MemoryWrites.
 		snap, _, _ := e.store.GetRun(runID)
-		res = components.For(node.Type)(node, &snap)
+		// Long-running executors (Claude Code sessions) get the run's context, so
+		// Cancel stops them, and stream what they are doing to the run log.
+		pctx := components.WithProgress(ctx, func(msg string) {
+			e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
+				Message: fmt.Sprintf("%s · %s", node.Title, msg)})
+		})
+		res = components.Exec(pctx, node.Type, node, &snap)
 		logs = res.Logs
 		if res.Outcome != model.StatusFailed || attempt == attempts {
 			break

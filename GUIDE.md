@@ -125,6 +125,14 @@ Ticket (board task / Jira / Notion / webhook)
 | Secret | `github_token` | a token with **contents: write** and **pull requests: write** |
 | Secret | `llm_key` | your model provider's API key |
 
+Then open **Settings → Coding agent** and choose how the code gets written:
+**Claude Code** (recommended — it reads your whole repository, edits files in a real
+checkout and can run your tests; signs in with your **Claude subscription** token from
+`claude setup-token`, or an **Anthropic API key**) or **Direct API** (one model call per
+file, with the `llm_*` settings above). **Save & test connection** checks the sign-in
+before you run anything. Details: README,
+[Choose how code is written](README.md#choose-how-code-is-written-claude-code-or-the-direct-api).
+
 Jira or Notion as the ticket source need their own settings (`jira_base`,
 `jira_email`, `jira_token`, …); the full table is in the README's
 [AI Factory section](README.md#the-ai-factory--ticket--reviewed-pr).

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { X, Sliders, KeyRound, Trash2, Plus, Settings as Gear } from "lucide-react";
+import { X, Sliders, KeyRound, Trash2, Plus, Settings as Gear, Bot } from "lucide-react";
+import { CodingAgentSettings } from "./CodingAgentSettings";
 import { api } from "@/lib/api";
 
 // One place for everything a project reads at run time, split into two clearly
@@ -11,13 +12,13 @@ import { api } from "@/lib/api";
 // is sensitive. That difference is real (secrets are encrypted at rest and never
 // returned), so they stay separate — but they live behind one "Settings" button.
 
-type Tab = "variables" | "secrets";
+type Tab = "coding" | "variables" | "secrets";
 
 const VAR_PRESETS = ["owner", "repo", "jira_base", "jira_email", "jira_jql", "notion_db", "llm_provider", "llm_model", "audit_url", "auto_start_confidence"];
-const SECRET_PRESETS = ["github_token", "llm_key", "jira_token", "notion_token", "scan_token"];
+const SECRET_PRESETS = ["github_token", "llm_key", "claude_code_oauth_token", "anthropic_api_key", "jira_token", "notion_token", "scan_token"];
 
 export function SettingsPanel(props: { initialTab?: Tab; onClose: () => void; onToast: (m: string) => void }) {
-  const [tab, setTab] = useState<Tab>(props.initialTab ?? "variables");
+  const [tab, setTab] = useState<Tab>(props.initialTab ?? "coding");
 
   // variables state
   const [vars, setVars] = useState<Record<string, string>>({});
@@ -80,6 +81,9 @@ export function SettingsPanel(props: { initialTab?: Tab; onClose: () => void; on
         </div>
 
         <div className="set-tabs">
+          <button className={`set-tab${tab === "coding" ? " on" : ""}`} onClick={() => setTab("coding")} data-testid="tab-coding">
+            <Bot size={14} /> Coding agent
+          </button>
           <button className={`set-tab${tab === "variables" ? " on" : ""}`} onClick={() => setTab("variables")}>
             <Sliders size={14} /> Variables
           </button>
@@ -88,7 +92,10 @@ export function SettingsPanel(props: { initialTab?: Tab; onClose: () => void; on
           </button>
         </div>
 
-        {tab === "variables" ? (
+        {tab === "coding" ? (
+          loading ? <div className="modal-body"><div className="empty">Loading…</div></div>
+            : <CodingAgentSettings vars={vars} secrets={secrets} onSaved={refresh} onToast={props.onToast} />
+        ) : tab === "variables" ? (
           <>
             <p className="hint" style={{ padding: "0 16px" }}>
               Plain, non-secret values shared by every node in this project — set once, read everywhere.

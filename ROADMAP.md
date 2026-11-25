@@ -175,6 +175,11 @@ It is now a real pipeline that opens real pull requests:
 - **Pull request + review handoff**: `github_pr` opens the PR, posts it back to the
   ticket, and sends it to the GitHub review workflow's inbox (agent review →
   security scan → human approval → merge), which a person starts.
+- **Claude Code engine**: per project, Plan changes and Apply changes can run a real
+  Claude Code session in a fresh checkout (reads the whole repo, edits files, runs
+  allowed commands such as the tests), signed in with the user's Claude subscription
+  token or an Anthropic API key. Conduit pushes only after verifying that just the
+  approved files changed. The direct-API engine remains the default.
 - **Run control**: skip any step with a checkbox on its node, re-run a failed run
   from the stage that failed, cancel at any point, and watch status live.
 - **Per-user workspaces**: everyone who signs in gets their own copy of the
@@ -200,10 +205,11 @@ Planned, not shipped. Order is a rough priority.
 - **Lower model spend per run** — separate fast and strong model tiers per step,
   prompt caching for the per-file coding calls, merging the three pre-approval
   agent calls, a per-run token budget, and usage in the Metrics view.
-- **Bring your own coding agent** — hand the coding step to a tool an organization
-  already licenses (for example the GitHub Copilot coding agent or Claude Code in
-  GitHub Actions), or to a local runner on a developer's machine, while Conduit
-  keeps triage, approvals, CI and review.
+- **More coding agents and places to run them** — the Claude Code engine has
+  shipped (see Phase 6); next: a per-session container sandbox for it, a local
+  runner on a developer's machine, and handing the coding step to tools an
+  organization already licenses (for example the GitHub Copilot coding agent),
+  while Conduit keeps triage, approvals, CI and review.
 - **More model backends** — AWS Bedrock, Google Vertex AI and Azure, so teams can
   use an existing cloud agreement instead of a separate API key.
 - **Resumable execution** — a reclaimed run resumes instead of restarting, which

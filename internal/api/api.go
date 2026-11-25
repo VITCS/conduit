@@ -101,6 +101,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/vars", s.listVars)
 	mux.HandleFunc("PUT /api/vars/{name}", s.putVar)
 	mux.HandleFunc("DELETE /api/vars/{name}", s.deleteVar)
+	mux.HandleFunc("POST /api/claude/check", s.claudeCheck)
+	mux.HandleFunc("GET /api/claude/status", s.claudeStatus)
 	mux.HandleFunc("GET /api/runs", s.listRuns)
 	mux.HandleFunc("POST /api/runs", s.createRun)
 	mux.HandleFunc("GET /api/runs/{id}", s.getRun)
@@ -208,7 +210,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 // isProjectScoped reports whether a path's authorization depends on project
 // membership (as opposed to global, account-level routes).
 func isProjectScoped(path string) bool {
-	for _, pre := range []string{"/api/workflows", "/api/runs", "/api/secrets", "/api/vars", "/api/schedules", "/api/review-requests"} {
+	for _, pre := range []string{"/api/workflows", "/api/runs", "/api/secrets", "/api/vars", "/api/claude", "/api/schedules", "/api/review-requests"} {
 		if path == pre || strings.HasPrefix(path, pre+"/") {
 			return true
 		}
@@ -861,6 +863,20 @@ func (s *Server) deleteSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- project config variables (${var:NAME}): plain, non-secret, per project ---
+
+// claudeCheck verifies the project's Claude Code setup (CLI installed, sign-in
+// works) by running one tiny prompt. It never returns the credential.
+func (s *Server) claudeCheck(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	writeJSON(w, http.StatusOK, components.CheckClaude(ctx, projectID(r)))
+}
+
+// claudeStatus reports, without running anything billable, whether the server
+// has the Claude Code CLI and whether projects may use the server's own login.
+func (s *Server) claudeStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, components.ClaudeStatus(r.Context()))
+}
 
 func (s *Server) listVars(w http.ResponseWriter, r *http.Request) {
 	vars, err := s.Store.ListVars(projectID(r))

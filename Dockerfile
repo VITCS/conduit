@@ -23,9 +23,27 @@ COPY . .
 COPY --from=ui /app/web/out ./web/out
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /conduitd .
 
-# ---- Stage 3: minimal runtime ----
-FROM gcr.io/distroless/static-debian12:nonroot
+# ---- Slim runtime (API engine only) ----
+# Build with `docker build --target slim .` for the smallest image. It has no git
+# or Claude Code CLI, so projects must use coding_engine=api.
+FROM gcr.io/distroless/static-debian12:nonroot AS slim
 COPY --from=build /conduitd /conduitd
 EXPOSE 8080
 USER nonroot:nonroot
+ENTRYPOINT ["/conduitd"]
+
+# ---- Default runtime: includes git + the Claude Code CLI ----
+# Lets projects use coding_engine=claude_code (Claude Code works in a real checkout
+# of the repository). Pinned CLI version; bump deliberately.
+FROM node:22-bookworm-slim
+ARG CLAUDE_CODE_VERSION=2.1.322
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+ && npm cache clean --force
+COPY --from=build /conduitd /conduitd
+ENV CONDUIT_WORK_DIR=/tmp
+EXPOSE 8080
+USER node
 ENTRYPOINT ["/conduitd"]

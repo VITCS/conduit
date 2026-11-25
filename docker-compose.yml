@@ -50,6 +50,10 @@ services:
       CONDUIT_GOOGLE_CLIENT_SECRET: "${CONDUIT_GOOGLE_CLIENT_SECRET:-}"
       CONDUIT_GITHUB_CLIENT_ID: "${CONDUIT_GITHUB_CLIENT_ID:-}"
       CONDUIT_GITHUB_CLIENT_SECRET: "${CONDUIT_GITHUB_CLIENT_SECRET:-}"
+      # Claude Code coding engine. Each project signs in with its own subscription
+      # token or API key (Settings → Coding agent). Set this to true only on a
+      # single-user self-host to let projects use the container's own `claude` login.
+      CONDUIT_CLAUDE_SERVER_LOGIN: "${CONDUIT_CLAUDE_SERVER_LOGIN:-false}"
     # No host port is published here on purpose: a managed platform (Coolify,
     # Dokploy, etc.) routes to the container over the Docker network via its own
     # reverse proxy, so binding a host port only causes "port already allocated".

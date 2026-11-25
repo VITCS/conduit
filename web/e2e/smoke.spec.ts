@@ -131,3 +131,39 @@ test("project create/delete use in-app dialogs, never a browser prompt or confir
   await expect(page.locator(".project-switch")).not.toContainText(name);
   expect(native).toBe(0);
 });
+
+test("Settings → Coding agent switches the project to Claude Code and keeps the API option", async ({ page }) => {
+  const email = `e2e_ca_${Date.now()}@example.com`;
+  await page.goto("/");
+  await page.getByTestId("nav-getstarted").click();
+  await page.locator("#name").fill("CA User");
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill("password123");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("run-btn")).toBeVisible();
+
+  await page.getByLabel("Settings").click();
+  // Existing projects stay on the direct API until someone opts in.
+  await expect(page.getByTestId("engine-api")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("engine-claude").click();
+  await page.getByTestId("claude-token").fill("sk-ant-oat01-e2e");
+  await page.getByTestId("claude-commands").fill("npm test");
+  await page.getByTestId("coding-save").click();
+  await expect(page.getByText("Coding agent saved")).toBeVisible();
+
+  await page.locator(".set-tab", { hasText: "Variables" }).click();
+  const vars = page.locator(".secret-list");
+  await expect(vars).toContainText("coding_engine");
+  await expect(vars).toContainText("claude_code");
+  await expect(vars).toContainText("npm test");
+  await page.locator(".set-tab", { hasText: "Secrets" }).click();
+  await expect(page.locator(".secret-list")).toContainText("claude_code_oauth_token");
+  await expect(page.locator(".secret-list")).not.toContainText("sk-ant-oat01-e2e");
+
+  // And back to the API engine.
+  await page.getByTestId("tab-coding").click();
+  await page.getByTestId("engine-api").click();
+  await page.getByTestId("coding-save").click();
+  await page.locator(".set-tab", { hasText: "Variables" }).click();
+  await expect(page.locator(".secret-list")).toContainText(/coding_engine\s*api/);
+});

@@ -31,6 +31,16 @@ Do not file public issues with exploit details.
 - **Request hardening**: per-IP rate limiting (`CONDUIT_RATE_LIMIT`), a 4 MiB
   request-body cap, `nosniff` / `SAMEORIGIN` / `no-referrer` headers, HTTP read
   and idle timeouts, and graceful shutdown.
+- **Claude Code coding engine** (`coding_engine=claude_code`): each session runs
+  in a throwaway clone with an empty `HOME` and an allowlisted environment (`PATH`,
+  locale, proxy/CA settings and the one sign-in variable) — never the server's
+  database URL, `CONDUIT_SECRET_KEY`, JWT secret or the GitHub token (Conduit's own
+  `git` uses the token via `GIT_CONFIG_*`, not argv or `.git/config`). Permissions
+  are deny-by-default (`--permission-mode dontAsk`): reads/edits scoped to the
+  checkout, no web tools, no MCP servers, repository `.claude` settings ignored.
+  Shell access is off unless a project lists command prefixes in
+  `claude_allowed_commands`; `git push` is always denied and pushing is done by
+  Conduit after verifying that only approved files changed.
 - **Audit log**: every mutating API call is recorded (actor, method, path,
   project, status), readable by a global admin at `GET /api/audit`.
 
@@ -61,3 +71,13 @@ Before exposing Conduit Agent publicly:
   simulated steps; real side-effecting steps should be made idempotent. Resumable
   execution (which also enables cross-instance approval) is planned.
 - No OTel tracing yet (metrics + structured logs are in place).
+- **Claude Code runs on the Conduit host.** Sessions are isolated as described
+  above but are not a container sandbox: an allowed command (e.g. `npm test`)
+  executes the repository's own scripts with the server user's privileges and
+  network access. Only allow commands for repositories you trust, run Conduit in
+  its container, and prefer leaving `claude_allowed_commands` empty (CI still
+  tests the pushed branch). A per-session container sandbox is planned.
+- **`server_login`** shares the server's single Claude login with every project
+  that selects it; enable `CONDUIT_CLAUDE_SERVER_LOGIN` only on a single-user or
+  fully trusted self-host. Individual Claude plans are meant for the person who
+  holds them — each user should use their own `claude setup-token` token.

@@ -200,6 +200,8 @@ export const api = {
     req<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
   // Project config variables (${var:NAME}) — plain, non-secret, set once per project.
   listVars: () => req<Record<string, string>>("/api/vars"),
+  claudeStatus: () => req<ClaudeStatus>("/api/claude/status"),
+  claudeCheck: () => req<ClaudeCheck>("/api/claude/check", { method: "POST" }),
   putVar: (name: string, value: string) =>
     req<{ ok: boolean }>(`/api/vars/${encodeURIComponent(name)}`, {
       method: "PUT",
@@ -209,3 +211,6 @@ export const api = {
   deleteVar: (name: string) =>
     req<{ ok: boolean }>(`/api/vars/${encodeURIComponent(name)}`, { method: "DELETE" }),
 };
+
+export interface ClaudeStatus { installed: boolean; version?: string; server_login_allowed: boolean }
+export interface ClaudeCheck { ok: boolean; auth?: string; version?: string; reply?: string; error?: string; engine?: string }
