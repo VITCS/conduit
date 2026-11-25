@@ -36,7 +36,7 @@ func execTriage(n model.Node, run *model.Run) Result {
 		threshold = v
 	}
 
-	score, level, reason, missing := scoreTicket(n, ex, project, summary, desc)
+	score, level, reason, missing, pick := scoreTicket(n, run, ex, project, summary, desc)
 	mem := map[string]any{
 		"confidence":         level,
 		"confidence_score":   score,
@@ -44,23 +44,30 @@ func execTriage(n model.Node, run *model.Run) Result {
 		"confidence_missing": strings.Join(missing, "; "),
 	}
 	out := map[string]any{"score": score, "level": level, "reason": reason, "missing": missing, "threshold": threshold}
+	pick.output(out)
+	var pre []string
+	if l := pick.logLine(); l != "" {
+		pre = append(pre, l)
+	}
 
 	if score >= threshold {
 		return Result{Outcome: model.StatusSuccess, Output: out, MemoryWrites: mem,
-			Logs: []string{fmt.Sprintf("triage: ready (score %d ≥ %d) — %s", score, threshold, reason)}}
+			Logs: append(pre, fmt.Sprintf("triage: ready (score %d ≥ %d) — %s", score, threshold, reason))}
 	}
 	out["blocked_reason"] = reason
 	return Result{Outcome: model.StatusFailed, Output: out, MemoryWrites: mem,
-		Logs: []string{fmt.Sprintf("triage: needs clarification (score %d < %d) — %s", score, threshold, reason)}}
+		Logs: append(pre, fmt.Sprintf("triage: needs clarification (score %d < %d) — %s", score, threshold, reason))}
 }
 
 // scoreTicket asks the model for a structured readiness verdict, falling back to a
 // conservative heuristic when no live model is configured or the call fails.
-func scoreTicket(n model.Node, ex func(string) string, project, summary, desc string) (score int, level, reason string, missing []string) {
+func scoreTicket(n model.Node, run *model.Run, ex func(string) string, project, summary, desc string) (score int, level, reason string, missing []string, pick modelPick) {
 	apiKey := secretExpand(project, firstNonEmpty(n.Field("api_key"), n.Field("key")))
 	if strings.TrimSpace(apiKey) == "" || strings.Contains(apiKey, "${secret:") {
-		return heuristicScore(summary, desc)
+		score, level, reason, missing = heuristicScore(summary, desc)
+		return
 	}
+	pick = pickModel(n, run, ex("model"), false)
 	provider := strings.ToLower(firstNonEmpty(ex("provider"), "anthropic"))
 	prompt := fmt.Sprintf(`You are a triage classifier for an autonomous coding factory.
 Decide whether this ticket is well-scoped enough to implement automatically.
@@ -75,10 +82,10 @@ TICKET:
 %s`, summary, desc)
 
 	prompt = contextBlock(project) + prompt
-	text, status, err := callLLM(provider, ex("base_url"), apiKey, ex("model"), prompt, 400)
+	text, status, err := callLLMRec(usageFor(run), provider, ex("base_url"), apiKey, pick.Model, prompt, 400)
 	if err != nil || status < 200 || status >= 300 {
 		s, l, r, m := heuristicScore(summary, desc)
-		return s, l, r + " (model unavailable; heuristic)", m
+		return s, l, r + " (model unavailable; heuristic)", m, pick
 	}
 	var v struct {
 		Score   int      `json:"score"`
@@ -90,7 +97,8 @@ TICKET:
 		_ = json.Unmarshal([]byte(m), &v)
 	}
 	if v.Reason == "" && v.Score == 0 { // couldn't parse → heuristic
-		return heuristicScore(summary, desc)
+		score, level, reason, missing = heuristicScore(summary, desc)
+		return
 	}
 	if v.Score < 0 {
 		v.Score = 0
@@ -101,7 +109,7 @@ TICKET:
 	if v.Level == "" {
 		v.Level = levelFor(v.Score)
 	}
-	return v.Score, v.Level, firstNonEmpty(v.Reason, "scored by model"), v.Missing
+	return v.Score, v.Level, firstNonEmpty(v.Reason, "scored by model"), v.Missing, pick
 }
 
 var readySignals = []string{"expected", "should", "acceptance", "steps to reproduce", "reproduce", "given", "when ", "then ", "error", "stack trace", "api", "endpoint", "test"}

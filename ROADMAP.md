@@ -192,6 +192,10 @@ It is now a real pipeline that opens real pull requests:
   from the stage that failed, cancel at any point, and watch status live.
 - **Per-user workspaces**: everyone who signs in gets their own copy of the
   AI Factory and review workflows, with settings and secrets encrypted at rest.
+- **Model tiers and cost tracking**: fast / standard / best models per project,
+  a default tier per step, automatic step-up on low confidence, large changes,
+  failed CI or a send-back (logged with the reason), and tokens and cost per step,
+  per run and per model in Metrics.
 
 ### Phase 7 — Release hardening  ✅ (this release)
 
@@ -210,9 +214,9 @@ It is now a real pipeline that opens real pull requests:
 
 Planned, not shipped. Order is a rough priority.
 
-- **Lower model spend per run** — separate fast and strong model tiers per step,
-  prompt caching for the per-file coding calls, merging the three pre-approval
-  agent calls, a per-run token budget, and usage in the Metrics view.
+- **Lower model spend per run** — model tiers and usage tracking have shipped
+  (see Phase 6); next: prompt caching for the per-file coding calls, merging the
+  three pre-approval agent calls, and a per-run spending cap.
 - **More coding agents and places to run them** — the Claude Code engine has
   shipped (see Phase 6); next: a per-session container sandbox for it, a local
   runner on a developer's machine, and handing the coding step to tools an

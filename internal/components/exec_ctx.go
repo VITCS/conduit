@@ -19,11 +19,45 @@ var ctxRegistry = map[string]CtxExecutor{
 }
 
 // Exec runs a node's executor, passing ctx to executors that accept one.
+// It also collects the token usage of every model call the step makes.
 func Exec(ctx context.Context, typ string, n model.Node, run *model.Run) Result {
+	acc := beginUsage(run)
+	defer endUsage(run)
+	var res Result
 	if e, ok := ctxRegistry[typ]; ok {
-		return e(ctx, n, run)
+		res = e(ctx, n, run)
+	} else {
+		res = For(typ)(n, run)
 	}
-	return For(typ)(n, run)
+	if p := acc.chosen(); p != nil {
+		if res.Output == nil {
+			res.Output = map[string]any{}
+		}
+		if _, ok := res.Output["model_tier"]; !ok {
+			p.output(res.Output)
+		}
+		if line := p.logLine(); line != "" && !hasLine(res.Logs, line) {
+			res.Logs = append([]string{line}, res.Logs...)
+		}
+	}
+	if u := acc.result(); u != nil {
+		res.Usage = u
+		if line := usageSummary(u); line != "" {
+			res.Logs = append(res.Logs, line)
+		}
+		if res.Output == nil {
+			res.Output = map[string]any{}
+		}
+		res.Output["tokens_in"] = u.InputTokens
+		res.Output["tokens_out"] = u.OutputTokens
+		if u.CostUSD > 0 {
+			res.Output["cost_usd"] = u.CostUSD
+		}
+		if u.SubscriptionUSD > 0 {
+			res.Output["cost_usd_equivalent"] = u.SubscriptionUSD
+		}
+	}
+	return res
 }
 
 type progressKey struct{}
@@ -38,4 +72,13 @@ func progress(ctx context.Context, msg string) {
 	if f, ok := ctx.Value(progressKey{}).(func(string)); ok && f != nil {
 		f(msg)
 	}
+}
+
+func hasLine(lines []string, l string) bool {
+	for _, x := range lines {
+		if x == l {
+			return true
+		}
+	}
+	return false
 }

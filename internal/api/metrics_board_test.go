@@ -27,11 +27,24 @@ func TestComputeBoardMetrics(t *testing.T) {
 		},
 	}
 	runs := []model.Run{
-		{ID: "r1", Loops: map[string]int{"a\x00b": 2}}, // recovered via retry
+		{ID: "r1", Loops: map[string]int{"a\x00b": 2}, // recovered via retry
+			Usage: &model.Usage{Calls: 3, CostUSD: 0.3, ByModel: map[string]*model.Usage{
+				"claude-haiku-5-5":  {Model: "claude-haiku-5-5", Calls: 2, InputTokens: 100, CostUSD: 0.1},
+				"claude-sonnet-5-5": {Model: "claude-sonnet-5-5", Calls: 1, OutputTokens: 50, CostUSD: 0.2},
+			}}},
 		{ID: "r2"},
+		{ID: "r3", Usage: &model.Usage{Calls: 1, SubscriptionUSD: 0.5, ByModel: map[string]*model.Usage{
+			"claude-sonnet-5-5": {Model: "claude-sonnet-5-5", Calls: 1, SubscriptionUSD: 0.5}}}},
 	}
 	m := computeBoardMetrics(tasks, runs, base.Add(60*time.Minute))
 
+	u := m.Usage
+	if u.RunsWithUsage != 2 || u.Calls != 4 || u.CostUSD != 0.3 || u.SubscriptionUSD != 0.5 || u.AvgRunCostUSD != 0.4 {
+		t.Errorf("usage = %+v", u)
+	}
+	if len(u.ByModel) != 2 || u.ByModel[0].Model != "claude-sonnet-5-5" || u.ByModel[0].Calls != 2 {
+		t.Errorf("by model = %+v", u.ByModel)
+	}
 	if m.Tasks != 3 || m.Done != 1 || m.Blocked != 1 || m.Started != 2 {
 		t.Fatalf("counts: %+v", m)
 	}
@@ -46,7 +59,7 @@ func TestComputeBoardMetrics(t *testing.T) {
 	if m.AvgLeadMs != (40 * time.Minute).Milliseconds() {
 		t.Errorf("avg lead = %d", m.AvgLeadMs)
 	}
-	if m.Runs != 2 || m.RetryRuns != 1 || m.RetryRate != 0.5 {
+	if m.Runs != 3 || m.RetryRuns != 1 || m.RetryRate != 1.0/3 {
 		t.Errorf("retry: runs=%d retry=%d rate=%v", m.Runs, m.RetryRuns, m.RetryRate)
 	}
 	if m.InterventionPct != 0.5 { // 1 blocked / 2 started

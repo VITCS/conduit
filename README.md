@@ -331,6 +331,39 @@ Changes (both engines) and the PR review agent. With the direct-API engine the
 repository's own `CLAUDE.md` / `AGENTS.md` is also passed to the coding steps;
 Claude Code reads those files itself.
 
+### Models and cost
+
+**Settings → Models & cost** sets three model tiers, stored as project variables:
+
+| Tier | Variable | Used by default for | Suggested |
+| --- | --- | --- | --- |
+| Fast | `model_fast` | Triage and the factory's Review Confidence step | `claude-haiku-5-5` |
+| Standard | `model_standard` | Refine & Plan, Draft, Plan/Apply Changes, PR review | `claude-sonnet-5-5` |
+| Best | `model_max` | Step-ups (below) | `claude-opus-5-5` |
+
+A step can choose its own tier with a `tier` field (`fast`, `standard` or `best`).
+A step whose `model` field names a specific model keeps that model. With no tier
+set, every step uses `llm_model` (Claude Code: `claude_model`) exactly as before.
+
+**Automatic step-up**, using signals Conduit already has:
+
+- triage confidence below `escalate_confidence_below` (default 75), or a change plan
+  with more than `escalate_files_over` files (default 5): coding steps use **Best**;
+- a retry after failing CI, or a step sent back with feedback: one tier up.
+
+Turn it off with `model_escalation=off`, or on one step with `escalate=false`. The
+run log says what was chosen and why, e.g.
+`model: using claude-opus-5-5 (max tier, sent back by a reviewer)`.
+
+**Cost tracking.** Every model call records its input and output tokens. Each
+step shows its model, tokens and cost in the inspector; the run rail shows the
+run's total (retries and send-backs included); **Metrics** shows total spend,
+average per run and a breakdown by model. Costs are estimates at Anthropic API
+list prices, built in for current Claude models. Set prices for any other model
+with `model_prices` (`name=input/output` in USD per million tokens, e.g.
+`gpt-4o-mini=0.15/0.60`). Claude Code sessions signed in with a subscription are
+shown as the API-price equivalent and are not billed per token.
+
 ### Choose how code is written: Claude Code or the direct API
 
 **Settings → Coding agent** picks the engine for *Plan changes* and *Apply changes*.

@@ -40,6 +40,9 @@ type codingCfg struct {
 	// guidance is prepended to every coding prompt: the project context plus the
 	// repository's own CLAUDE.md / AGENTS.md (direct-API engine).
 	guidance string
+	// pick is the model tier choice; usage collects the step's token usage.
+	pick  modelPick
+	usage *usageAcc
 }
 
 // resolveCoding resolves the common config for a coding node. needToken fails the
@@ -61,6 +64,7 @@ func resolveCoding(n model.Node, run *model.Run, needToken bool) (codingCfg, fun
 		apiKey:        secretExpand(project, firstNonEmpty(n.Field("api_key"), n.Field("key"))),
 		baseURL:       ex("base_url"),
 		model:         ex("model"),
+		usage:         usageFor(run),
 		maxFiles:      10,
 		ticket:        firstNonEmpty(ex("ticket"), "change"),
 		ticketSummary: ex("ticket_summary"),
@@ -76,6 +80,8 @@ func resolveCoding(n model.Node, run *model.Run, needToken bool) (codingCfg, fun
 	if v, err := strconv.Atoi(ex("max_tokens")); err == nil && v > 0 {
 		cfg.maxTokens = v
 	}
+	cfg.pick = pickModel(n, run, cfg.model, true)
+	cfg.model = cfg.pick.Model
 	if token, ok := githubToken(n, project); ok {
 		cfg.gh = ghClient{base: githubBase(n), owner: owner, repo: repo, headers: githubHeaders(token)}
 		cfg.hasToken = true
@@ -102,7 +108,7 @@ WORK:
 NOTES:
 %s`, c.owner, c.repo, c.maxFiles, task, notes)
 
-	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, c.maxTokens)
+	text, status, err := callLLMRec(c.usage, c.provider, c.baseURL, c.apiKey, c.model, prompt, c.maxTokens)
 	if err != nil || status < 200 || status >= 300 {
 		r := llmFail("plan", err, status)
 		return nil, &r
@@ -174,7 +180,7 @@ markdown code fences, just the raw file content.
 ORIGINAL TASK:
 %s%s%s`, c.owner, c.repo, verb, item.Path, details, item.Path, task, feedbackBlock(feedback), context)
 
-	text, status, err := callLLM(c.provider, c.baseURL, c.apiKey, c.model, prompt, c.maxTokens)
+	text, status, err := callLLMRec(c.usage, c.provider, c.baseURL, c.apiKey, c.model, prompt, c.maxTokens)
 	if err != nil || status < 200 || status >= 300 {
 		r := llmFail("implement "+item.Path, err, status)
 		return "", &r

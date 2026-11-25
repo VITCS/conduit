@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, CheckCircle2, AlertTriangle, Timer, RotateCcw, Users } from "lucide-react";
+import { RefreshCw, CheckCircle2, AlertTriangle, Timer, RotateCcw, Users, Coins } from "lucide-react";
 import { api } from "@/lib/api";
 import type { BoardMetrics, SSEvent } from "@/lib/types";
 
@@ -43,6 +43,7 @@ export function Metrics({ onToast }: { onToast: (m: string) => void }) {
 
   if (!m) return <div className="board-empty">Loading…</div>;
 
+  const u = m.usage;
   const maxDwell = Math.max(1, ...STAGES.map((s) => m.stage_avg_ms[s] || 0));
   const maxFunnel = Math.max(1, ...STAGES.map((s) => m.stage_inflow[s] || m.by_stage[s] || 0));
 
@@ -59,6 +60,8 @@ export function Metrics({ onToast }: { onToast: (m: string) => void }) {
         <Kpi icon={<Timer size={16} />} label="Avg lead time" value={fmtDur(m.avg_lead_ms)} sub="created → done" />
         <Kpi icon={<RotateCcw size={16} />} label="Auto-recovery rate" value={pct(m.retry_rate)} sub={`${m.retry_runs}/${m.runs} runs retried`} tone="run" />
         <Kpi icon={<Users size={16} />} label="Intervention rate" value={pct(m.intervention_pct)} sub={`${m.blocked} blocked`} tone={m.intervention_pct > 0.4 ? "warn" : undefined} />
+        <Kpi icon={<Coins size={16} />} label="Model spend" value={usd(u?.cost_usd ?? 0)}
+          sub={u && u.runs_with_usage ? `avg ${usd(u.avg_run_cost_usd)} per run${u.subscription_usd > 0 ? ` · ~${usd(u.subscription_usd)} on subscription` : ""}` : "no model calls yet"} />
       </div>
 
       <div className="metric-panels">
@@ -88,9 +91,42 @@ export function Metrics({ onToast }: { onToast: (m: string) => void }) {
           ))}
         </div>
       </div>
+
+      {u && u.by_model.length > 0 && (
+        <div className="mpanel" style={{ marginTop: 16 }} data-testid="spend-by-model">
+          <h3 className="drawer-h3">Spend by model</h3>
+          <table className="usage-tbl">
+            <thead><tr><th>Model</th><th>Calls</th><th>Input tokens</th><th>Output tokens</th><th>Cost</th></tr></thead>
+            <tbody>
+              {u.by_model.map((b) => (
+                <tr key={b.model}>
+                  <td className="mono">{b.model}</td>
+                  <td>{b.calls}</td>
+                  <td>{b.input_tokens.toLocaleString()}</td>
+                  <td>{b.output_tokens.toLocaleString()}</td>
+                  <td>
+                    {b.unpriced && !b.cost_usd && !b.subscription_usd ? "no price"
+                      : (b.subscription_usd ?? 0) > 0 && !b.cost_usd ? `~${usd(b.subscription_usd!)} (subscription)`
+                      : usd(b.cost_usd)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="hint" style={{ marginTop: 8 }}>
+            Estimated from the tokens each provider reports, at API list prices. Set prices for other models in
+            Settings → Models &amp; cost.
+          </p>
+        </div>
+      )}
       {m.tasks === 0 && <div className="board-empty">No tasks yet — create one on the Board to start collecting operating data.</div>}
     </div>
   );
+}
+
+function usd(n: number): string {
+  if (n === 0) return "$0";
+  return n < 0.01 ? "$" + n.toFixed(4) : "$" + n.toFixed(n < 10 ? 3 : 2);
 }
 
 function pct(v: number): string {

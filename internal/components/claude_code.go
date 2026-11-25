@@ -202,6 +202,8 @@ type claudeOutcome struct {
 	result  string
 	isError bool
 	cost    float64
+	usage   llmUsage
+	model   string // the main model the session ran on, when reported
 	turns   int
 	denials []string
 	stderr  string
@@ -277,6 +279,7 @@ func runClaude(ctx context.Context, s claudeSpec) (claudeOutcome, error) {
 			out.result, _ = ev["result"].(string)
 			out.isError, _ = ev["is_error"].(bool)
 			out.cost, _ = ev["total_cost_usd"].(float64)
+			out.usage, out.model = resultUsage(ev)
 			if t, ok := ev["num_turns"].(float64); ok {
 				out.turns = int(t)
 			}
@@ -482,9 +485,18 @@ func resolveClaude(n model.Node, run *model.Run, needToken bool, defTimeout time
 		return claudeCfg{}, ex, &r
 	}
 	token, _ := githubToken(n, project)
+	// Tier models are full model IDs, which the CLI accepts too. Without tiers (or
+	// an explicit model on the step) the session uses claude_model.
+	model := projVar(project, "claude_model")
+	if cfg.pick.Tier != "" || cfg.pick.Reason == "set on this step" {
+		model = cfg.pick.Model
+	} else {
+		cfg.pick.Model = model
+	}
+	usageFor(run).setPick(cfg.pick)
 	c := claudeCfg{codingCfg: cfg, project: project, auth: mode, authEnv: authEnv,
 		url: cloneURL(n, cfg.owner, cfg.repo), token: token,
-		model: projVar(project, "claude_model"), timeout: defTimeout}
+		model: model, timeout: defTimeout}
 	if b := projVar(project, "claude_max_budget_usd"); b != "" {
 		if f, err := strconv.ParseFloat(b, 64); err == nil && f > 0 {
 			c.budget = strconv.FormatFloat(f, 'f', 2, 64)
@@ -517,9 +529,6 @@ func (c claudeCfg) session(dir, home, prompt, system string, allowed, disallowed
 func (c claudeCfg) outputBase(o claudeOutcome) map[string]any {
 	out := map[string]any{"engine": engineClaudeCode, "auth": c.auth, "repo": c.owner + "/" + c.repo,
 		"turns": o.turns}
-	if c.auth == authAPIKey && o.cost > 0 {
-		out["cost_usd"] = o.cost
-	}
 	if c.model != "" {
 		out["model"] = c.model
 	}
@@ -589,6 +598,7 @@ Use "create" only for files that do not exist yet. Paths are relative to the rep
 	system := contextBlock(cfg.project) + "You are a senior engineer planning a change for a human to approve. You may only read the repository."
 	o, err := runClaude(ctx, cfg.session(co.dir, co.home, prompt, system,
 		readOnlyTools, append([]string{"Edit", "Write", "NotebookEdit", "Bash"}, neverTools...)))
+	cfg.recordClaude(o)
 	if err != nil {
 		return claudeFail("plan", err, o)
 	}
@@ -700,6 +710,7 @@ Finish with a short summary of what you changed and how you checked it.`,
 		allowed = append(allowed, "Bash("+c+":*)")
 	}
 	o, err := runClaude(ctx, cfg.session(co.dir, co.home, prompt, system, allowed, neverTools))
+	cfg.recordClaude(o)
 	if err != nil {
 		return claudeFail("apply", err, o)
 	}
@@ -938,4 +949,37 @@ func CheckClaude(ctx context.Context, project string) map[string]any {
 	res["ok"] = true
 	res["reply"] = strings.TrimSpace(o.result)
 	return res
+}
+
+// resultUsage reads token usage from a stream-json result event: the "usage"
+// object, and the model with the largest output from "modelUsage" when present.
+func resultUsage(ev map[string]any) (llmUsage, string) {
+	num := func(m map[string]any, k string) int64 {
+		f, _ := m[k].(float64)
+		return int64(f)
+	}
+	var u llmUsage
+	if m, ok := ev["usage"].(map[string]any); ok {
+		u = llmUsage{input: num(m, "input_tokens"), output: num(m, "output_tokens"),
+			cacheRead: num(m, "cache_read_input_tokens"), cacheWrite: num(m, "cache_creation_input_tokens")}
+	}
+	best, bestOut := "", int64(-1)
+	if mu, ok := ev["modelUsage"].(map[string]any); ok {
+		for name, v := range mu {
+			m, _ := v.(map[string]any)
+			if o := num(m, "outputTokens"); o > bestOut {
+				best, bestOut = name, o
+			}
+		}
+	}
+	return u, best
+}
+
+// recordClaude adds a session's usage to the step. A subscription session is not
+// billed per token, so its reported cost is kept as the API-price equivalent.
+func (c claudeCfg) recordClaude(o claudeOutcome) {
+	if o.usage == (llmUsage{}) && o.cost == 0 {
+		return
+	}
+	c.usage.addReported(firstNonEmpty(o.model, c.model), o.usage, o.cost, c.auth == authSubscription || c.auth == authServerLogin)
 }

@@ -74,7 +74,7 @@ func GitHubWorkflow() model.Workflow {
 		// run memory and shows the review text at the human approval gate.
 		// Rev 2 raised the Agent Review output cap from the old 1024-token default.
 		// Rev 4 adds "send back with feedback" at the Human Approval gate.
-		Rev: 4,
+		Rev: 5,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "GitHub Event", X: 40, Y: 340,
 				Config: []model.Field{f("on", "github", "pull_request / manual open"), f("hook", "webhook", "POST /api/hooks/wf_github?token=…")}},
@@ -104,7 +104,7 @@ func GitHubWorkflow() model.Workflow {
 					f("repo", "github", "${input.repository.name}"),
 					f("number", "key", "${input.number}"),
 					f("provider", "agent", "anthropic"),
-					f("model", "agent", "claude-3-5-sonnet-latest"),
+					f("model", "agent", "${var:llm_model}"),
 					f("max_tokens", "size", "4096"),
 					f("api_key", "key", "${secret:llm_key}"),
 					f("token", "key", "${secret:github_token}"),
@@ -183,7 +183,7 @@ func FactoryWorkflow() model.Workflow {
 		// Rev 4 reviews the code before it is pushed: Apply Changes prepares the change
 		// (push: false), a Review Diff gate shows it, and Push Branch commits exactly
 		// what was approved. Rev 3 added "send back with feedback" at the gates.
-		Rev: 4,
+		Rev: 5,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "webhook", Kind: model.KindTrigger, Title: "Ticket Event", X: 40, Y: 300,
 				Config: []model.Field{f("on", "webhook", "jira / notion / manual run"), f("hook", "webhook", "POST /api/hooks/wf_factory?token=…")}},
@@ -228,6 +228,7 @@ func FactoryWorkflow() model.Workflow {
 					f("live", "agent", "true"),
 					f("provider", "agent", "${var:llm_provider}"),
 					f("model", "agent", "${var:llm_model}"),
+					f("tier", "gauge", "fast"),
 					f("api_key", "key", "${secret:llm_key}"),
 					f("output", "db", "review"),
 					f("prompt", "file", "Review this plan and implementation for correctness and risk. State a merge-confidence (high/medium/low) and any blockers.\n\nPLAN:\n${memory.plan}\n\nIMPLEMENTATION:\n${memory.implementation}"),

@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { X, Sliders, KeyRound, Trash2, Plus, Settings as Gear, Bot, FileText } from "lucide-react";
+import { X, Sliders, KeyRound, Trash2, Plus, Settings as Gear, Bot, FileText, Gauge } from "lucide-react";
 import { CodingAgentSettings } from "./CodingAgentSettings";
 import { ProjectContextSettings } from "./ProjectContextSettings";
+import { ModelSettings } from "./ModelSettings";
 import { api } from "@/lib/api";
 
 // One place for everything a project reads at run time, split into two clearly
@@ -13,7 +14,7 @@ import { api } from "@/lib/api";
 // is sensitive. That difference is real (secrets are encrypted at rest and never
 // returned), so they stay separate — but they live behind one "Settings" button.
 
-type Tab = "coding" | "context" | "variables" | "secrets";
+type Tab = "coding" | "models" | "context" | "variables" | "secrets";
 
 const VAR_PRESETS = ["owner", "repo", "jira_base", "jira_email", "jira_jql", "notion_db", "llm_provider", "llm_model", "audit_url", "auto_start_confidence"];
 const SECRET_PRESETS = ["github_token", "llm_key", "claude_code_oauth_token", "anthropic_api_key", "jira_token", "notion_token", "scan_token"];
@@ -85,6 +86,9 @@ export function SettingsPanel(props: { initialTab?: Tab; onClose: () => void; on
           <button className={`set-tab${tab === "coding" ? " on" : ""}`} onClick={() => setTab("coding")} data-testid="tab-coding">
             <Bot size={14} /> Coding agent
           </button>
+          <button className={`set-tab${tab === "models" ? " on" : ""}`} onClick={() => setTab("models")} data-testid="tab-models">
+            <Gauge size={14} /> Models &amp; cost
+          </button>
           <button className={`set-tab${tab === "context" ? " on" : ""}`} onClick={() => setTab("context")} data-testid="tab-context">
             <FileText size={14} /> Project context
           </button>
@@ -99,6 +103,9 @@ export function SettingsPanel(props: { initialTab?: Tab; onClose: () => void; on
         {tab === "coding" ? (
           loading ? <div className="modal-body"><div className="empty">Loading…</div></div>
             : <CodingAgentSettings vars={vars} secrets={secrets} onSaved={refresh} onToast={props.onToast} />
+        ) : tab === "models" ? (
+          loading ? <div className="modal-body"><div className="empty">Loading…</div></div>
+            : <ModelSettings vars={vars} onSaved={refresh} onToast={props.onToast} />
         ) : tab === "context" ? (
           loading ? <div className="modal-body"><div className="empty">Loading…</div></div>
             : <ProjectContextSettings value={vars.project_context ?? ""} onSaved={refresh} onToast={props.onToast} />

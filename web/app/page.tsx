@@ -39,7 +39,7 @@ import { Auth } from "@/components/Auth";
 import { EditorContext } from "@/lib/editorContext";
 import { api, getToken, setToken, setOnUnauthorized, getProject, setProject } from "@/lib/api";
 import { type CatalogItem } from "@/lib/catalog";
-import type { EdgeData, NodeData, Run, SSEvent, Status, Workflow, WFNode, WFEdge, ReviewRequest } from "@/lib/types";
+import type { EdgeData, NodeData, Run, SSEvent, Status, Usage, Workflow, WFNode, WFEdge, ReviewRequest } from "@/lib/types";
 
 const nodeTypes: NodeTypes = { conduit: ConduitNode };
 const edgeTypes: EdgeTypes = { conduit: ConduitEdge };
@@ -52,7 +52,7 @@ function wfToNodes(wf: Workflow): Node[] {
     id: n.id,
     type: "conduit",
     position: { x: n.x, y: n.y },
-    data: { title: n.title, typeName: n.type, icon: n.icon, kind: n.kind, config: n.config, status: "pending", disabled: !!n.disabled } as NodeData,
+    data: { title: n.title, typeName: n.type, icon: n.icon, kind: n.kind, config: n.config ?? [], status: "pending", disabled: !!n.disabled } as NodeData,
   }));
 }
 // toWorkflowPayload builds the Workflow to PUT from the current canvas state.
@@ -125,6 +125,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [conn, setConn] = useState("idle");
   const [runLabel, setRunLabel] = useState("No run yet");
   const [runMeta, setRunMeta] = useState("press Run to execute");
+  const [runUsage, setRunUsage] = useState<Usage | null>(null);
   const [railHidden, setRailHidden] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -250,6 +251,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       setRunInput(null);
       setRunLabel("No run yet");
       setRunMeta("press Run to execute");
+      setRunUsage(null);
       loadWorkflows();
       loadProjectConfig();
       loadReviewRequests();
@@ -343,6 +345,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       setRunId(run.id);
       setRunLabel(run.title);
       setRunMeta(run.id);
+      setRunUsage(null);
       setRunInput(run.input || input || null);
       openStream(run.id);
     } catch (e) {
@@ -426,6 +429,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     setOutputs((cur) => ({ ...cur, ...out }));
     setMemory(full.memory || {});
     setRunInput(full.input || null);
+    setRunUsage(full.usage ?? null);
   }
 
   const TERMINAL: Status[] = ["success", "failed", "canceled", "created", "skipped"];
@@ -549,6 +553,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         setRunId(run.id);
         setRunLabel(run.title);
         setRunMeta(run.id);
+      setRunUsage(null);
         setRunInput(run.input || null);
         setRunning(true);
         setAppView("editor");
@@ -922,6 +927,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
             onSelect={focusNode}
             runLabel={runLabel}
             runMeta={runMeta}
+            usage={runUsage}
             showHistory={showHistory}
             onToggleHistory={toggleHistory}
             runs={runs}

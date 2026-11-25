@@ -2,7 +2,19 @@
 import { Radio, History, ListTree } from "lucide-react";
 import { Icon } from "@/lib/icons";
 import { STATUS_META } from "@/lib/catalog";
-import type { Run, Status, WFNode } from "@/lib/types";
+import type { Run, Status, Usage, WFNode } from "@/lib/types";
+
+/** runCost is a short label for a run's model spend, or "" when it made no model calls. */
+export function runCost(u?: Usage | null): string {
+  if (!u || !u.calls) return "";
+  const usd = (n: number) => (n < 0.01 ? "$" + n.toFixed(4) : "$" + n.toFixed(n < 10 ? 3 : 2));
+  const toks = u.input_tokens + u.output_tokens;
+  const t = toks >= 1e6 ? (toks / 1e6).toFixed(1) + "M" : toks >= 1e3 ? Math.round(toks / 1e3) + "k" : String(toks);
+  const parts = [`${t} tokens`];
+  if (u.cost_usd > 0) parts.push(usd(u.cost_usd));
+  if ((u.subscription_usd ?? 0) > 0) parts.push(`~${usd(u.subscription_usd!)} subscription`);
+  return parts.join(" · ");
+}
 
 function rel(iso: string): string {
   const d = Date.now() - new Date(iso).getTime();
@@ -22,6 +34,7 @@ export function RunRail(props: {
   onSelect: (id: string) => void;
   runLabel: string;
   runMeta: string;
+  usage?: Usage | null;
   // history
   showHistory: boolean;
   onToggleHistory: () => void;
@@ -60,7 +73,7 @@ export function RunRail(props: {
                   <span className="s-name">
                     {r.title}
                     <small style={{ display: "block", color: "var(--faint)", fontFamily: "var(--font-mono)" }}>
-                      {r.id} · {rel(r.created_at)}
+                      {r.id} · {rel(r.created_at)}{runCost(r.usage) ? ` · ${runCost(r.usage)}` : ""}
                     </small>
                   </span>
                   <span className={`badge ${meta.cls}`}>{meta.label}</span>
@@ -74,6 +87,12 @@ export function RunRail(props: {
           <div className="run-title">
             <b>{props.runLabel}</b>
             <div className="run-meta">{props.runMeta}</div>
+            {runCost(props.usage) && (
+              <div className="usage-chip" style={{ marginTop: 6 }} data-testid="run-usage"
+                title={Object.values(props.usage?.by_model ?? {}).map((m) => `${m.model}: ${m.calls} call(s), ${runCost(m)}`).join("\n")}>
+                {runCost(props.usage)}
+              </div>
+            )}
           </div>
           <div className="steps">
             {props.nodes.map((n) => {

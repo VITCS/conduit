@@ -131,6 +131,13 @@ Next, **Settings → Project context**: describe the stack, the build and test
 commands, conventions and anything off-limits. Every agent reads it, so plans and
 code follow your project instead of generic defaults.
 
+Optionally, **Settings → Models & cost → Use Claude Haiku / Sonnet / Opus** sets a
+cheap model for triage and review, a standard one for planning and coding, and the
+strongest one only where a step needs it (a low-confidence ticket, a large change,
+a retry after failing CI, or a step you sent back). Each step then shows the model
+it used, its tokens and its cost, and **Metrics** totals the spend. Details:
+README, [Models and cost](README.md#models-and-cost).
+
 Then open **Settings → Coding agent** and choose how the code gets written:
 **Claude Code** (recommended — it reads your whole repository, edits files in a real
 checkout and can run your tests; signs in with your **Claude subscription** token from

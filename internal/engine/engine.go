@@ -835,6 +835,10 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 		if res.Outcome != model.StatusFailed || attempt == attempts {
 			break
 		}
+		if res.Usage != nil { // a failed attempt still cost tokens
+			u := res.Usage
+			e.store.MutateRun(runID, func(r *model.Run) { r.Usage = components.AddUsage(r.Usage, u) }) //nolint:errcheck
+		}
 		e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
 			Message: fmt.Sprintf("%s · attempt %d failed, retrying", node.Title, attempt)})
 		if !sleepCtx(ctx, backoff*time.Duration(attempt)) {
@@ -848,7 +852,15 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 		s.EndedAt = &end
 		s.Output = res.Output
 		s.Logs = logs
+		s.Usage = res.Usage
 	})
+	if res.Usage != nil {
+		// The run total keeps every execution's cost (a looped step's own record is
+		// reset each time it runs again).
+		e.store.MutateRun(runID, func(r *model.Run) {
+			r.Usage = components.AddUsage(r.Usage, res.Usage)
+		}) //nolint:errcheck // best-effort during execution
+	}
 	if len(res.MemoryWrites) > 0 {
 		e.store.MutateRun(runID, func(r *model.Run) {
 			if r.Memory == nil {

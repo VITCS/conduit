@@ -143,6 +143,27 @@ type StepRun struct {
 	EndedAt   *time.Time     `json:"ended_at,omitempty"`
 	Output    map[string]any `json:"output,omitempty"`
 	Logs      []string       `json:"logs,omitempty"`
+	// Usage is the model usage of this step's latest execution.
+	Usage *Usage `json:"usage,omitempty"`
+}
+
+// Usage is model token usage and cost, for one step or summed over a run.
+type Usage struct {
+	Model            string `json:"model,omitempty"`
+	Calls            int    `json:"calls"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64  `json:"cache_write_tokens,omitempty"`
+	// CostUSD is what the calls cost at API prices (billed to the API key).
+	CostUSD float64 `json:"cost_usd"`
+	// SubscriptionUSD is the API-price equivalent of work done under a Claude
+	// subscription, which is not billed per token.
+	SubscriptionUSD float64 `json:"subscription_usd,omitempty"`
+	// Unpriced counts calls whose model has no known price.
+	Unpriced int `json:"unpriced,omitempty"`
+	// ByModel breaks a run total down per model.
+	ByModel map[string]*Usage `json:"by_model,omitempty"`
 }
 
 // Run is one execution of a workflow.
@@ -168,6 +189,9 @@ type Run struct {
 	// instead of the workflow's triggers — used to re-run a failed stage without
 	// redoing the successful upstream work. It is consumed (cleared) at execution.
 	ResumeFrom []string `json:"resume_from,omitempty"`
+	// Usage sums model usage over every step execution in the run, retries and
+	// send-backs included.
+	Usage *Usage `json:"usage,omitempty"`
 }
 
 // Role is a user's or token's permission level.

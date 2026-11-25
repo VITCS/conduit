@@ -114,6 +114,9 @@ type Result struct {
 	// directly, so they never run while the store lock is held (a connector doing
 	// network I/O must not block the store).
 	MemoryWrites map[string]any
+	// Usage is the model usage of this execution (set by Exec from the calls the
+	// executor made).
+	Usage *model.Usage
 }
 
 // Executor runs one node. run is a read-only snapshot (for Input/Memory reads);

@@ -114,9 +114,29 @@ export function Inspector(props: {
                 <dd>{sendBacksLeft}</dd>
               </>
             )}
+            {typeof output?.model === "string" && (
+              <>
+                <dt>Model</dt>
+                <dd>
+                  <span className="mono">{output.model as string}</span>
+                  {typeof output.model_tier === "string" && (
+                    <span className={`usage-chip${/step|retry|sent back|confidence|files/.test(String(output.model_reason ?? "")) && !/default|set on/.test(String(output.model_reason ?? "")) ? " up" : ""}`}
+                      style={{ marginLeft: 8 }} title={String(output.model_reason ?? "")}>
+                      {output.model_tier as string}{output.model_reason ? ` · ${output.model_reason}` : ""}
+                    </span>
+                  )}
+                </dd>
+              </>
+            )}
+            {typeof output?.tokens_in === "number" && (
+              <>
+                <dt>Usage</dt>
+                <dd data-testid="step-usage">{usageText(output)}</dd>
+              </>
+            )}
             {output &&
               Object.entries(output)
-                .filter(([k, v]) => typeof v !== "object" && k !== "diff")
+                .filter(([k, v]) => typeof v !== "object" && k !== "diff" && !USAGE_KEYS.has(k))
                 .slice(0, 8)
                 .map(([k, v]) => (
                   <div key={k} style={{ display: "contents" }}>
@@ -209,6 +229,23 @@ export function Inspector(props: {
       </div>
     </div>
   );
+}
+
+// USAGE_KEYS are shown in the Model / Usage rows instead of the generic list.
+const USAGE_KEYS = new Set(["model", "model_tier", "model_reason", "tokens_in", "tokens_out", "cost_usd", "cost_usd_equivalent"]);
+
+function fmtUSD(n: number): string {
+  if (n === 0) return "$0";
+  if (n < 0.01) return "$" + n.toFixed(4);
+  return "$" + n.toFixed(n < 10 ? 3 : 2);
+}
+
+function usageText(o: Record<string, unknown>): string {
+  const n = (k: string) => (typeof o[k] === "number" ? (o[k] as number) : 0);
+  let s = `${n("tokens_in").toLocaleString()} in · ${n("tokens_out").toLocaleString()} out`;
+  if (n("cost_usd") > 0) s += ` · ${fmtUSD(n("cost_usd"))}`;
+  if (n("cost_usd_equivalent") > 0) s += ` · ~${fmtUSD(n("cost_usd_equivalent"))} at API prices (subscription)`;
+  return s;
 }
 
 // INTERNAL_OUTPUT_KEYS are step-output fields the engine sets for the UI's own use.

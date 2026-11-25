@@ -244,6 +244,33 @@ test("Settings → Project context is saved for the project", async ({ page }) =
   await expect(page.getByTestId("project-context")).toHaveValue(/Off-limits: billing\//);
 });
 
+test("Settings → Models & cost saves the model tiers and step-up setting", async ({ page }) => {
+  const email = `e2e_mc_${Date.now()}@example.com`;
+  await page.goto("/");
+  await page.getByTestId("nav-getstarted").click();
+  await page.locator("#name").fill("MC User");
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill("password123");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("run-btn")).toBeVisible();
+  await page.getByLabel("Settings").click();
+  await page.getByTestId("tab-models").click();
+  await expect(page.getByTestId("tier-escalation")).toBeDisabled(); // no tiers yet
+  await page.getByTestId("tier-preset").click();
+  await expect(page.getByTestId("tier-model_max")).toHaveValue("claude-opus-5-5");
+  await expect(page.getByText("$4.00 / $20.00 per M tokens")).toBeVisible();
+  await page.getByTestId("tier-escalation").uncheck();
+  await page.getByTestId("tier-save").click();
+  await expect(page.getByText("Model settings saved")).toBeVisible();
+  await page.locator(".set-tab", { hasText: "Variables" }).click();
+  for (const k of ["model_fast", "model_standard", "model_max", "model_escalation"]) {
+    await expect(page.locator(".secret-list")).toContainText(k);
+  }
+  await page.getByTestId("tab-models").click();
+  await expect(page.getByTestId("tier-model_fast")).toHaveValue("claude-haiku-5-5");
+  await expect(page.getByTestId("tier-escalation")).not.toBeChecked();
+});
+
 test("diff review: the gate shows the code change, and approving from the viewer continues the run", async ({ page }) => {
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD);
   const api = async (method: string, path: string, body?: unknown) =>

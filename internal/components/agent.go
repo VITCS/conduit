@@ -26,7 +26,8 @@ func execAgent(n model.Node, run *model.Run) Result {
 	// exactly like the coding/triage components.
 	ex := func(field string) string { return expandTemplate(run, secretExpand(project, n.Field(field))) }
 	provider := strings.ToLower(firstNonEmpty(ex("provider"), "anthropic"))
-	modelName := ex("model")
+	pick := pickModel(n, run, ex("model"), false)
+	modelName := pick.Model
 	prompt := expandTemplate(run, secretExpand(project, firstNonEmpty(n.Field("prompt"), n.Field("instruction"))))
 	// Every agent gets the project context, and a step sent back by a reviewer
 	// gets the feedback plus its previous answer.
@@ -75,37 +76,69 @@ func execAgent(n model.Node, run *model.Run) Result {
 	if v, err := strconv.Atoi(ex("max_tokens")); err == nil && v > 0 {
 		maxTokens = v
 	}
-	text, status, err := callLLM(provider, baseURL, apiKey, modelName, prompt, maxTokens)
+	text, status, err := callLLMRec(usageFor(run), provider, baseURL, apiKey, modelName, prompt, maxTokens)
+	logs := []string{}
+	if l := pick.logLine(); l != "" {
+		logs = append(logs, l)
+	}
 	if err != nil || status < 200 || status >= 300 {
 		msg := "request failed"
 		if err != nil {
 			msg = err.Error()
 		}
+		out := map[string]any{"provider": provider, "status_code": status, "error": msg}
+		pick.output(out)
 		return Result{
 			Outcome: model.StatusFailed,
-			Output:  map[string]any{"provider": provider, "status_code": status, "error": msg},
-			Logs:    []string{fmt.Sprintf("agent(%s) failed: %s (status %d)", provider, msg, status)},
+			Output:  out,
+			Logs:    append(logs, fmt.Sprintf("agent(%s) failed: %s (status %d)", provider, msg, status)),
 		}
 	}
+	out := map[string]any{"provider": provider, "model": modelName, "status_code": status, "text": text}
+	pick.output(out)
 	return Result{
 		Outcome:      model.StatusSuccess,
-		Output:       map[string]any{"provider": provider, "model": modelName, "status_code": status, "text": text},
+		Output:       out,
 		MemoryWrites: mem(text),
-		Logs:         []string{fmt.Sprintf("agent(%s) ok (%d chars)", provider, len(text))},
+		Logs:         append(logs, fmt.Sprintf("agent(%s) ok (%d chars)", provider, len(text))),
 	}
 }
 
 // callLLM dispatches to a provider adapter and returns (text, statusCode, err).
 func callLLM(provider, baseURL, apiKey, modelName, prompt string, maxTokens int) (string, int, error) {
+	text, status, _, _, err := callLLMUsage(provider, baseURL, apiKey, modelName, prompt, maxTokens)
+	return text, status, err
+}
+
+// callLLMRec is callLLM that also records the call's token usage on acc (the
+// step's collector; nil records nothing).
+func callLLMRec(acc *usageAcc, provider, baseURL, apiKey, modelName, prompt string, maxTokens int) (string, int, error) {
+	text, status, u, used, err := callLLMUsage(provider, baseURL, apiKey, modelName, prompt, maxTokens)
+	if u != (llmUsage{}) {
+		acc.add(used, u)
+	}
+	return text, status, err
+}
+
+// callLLMUsage is callLLM plus the reported token usage and the model that ran.
+func callLLMUsage(provider, baseURL, apiKey, modelName, prompt string, maxTokens int) (string, int, llmUsage, string, error) {
 	switch provider {
 	case "openai":
-		return callOpenAI(firstNonEmpty(baseURL, "https://api.openai.com"), apiKey, firstNonEmpty(modelName, "gpt-4o-mini"), prompt)
+		m := firstNonEmpty(modelName, "gpt-4o-mini")
+		text, status, u, err := callOpenAI(firstNonEmpty(baseURL, "https://api.openai.com"), apiKey, m, prompt)
+		return text, status, u, m, err
 	case "custom":
-		return callCustom(baseURL, apiKey, modelName, prompt)
+		text, status, u, err := callCustom(baseURL, apiKey, modelName, prompt)
+		return text, status, u, modelName, err
 	default: // anthropic
-		return callAnthropic(firstNonEmpty(baseURL, "https://api.anthropic.com"), apiKey, firstNonEmpty(modelName, "claude-3-5-sonnet-latest"), prompt, maxTokens)
+		m := firstNonEmpty(modelName, defaultAnthropicModel)
+		text, status, u, err := callAnthropic(firstNonEmpty(baseURL, "https://api.anthropic.com"), apiKey, m, prompt, maxTokens)
+		return text, status, u, m, err
 	}
 }
+
+// defaultAnthropicModel is used when no model is configured anywhere.
+const defaultAnthropicModel = "claude-sonnet-5-5"
 
 // postJSON POSTs JSON using the standard (fast) client — for quick API calls.
 func postJSON(url string, headers map[string]string, body any) ([]byte, int, error) {
@@ -133,7 +166,7 @@ func postJSONWith(client *http.Client, url string, headers map[string]string, bo
 	return out, resp.StatusCode, nil
 }
 
-func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (string, int, error) {
+func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (string, int, llmUsage, error) {
 	body := map[string]any{
 		"model": modelName, "max_tokens": maxTokens,
 		"messages": []map[string]any{{"role": "user", "content": prompt}},
@@ -142,10 +175,10 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 		"x-api-key": apiKey, "anthropic-version": "2023-06-01",
 	}, body)
 	if err != nil {
-		return "", status, err
+		return "", status, llmUsage{}, err
 	}
 	if status < 200 || status >= 300 {
-		return "", status, fmt.Errorf("anthropic %d: %s", status, apiErrSnippet(raw))
+		return "", status, llmUsage{}, fmt.Errorf("anthropic %d: %s", status, apiErrSnippet(raw))
 	}
 	var r struct {
 		Content []struct {
@@ -153,8 +186,16 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 			Text string `json:"text"`
 		} `json:"content"`
 		StopReason string `json:"stop_reason"`
+		Usage      struct {
+			InputTokens              int64 `json:"input_tokens"`
+			OutputTokens             int64 `json:"output_tokens"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		} `json:"usage"`
 	}
 	_ = json.Unmarshal(raw, &r)
+	u := llmUsage{input: r.Usage.InputTokens, output: r.Usage.OutputTokens,
+		cacheRead: r.Usage.CacheReadInputTokens, cacheWrite: r.Usage.CacheCreationInputTokens}
 	var sb strings.Builder
 	for _, c := range r.Content {
 		if c.Type == "text" {
@@ -162,15 +203,15 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 		}
 	}
 	if sb.Len() == 0 {
-		return "", status, fmt.Errorf("anthropic returned no text: %s", apiErrSnippet(raw))
+		return "", status, u, fmt.Errorf("anthropic returned no text: %s", apiErrSnippet(raw))
 	}
 	if r.StopReason == "max_tokens" {
-		return sb.String(), status, fmt.Errorf("response truncated at max_tokens=%d — raise max_tokens on this node (or lower max_files)", maxTokens)
+		return sb.String(), status, u, fmt.Errorf("response truncated at max_tokens=%d — raise max_tokens on this node (or lower max_files)", maxTokens)
 	}
-	return sb.String(), status, nil
+	return sb.String(), status, u, nil
 }
 
-func callOpenAI(base, apiKey, modelName, prompt string) (string, int, error) {
+func callOpenAI(base, apiKey, modelName, prompt string) (string, int, llmUsage, error) {
 	body := map[string]any{
 		"model":    modelName,
 		"messages": []map[string]any{{"role": "user", "content": prompt}},
@@ -179,10 +220,10 @@ func callOpenAI(base, apiKey, modelName, prompt string) (string, int, error) {
 		"Authorization": "Bearer " + apiKey,
 	}, body)
 	if err != nil {
-		return "", status, err
+		return "", status, llmUsage{}, err
 	}
 	if status < 200 || status >= 300 {
-		return "", status, fmt.Errorf("openai %d: %s", status, apiErrSnippet(raw))
+		return "", status, llmUsage{}, fmt.Errorf("openai %d: %s", status, apiErrSnippet(raw))
 	}
 	var r struct {
 		Choices []struct {
@@ -191,38 +232,49 @@ func callOpenAI(base, apiKey, modelName, prompt string) (string, int, error) {
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int64 `json:"prompt_tokens"`
+			CompletionTokens int64 `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	_ = json.Unmarshal(raw, &r)
+	u := llmUsage{input: r.Usage.PromptTokens, output: r.Usage.CompletionTokens}
 	if len(r.Choices) > 0 && r.Choices[0].Message.Content != "" {
 		if r.Choices[0].FinishReason == "length" {
-			return r.Choices[0].Message.Content, status, fmt.Errorf("response truncated (finish_reason=length) — raise max_tokens on this node (or lower max_files)")
+			return r.Choices[0].Message.Content, status, u, fmt.Errorf("response truncated (finish_reason=length) — raise max_tokens on this node (or lower max_files)")
 		}
-		return r.Choices[0].Message.Content, status, nil
+		return r.Choices[0].Message.Content, status, u, nil
 	}
-	return "", status, fmt.Errorf("openai returned no text: %s", apiErrSnippet(raw))
+	return "", status, u, fmt.Errorf("openai returned no text: %s", apiErrSnippet(raw))
 }
 
 // callCustom posts {prompt} and expects {text} — for self-hosted/gateway models.
-func callCustom(base, apiKey, modelName, prompt string) (string, int, error) {
+// An optional usage object ({input_tokens, output_tokens}) is recorded.
+func callCustom(base, apiKey, modelName, prompt string) (string, int, llmUsage, error) {
 	headers := map[string]string{}
 	if apiKey != "" {
 		headers["Authorization"] = "Bearer " + apiKey
 	}
 	raw, status, err := postJSONWith(llmHTTPClient, base, headers, map[string]any{"model": modelName, "prompt": prompt})
 	if err != nil {
-		return "", status, err
+		return "", status, llmUsage{}, err
 	}
 	if status < 200 || status >= 300 {
-		return "", status, fmt.Errorf("custom llm %d: %s", status, apiErrSnippet(raw))
+		return "", status, llmUsage{}, fmt.Errorf("custom llm %d: %s", status, apiErrSnippet(raw))
 	}
 	var r struct {
-		Text string `json:"text"`
+		Text  string `json:"text"`
+		Usage struct {
+			InputTokens  int64 `json:"input_tokens"`
+			OutputTokens int64 `json:"output_tokens"`
+		} `json:"usage"`
 	}
 	_ = json.Unmarshal(raw, &r)
+	u := llmUsage{input: r.Usage.InputTokens, output: r.Usage.OutputTokens}
 	if r.Text == "" {
-		return "", status, fmt.Errorf("custom llm returned no text: %s", apiErrSnippet(raw))
+		return "", status, u, fmt.Errorf("custom llm returned no text: %s", apiErrSnippet(raw))
 	}
-	return r.Text, status, nil
+	return r.Text, status, u, nil
 }
 
 // apiErrSnippet returns a short, single-line excerpt of an API error body for logs.

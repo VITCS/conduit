@@ -123,6 +123,8 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 	if strings.Contains(modelName, "${") {
 		modelName = ""
 	}
+	pick := pickModel(n, run, modelName, false)
+	modelName = pick.Model
 
 	// No LLM key → a clear, simulated review so the flow is still demonstrable.
 	if apiKey == "" || strings.Contains(apiKey, "${secret:") {
@@ -146,17 +148,24 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 	if v, e := strconv.Atoi(n.Field("max_tokens")); e == nil && v > 0 {
 		maxTokens = v
 	}
-	text, _, lerr := callLLM(provider, n.Field("base_url"), apiKey, modelName, prompt, maxTokens)
+	text, _, lerr := callLLMRec(usageFor(run), provider, n.Field("base_url"), apiKey, modelName, prompt, maxTokens)
+	logs := []string{}
+	if l := pick.logLine(); l != "" {
+		logs = append(logs, l)
+	}
 	if lerr != nil || strings.TrimSpace(text) == "" {
-		return Result{Outcome: model.StatusFailed,
-			Output: map[string]any{"error": fmt.Sprintf("llm review failed: %v", lerr)},
-			Logs:   []string{fmt.Sprintf("github_review: llm error: %v", lerr)}}
+		out := map[string]any{"error": fmt.Sprintf("llm review failed: %v", lerr)}
+		pick.output(out)
+		return Result{Outcome: model.StatusFailed, Output: out,
+			Logs: append(logs, fmt.Sprintf("github_review: llm error: %v", lerr))}
 	}
 	confidence := parseConfidence(text)
+	out := map[string]any{"repo": owner + "/" + repo, "number": number, "title": meta.Title, "confidence": confidence, "review": text, "diff_preview": diffPreview}
+	pick.output(out)
 	return Result{
 		Outcome: model.StatusSuccess,
-		Output:  map[string]any{"repo": owner + "/" + repo, "number": number, "title": meta.Title, "confidence": confidence, "review": text, "diff_preview": diffPreview},
-		Logs:    []string{fmt.Sprintf("github_review: reviewed %s#%s (confidence %s)", owner+"/"+repo, number, confidence)},
+		Output:  out,
+		Logs:    append(logs, fmt.Sprintf("github_review: reviewed %s#%s (confidence %s)", owner+"/"+repo, number, confidence)),
 		MemoryWrites: map[string]any{
 			"review": text, "review_confidence": confidence, "diff_preview": diffPreview,
 			"pr_owner": owner, "pr_name": repo, "pr_repo": owner + "/" + repo, "pr_number": number,
