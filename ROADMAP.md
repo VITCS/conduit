@@ -180,6 +180,9 @@ It is now a real pipeline that opens real pull requests:
   allowed commands such as the tests), signed in with the user's Claude subscription
   token or an Anthropic API key. Conduit pushes only after verifying that just the
   approved files changed. The direct-API engine remains the default.
+- **Diff review before push**: Apply Changes prepares the change without pushing;
+  a Review Diff gate shows the actual code (file by file) and Push Branch commits
+  exactly what was approved. Works with both coding engines.
 - **Send back with feedback** at every approval gate: the proposal goes back to the
   step that made it with the reviewer's note (bounded to 3 per gate).
 - **Project context**: a per-project brief (stack, commands, conventions,

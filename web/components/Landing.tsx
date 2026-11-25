@@ -79,8 +79,8 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
             <motion.p className="cv-lead"
               initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.14 }}>
               Conduit turns a ticket into a pull request. AI agents triage it, plan the change and write the
-              code on a branch. You approve the plan and the exact files, CI has to pass, and every step is a
-              node on a graph you can watch.
+              code. You approve the plan, the exact files and the final diff, CI has to pass, and every step
+              is a node on a graph you can watch.
             </motion.p>
             <motion.div className="cv-cta-row ctr"
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.22 }}>
@@ -102,7 +102,7 @@ export function Landing({ onSignIn, onGetStarted }: { onSignIn: () => void; onGe
 
             <ul className="cv-pillars" aria-label="What Conduit does">
               <li><Ticket size={16} /> Jira, Notion and GitHub tickets in.</li>
-              <li><UserCheck size={16} /> A human approves twice.</li>
+              <li><UserCheck size={16} /> A human approves plan, files and diff.</li>
               <li><GitPullRequest size={16} /> A CI-verified pull request out.</li>
             </ul>
           </section>

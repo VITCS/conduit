@@ -49,7 +49,7 @@ export function HowItWorks() {
         <Reveal className="cv-step" delay={0.2}>
           <motion.div className="cv-step-art" variants={stagger} {...inView}>
             <div className="cv-art-run">
-              {["Plan approved", "File changes approved", "CI checks passed"].map((t) => (
+              {["Plan approved", "Files approved", "Diff approved", "CI checks passed"].map((t) => (
                 <motion.div key={t} variants={item} className="cv-run-row"><span><Check size={11} /></span>{t}</motion.div>
               ))}
               <motion.div variants={item} className="cv-run-row live"><span><i /></span>Pull request opened</motion.div>
@@ -57,7 +57,7 @@ export function HowItWorks() {
           </motion.div>
           <span className="cv-step-n">03</span>
           <h3>Approve, then review the PR</h3>
-          <p>You approve the plan and the exact files. Agents write the change, CI verifies it, and a pull request opens for review.</p>
+          <p>You approve the plan, the exact files and the final diff. Agents write the change, CI verifies it, and a pull request opens for review.</p>
         </Reveal>
       </div>
     </section>
@@ -261,9 +261,9 @@ export function Capabilities() {
           </div>
         </Cap>
 
-        <Cap i={2} title="Code on a real branch" body="The coding agent writes files and pushes a branch through the GitHub API. No checkout, no runner.">
+        <Cap i={2} title="Code you read before it ships" body="The coding agent writes the files — Claude Code works in a real checkout. You read the diff; only then is the branch pushed.">
           <div className="cv-m-lines">
-            {["plan · 4 files", "write app/sitemap.ts", "push conduit/ENG-482"].map((t) => (
+            {["plan · 4 files", "write app/sitemap.ts", "review diff · +31 −2", "push conduit/ENG-482"].map((t) => (
               <motion.div key={t} variants={item}><em>›</em> {t}</motion.div>
             ))}
           </div>
@@ -310,7 +310,7 @@ export function Capabilities() {
           </div>
         </Cap>
 
-        <Cap i={8} wide title="Human approval gates" body="A run pauses with the plan or the file list in front of the approver. Try it.">
+        <Cap i={8} wide title="Human approval gates" body="A run pauses with the plan, the file list or the full diff in front of the approver — approve, send it back with a note, or reject. Try it.">
           <ApprovalMini />
         </Cap>
 

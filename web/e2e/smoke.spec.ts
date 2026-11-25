@@ -40,7 +40,7 @@ test("landing page says what the app does and offers sign in / create account", 
   await expect(page.getByTestId("hero-getstarted")).toBeVisible();
 });
 
-test("landing demo runs the AI Factory and waits at both approval gates", async ({ page }) => {
+test("landing demo runs the AI Factory and waits at all three approval gates", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("hero-demo").click();
   await page.getByTestId("demo-run").click();
@@ -49,6 +49,10 @@ test("landing demo runs the AI Factory and waits at both approval gates", async 
   await page.getByTestId("demo-approve").click();
   // Gate 2: the exact file changes.
   await expect(page.getByTestId("demo-gate")).toContainText(/Approve these file changes/i, { timeout: 20_000 });
+  await page.getByTestId("demo-approve").click();
+  // Gate 3: the actual diff, before anything is pushed.
+  await expect(page.getByTestId("demo-gate")).toContainText(/Review the code before it's pushed/i, { timeout: 20_000 });
+  await expect(page.getByTestId("demo-gate")).toContainText("app/sitemap.ts");
   await page.getByTestId("demo-approve").click();
   await expect(page.getByTestId("demo-outcome")).toContainText(/Pull request #129 opened/i, { timeout: 20_000 });
   await expect(page.locator(".cv-tl")).toContainText("Verify checks (CI)");

@@ -32,7 +32,8 @@ function Pulse({ from, to, color }: { from: { x: number; y: number }; to: { x: n
 
 /**
  * A scripted replay of one AI Factory run: a ticket arrives, the model triages and
- * plans, a person approves twice, a branch is pushed, CI passes, a PR opens.
+ * plans, a person approves the plan, the files and the diff, a branch is pushed,
+ * CI passes, a PR opens.
  * step: -1 = waiting, 0..LAST = that script line, LAST + 1 = finished.
  */
 export function HeroCanvas() {
@@ -82,7 +83,7 @@ export function HeroCanvas() {
           </div>
           <div className="cv-float b">
             <span className="cv-float-ico ok"><UserCheck size={14} /></span>
-            <div><b>{gates} of 2 approvals</b><small>human in the loop</small></div>
+            <div><b>{gates} of 3 approvals</b><small>human in the loop</small></div>
           </div>
         </div>
 

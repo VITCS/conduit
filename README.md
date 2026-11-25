@@ -3,7 +3,7 @@
 <p align="center">
   <a href="docs/video/conduit-intro.mp4">
     <img src="docs/video/preview.gif" width="960"
-      alt="Conduit Agent sample run: a Jira ticket is triaged and planned by an AI model, a person approves twice, a branch is pushed, CI passes and a pull request opens.">
+      alt="Conduit Agent sample run: a Jira ticket is triaged and planned by an AI model, a person approves the plan, the files and the diff, the branch is pushed, CI passes and a pull request opens.">
   </a>
 </p>
 <p align="center">
@@ -23,8 +23,9 @@ matters:
    instead of to a model.
 3. **Agents plan the change**, draft the implementation and review it.
 4. **You approve the plan**, then the agents produce the exact list of file changes.
-5. **You approve those files.** Nothing is written to your repository before this.
-6. **A coding agent writes each file and pushes a branch** through the GitHub API.
+5. **You approve those files**, and a coding agent writes them.
+6. **You review the actual diff.** Nothing reaches your repository before you
+   approve it; then Conduit pushes exactly that change to a branch.
 7. **CI has to pass.** A failing check goes back to the coding agent as feedback,
    up to twice.
 8. **The pull request opens**, the link is posted on the ticket, and the PR lands in
@@ -273,7 +274,8 @@ go test ./internal/store/ -run TestPostgresStoreContract -v
 
 The **AI Factory** (the `ai-factory` project, workflow `wf_factory`) is a complete
 one‑shot‑engineering pipeline: a real ticket becomes a reviewed pull request with
-two human gates, a real CI verification step, and automatic recovery. It is seeded
+three human gates (the plan, the exact files, the final diff), a real CI
+verification step, and automatic recovery. It is seeded
 on first run and surfaced two ways — as a **workflow** on the canvas, and as a
 **board** of durable tasks (Backlog → Implement → Verify → Done → Blocked).
 
@@ -282,7 +284,8 @@ Ticket (Jira/Notion/webhook)
   → Triage · Confidence ──low──▶ Needs clarification (human)
   → Refine & Plan → Draft → Review          (agents)
   → Human Approval  (the plan)
-  → Plan Changes → Approve Changes (the exact files) → Apply Changes (pushes a branch)
+  → Plan Changes → Approve Changes (the exact files) → Apply Changes (writes them, nothing pushed)
+  → Review Diff  (the actual code) → Push Branch (exactly what was approved)
   → Verify Checks (CI) ──fail──▶ retry ×2 back to the coding agent ──exhausted──▶ Needs attention
   → Open PR → comment the PR on the ticket → Record Delivery
 ```
@@ -331,7 +334,7 @@ Claude Code reads those files itself.
 ### Choose how code is written: Claude Code or the direct API
 
 **Settings → Coding agent** picks the engine for *Plan changes* and *Apply changes*.
-Both keep the same approval gates; nothing is pushed before the file list is approved.
+Both keep the same approval gates and the same diff review; nothing is pushed before the diff is approved.
 
 | | **Claude Code** (`coding_engine=claude_code`) | **Direct API** (`coding_engine=api`, default) |
 | --- | --- | --- |
@@ -400,9 +403,18 @@ tickets are never turned into a confident‑looking wrong change.
   Each gate allows 3 send-backs; one more counts as a rejection (→ Needs attention).
   Your notes are kept in run memory (`review_feedback`, `feedback_history`).
 - **Coding plan → Approve Changes → Apply:** the coding agent first proposes the
-  exact files (create/modify), you approve that list, then it pulls the current
-  contents, edits them, and **pushes a branch via the GitHub Git Data API** (no
-  local checkout).
+  exact files (create/modify), you approve that list, then it writes the changes —
+  **without pushing**. Apply records the exact new content of every file on top of
+  a recorded base commit, plus a unified diff.
+- **Review Diff → Push Branch:** **Review changes** on the banner opens the diff
+  (file list with +/− counts, coloured lines, new and deleted files). **Approve &
+  push** lets *Push Branch* commit exactly that change through the GitHub Git Data
+  API; **Send back** has the coding agent redo it with your note; **Reject** stops
+  the run. A CI fix also comes back here. To skip this review for a project, turn
+  on the **skip** switch on the *Review Diff* node (the change is then pushed
+  straight after Apply). Custom workflows opt in with `push: false` on
+  `coding_apply` followed by an approval node with `diff: ${memory._change_diff}`
+  and a `coding_push` node.
 - **Verify Checks (CI):** waits for the repo’s own check‑runs on the pushed
   commit. On failure it loops back to the coding agent **up to twice**, feeding the
   failing checks back as context; only after the budget is spent does it go to
@@ -567,7 +579,8 @@ multi-tenancy & auth → realtime/scale → the AI Factory → release hardening
 - **Agents** (`agent`, `triage`) against Anthropic / OpenAI / a custom gateway, with
   prompts templated from run state, project settings and secrets.
 - A real **ticket → PR pipeline**: Jira / Notion / GitHub-issue / board intake →
-  triage → plan → two human approvals → a coding agent that pushes a branch → CI
+  triage → plan → approve the plan → approve the files → a coding agent writes them →
+  review the diff → push the branch → CI
   verification with retry → pull request → GitHub review workflow handoff.
 - **Run control**: skip any step, re-run from the failed stage, cancel, live status.
 - **Per-user workspaces**: each signed-in user gets their own copy of the workflows,

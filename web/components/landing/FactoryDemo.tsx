@@ -9,7 +9,7 @@ import {
   Bot, Check, GitPullRequest, Hand, Loader2, Play, RotateCcw, Send, TriangleAlert, UserCheck, Webhook, X,
 } from "lucide-react";
 import {
-  DEMO_EDGES, DEMO_NODES, SAMPLE_CHANGES, SAMPLE_PLAN, SAMPLE_TICKETS,
+  DEMO_EDGES, DEMO_NODES, SAMPLE_CHANGES, SAMPLE_DIFF, SAMPLE_PLAN, SAMPLE_TICKETS,
   type DemoNodeDef, type DemoNodeId,
 } from "./data";
 import { DemoTag, SectionHead } from "./ui";
@@ -58,7 +58,7 @@ export function FactoryDemo() {
   const [timeline, setTimeline] = useState<Row[]>([]);
   const [focus, setFocus] = useState<DemoNodeId>("triage");
   const [phase, setPhase] = useState<Phase>("ready");
-  const [gate, setGate] = useState<"appr" | "appr2" | null>(null);
+  const [gate, setGate] = useState<"appr" | "appr2" | "rdiff" | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const runRef = useRef(0);
   const rowRef = useRef(0);
@@ -111,7 +111,7 @@ export function FactoryDemo() {
       return true;
     };
     // Pause at an approval gate until the visitor decides.
-    const approve = async (id: "appr" | "appr2") => {
+    const approve = async (id: "appr" | "appr2" | "rdiff") => {
       set(id, "waiting"); setFocus(id); setGate(id);
       const ok = await new Promise<boolean>((r) => { gateRef.current = r; });
       if (stale()) return null;
@@ -155,15 +155,27 @@ export function FactoryDemo() {
     }
     set("appr2", "done"); log(BY_ID.appr2.label, "ok", "file changes approved by you");
 
-    if (!(await exec("apply", "pushed conduit/ENG-482"))) return;
+    // Write the code, then wait for the reviewer to read the diff before pushing.
+    const writeAndReview = async (note: string, label?: string) => {
+      if (!(await exec("apply", note, label))) return false;
+      const ok = await approve("rdiff");
+      if (ok === null) return false;
+      if (!ok) {
+        stop("rdiff", { tone: "bad", title: "Needs attention", body: "You rejected the code. Nothing was pushed to the repository." }, "rejected by reviewer");
+        return false;
+      }
+      set("rdiff", "done"); log(BY_ID.rdiff.label, "ok", "diff approved by you");
+      return exec("push", "pushed conduit/ENG-482");
+    };
+    if (!(await writeAndReview("4 files written · diff ready"))) return;
 
     if (failCi) {
       set("vchk", "running"); setFocus("vchk");
       await wait(BY_ID.vchk.ms); if (stale()) return;
       set("vchk", "retry"); log(BY_ID.vchk.label, "fail", "attempt 1 · check \"build\" failed — sent back to the coding agent");
       await wait(900); if (stale()) return;
-      set("vchk", "idle");
-      if (!(await exec("apply", "fixed with CI feedback · new commit", "Apply changes · attempt 2"))) return;
+      set("vchk", "idle"); set("rdiff", "idle"); set("push", "idle");
+      if (!(await writeAndReview("fixed with CI feedback · diff ready", "Apply changes · attempt 2"))) return;
     }
     if (!(await exec("vchk", "all checks passed"))) return;
     if (!(await exec("pr", "pull request #129"))) return;
@@ -212,7 +224,7 @@ export function FactoryDemo() {
       <SectionHead
         kicker="How it runs"
         title="Watch a ticket become a pull request."
-        sub="This is the AI Factory workflow that ships with Conduit. Press Run — it will stop and wait for you at both approval gates, exactly as the real one does."
+        sub="This is the AI Factory workflow that ships with Conduit. Press Run — it will stop and wait for you at all three approval gates — the plan, the files and the diff — exactly as the real one does."
       />
 
       <motion.div className="cv-demo"
@@ -272,12 +284,24 @@ export function FactoryDemo() {
               {gate ? (
                 <motion.div className="cv-gate" key={gate} data-testid="demo-gate"
                   initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-                  <div className="cv-gate-h"><Hand size={15} /> {gate === "appr" ? "Approve the plan?" : "Approve these file changes?"}</div>
+                  <div className="cv-gate-h"><Hand size={15} /> {gate === "appr" ? "Approve the plan?" : gate === "appr2" ? "Approve these file changes?" : "Review the code before it's pushed"}</div>
                   <p className="cv-gate-t"><b>{ticket.key}</b> {ticket.title}</p>
                   {gate === "appr" ? (
                     <>
                       <ol className="cv-gate-plan">{SAMPLE_PLAN.map((p) => <li key={p}>{p}</li>)}</ol>
                       <p className="cv-gate-note">Triage confidence {ticket.score} · review agent: confidence high</p>
+                    </>
+                  ) : gate === "rdiff" ? (
+                    <>
+                      <div className="cv-gate-diff">
+                        {SAMPLE_DIFF.map((f) => (
+                          <div key={f.file}>
+                            <code className="f">{f.file}</code>
+                            {f.lines.map(([k, t], i) => <code key={i} className={k === "+" ? "a" : k === "-" ? "d" : ""}>{k} {t}</code>)}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="cv-gate-note">4 files · +31 −2 · not pushed yet. Approving pushes exactly this change.</p>
                     </>
                   ) : (
                     <>
@@ -290,7 +314,7 @@ export function FactoryDemo() {
                     </>
                   )}
                   <div className="cv-gate-b">
-                    <button className="ok" onClick={() => decide(true)} data-testid="demo-approve"><Check size={14} /> Approve</button>
+                    <button className="ok" onClick={() => decide(true)} data-testid="demo-approve"><Check size={14} /> {gate === "rdiff" ? "Approve & push" : "Approve"}</button>
                     <button onClick={() => decide(false)} data-testid="demo-reject"><X size={14} /> Reject</button>
                   </div>
                 </motion.div>

@@ -111,7 +111,9 @@ Ticket (board task / Jira / Notion / webhook)
   → Refine & Plan → Draft Implementation → Review Confidence   (agents)
   → Human Approval            ← gate 1: the plan
   → Plan Changes → Approve Changes   ← gate 2: the exact files
-  → Apply Changes  (writes the files, pushes a branch via the GitHub API)
+  → Apply Changes  (writes the files — nothing is pushed yet)
+  → Review Diff                      ← gate 3: the actual code
+  → Push Branch    (pushes exactly what you approved, via the GitHub API)
   → Verify Checks (CI) ──fail──▶ back to Apply with the failures, up to twice
   → Open Pull Request → Post PR to Ticket → Record Delivery
 ```
@@ -153,9 +155,14 @@ lands in **Backlog**; click **Start**.
   and the review. **Approve** it, **Send back** with a note on what to change (the
   plan is redone with your note and you review it again), or **Reject** to stop the run.
 - At **Approve Changes**, you see the exact files the coding agent will create or
-  modify. Nothing is written to your repository before you approve this.
-- **Apply Changes** pushes a branch; **Verify Checks** waits for your repository's
-  CI on that commit. A failing check goes back to the coding agent as feedback.
+  modify, and approve the list.
+- At **Review Diff**, press **Review changes** to read the actual code, file by
+  file. **Approve & push** and Conduit pushes exactly that change to a branch;
+  **Send back** has the agent redo it with your note. Nothing reaches your
+  repository before this approval. (Turn on the node's **skip** switch if a project
+  doesn't need this step.)
+- **Verify Checks** waits for your repository's CI on that commit. A failing check
+  goes back to the coding agent as feedback, and the fix comes back to Review Diff.
 - **Open Pull Request** opens the PR and posts it to the ticket. The board card
   moves through **Implement → Verify → Done**, with the branch and PR link on it.
 
@@ -388,8 +395,8 @@ Without Conduit, turning a well-written ticket into a pull request means someone
 reads it, plans it, writes the change, waits for CI, fixes what broke and opens the
 PR. With Conduit, the agents do the typing while a person keeps every decision:
 
-- **Two approval gates** on every change: the plan, then the exact files. Nothing
-  reaches your repository without a person agreeing to it.
+- **Three approval gates** on every change: the plan, the exact files, then the
+  actual diff. Nothing reaches your repository without a person approving the code.
 - **Triage first**, so vague tickets go to a person instead of producing a
   confident-looking wrong change.
 - **CI has to pass**, with failures fed back to the coding agent automatically.
