@@ -607,3 +607,33 @@
   .cv-think-dots i, .cv-fn-bar, .cv-stage-status i, .cv-agent-live i, .cv-run-row.live span i, .cv-m-monitor .row i { animation: none !important; }
   .cv-btn, .cv-agent, .cv-cap { transition: none; }
 }
+
+/* capabilities: model tiers and cost */
+.cv-m-tiers, .cv-m-cost { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 440px; font-size: 12.5px; }
+.cv-m-tiers .row { display: grid; grid-template-columns: 74px 92px 1fr; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 9px;
+  border: 1px solid var(--cv-line); background: var(--cv-s2); }
+.cv-m-tiers .row b { text-transform: capitalize; }
+.cv-m-tiers .row code, .cv-m-cost code { font-family: var(--cv-mono); font-size: 11.5px; color: var(--cv-violet-2); }
+.cv-m-tiers .row span { color: var(--cv-muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-m-tiers .row.t-best { border-color: color-mix(in srgb, var(--cv-warn) 50%, transparent); }
+.cv-m-tiers .up { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; padding: 4px 10px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; color: var(--cv-warn); border: 1px solid color-mix(in srgb, var(--cv-warn) 45%, transparent); background: color-mix(in srgb, var(--cv-warn) 8%, transparent); }
+.cv-m-cost .row { display: grid; grid-template-columns: 1fr 64px 52px 62px; align-items: center; gap: 8px; padding: 5px 10px;
+  border-bottom: 1px solid var(--cv-line); font-variant-numeric: tabular-nums; }
+.cv-m-cost .row code.up { color: var(--cv-warn); }
+.cv-m-cost .row em, .cv-m-cost .row b { font-style: normal; text-align: right; font-family: var(--cv-mono); font-size: 11.5px; }
+.cv-m-cost .row em { color: var(--cv-muted); }
+.cv-m-cost .tot { display: flex; align-items: center; gap: 6px; padding: 6px 10px 0; font-weight: 600; }
+.cv-m-cost .tot b { margin-left: auto; font-family: var(--cv-mono); font-size: 16px; color: var(--cv-ok); }
+.cv-m-cost .tot small { font-family: var(--cv-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--cv-faint); }
+.cv-cap-art:has(.cv-m-tiers), .cv-cap-art:has(.cv-m-cost) { height: 172px; }
+.cv-m-tiers .row { padding: 5px 10px; }
+.cv-m-cost .row { padding: 4px 10px; }
+.cv-m-cost .row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 520px) {
+  .cv-m-tiers .row { grid-template-columns: 66px 1fr; }
+  .cv-m-tiers .row span { display: none; }
+  .cv-m-cost .row { grid-template-columns: 1fr 52px 40px 58px; gap: 6px; }
+}
+.cv-m-cost { gap: 3px; }
+.cv-m-cost .tot { padding-top: 4px; }

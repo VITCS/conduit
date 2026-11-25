@@ -102,7 +102,7 @@ export function Metrics() {
       <SectionHead
         kicker="Board & metrics"
         title="See where work is, and where it gets stuck."
-        sub="Every ticket is a card that moves Backlog → Implement → Verify → Done. The Metrics view reports the numbers below from your own runs."
+        sub="Every ticket is a card that moves Backlog → Implement → Verify → Done. The Metrics view reports the numbers below from your own runs, including what each run cost in model tokens."
       />
       <Reveal>
         <div className="cv-dash" ref={ref}>
@@ -115,7 +115,7 @@ export function Metrics() {
             {KPIS.map((k) => (
               <div key={k.label} className={`cv-kpi t-${k.tone}`}>
                 <span>{k.label}</span>
-                <b><CountUp value={k.value} decimals={k.decimals} suffix={k.suffix} /></b>
+                <b><CountUp value={k.value} decimals={k.decimals} prefix={"prefix" in k ? k.prefix : ""} suffix={k.suffix} /></b>
               </div>
             ))}
           </div>

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <title>Conduit Agent — intro video</title>
 <!--
-  Source for the ~35 s Conduit Agent intro video (1920×1080).
+  Source for the ~40 s Conduit Agent intro video (1920×1080).
   Every frame is a pure function of time: render(t) sets the whole scene for t
   seconds, so render.js can step through it frame by frame and encode an MP4.
   Open this file in a browser to preview it in real time.
@@ -93,6 +93,25 @@
   .chk i { width: 14px; height: 14px; border-radius: 50%; background: var(--faint); }
   .cursor { position: absolute; width: 44px; height: 44px; }
 
+
+  /* models & cost scene */
+  .tierrow { display: flex; align-items: center; gap: 20px; padding: 20px 24px; border-radius: 18px; border: 1px solid var(--line2); background: var(--s2); margin-bottom: 16px; }
+  .tierrow .tn { flex: 0 0 150px; font-size: 26px; font-weight: 700; }
+  .tierrow .tm { font-family: var(--mono); font-size: 22px; color: var(--violet2); flex: 0 0 auto; }
+  .tierrow .tu { margin-left: auto; font-size: 20px; color: var(--muted); text-align: right; }
+  .tierrow .pr { display: block; font-family: var(--mono); font-size: 16px; color: var(--faint); margin-top: 4px; }
+  .upchip { position: absolute; display: inline-flex; align-items: center; gap: 12px; font-size: 21px; font-weight: 600; color: var(--warn);
+    padding: 12px 20px; border-radius: 999px; border: 1px solid rgba(251,191,36,.55); background: rgba(251,191,36,.1); white-space: nowrap; }
+  .costhead { display: flex; align-items: baseline; gap: 14px; padding: 22px 26px 16px; border-bottom: 1px solid var(--line); }
+  .costhead b { font-size: 22px; } .costhead span { font-family: var(--mono); font-size: 16px; color: var(--faint); letter-spacing: .1em; }
+  .costrow { display: grid; grid-template-columns: 1fr 170px 100px 110px; gap: 10px; align-items: center; padding: 13px 26px; font-size: 20px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .costrow .m { font-family: var(--mono); font-size: 17px; color: var(--violet2); }
+  .costrow .m.up { color: var(--warn); }
+  .costrow .k, .costrow .c { text-align: right; font-family: var(--mono); font-size: 18px; color: var(--muted); }
+  .costrow .c { color: var(--fg); }
+  .costtot { display: flex; align-items: baseline; justify-content: space-between; padding: 20px 26px; font-size: 24px; font-weight: 650; }
+  .costtot b { font-size: 44px; font-family: var(--mono); color: var(--ok); }
+
   /* steps scene */
   .step { position: absolute; top: 330px; width: 520px; height: 470px; padding: 26px; border-radius: 28px; border: 1px solid var(--line2);
     background: linear-gradient(180deg, var(--s1), rgba(15,21,34,.4)); }
@@ -124,7 +143,7 @@
 <body>
 <div id="stage"></div>
 <script>
-const DURATION = 35;      // seconds
+const DURATION = 39.6;      // seconds
 const W = 1920, H = 1080;
 
 /* ---------- helpers ---------- */
@@ -290,7 +309,43 @@ const cursor = el("div", "cursor", `<svg viewBox="0 0 24 24" width="44" height="
 const s4cap = el("div", "caption", "<b>Nothing reaches your repo until you approve the code.</b> <span>CI must pass.</span>", s4);
 
 /* =========================================================================
-   S5 — three steps (24.0 – 28.8)
+   SM — models & cost (24.0 – 28.6)
+   ========================================================================= */
+const sM = el("div", "scene");
+const sMk = el("div", "abs", '<span class="kicker">Models &amp; cost</span>', sM);
+const sMh = el("div", "abs", 'The right model for each step. <span class="grad">Every token counted.</span>', sM);
+const TIERS = [
+  ["Fast", "claude-haiku-5-5", "Triage, review check", "$0.10 / $0.50"],
+  ["Standard", "claude-sonnet-5-5", "Plan, code, PR review", "$2 / $10"],
+  ["Best", "claude-opus-5-5", "Step-ups only", "$4 / $20"],
+];
+const sMt = el("div", "abs", "", sM);
+const tierEls = TIERS.map(([n, m, u, p]) => el("div", "tierrow", `<span class="tn">${n}</span><span class="tm">${m}</span><span class="tu">${u}<span class="pr">${p} per M tokens</span></span>`, sMt));
+const sMup = el("div", "upchip", "↑ Apply changes → Best · retry after failing CI", sM);
+// Sample run #479 (CI failed once). Costs are the tokens × the list prices above.
+const COSTS = [
+  ["Triage", "haiku-5-5", "2.1k", 0.0003],
+  ["Refine & Plan", "sonnet-5-5", "7.6k", 0.026],
+  ["Review confidence", "haiku-5-5", "7.8k", 0.0009],
+  ["Plan changes", "sonnet-5-5", "10.9k", 0.031],
+  ["Apply changes", "sonnet-5-5", "19.2k", 0.072],
+  ["Apply · retry", "opus-5-5 ↑", "30.9k", 0.224],
+];
+const sMc = el("div", "panel", "", sM);
+el("div", "costhead", '<b>AI Factory · run #479</b><span>SAMPLE RUN</span>', sMc);
+const costEls = COSTS.map(([s, m, k, c]) => el("div", "costrow", `<span>${s}</span><span class="m${m.includes("↑") ? " up" : ""}">${m}</span><span class="k">${k}</span><span class="c">$${c < 0.01 ? c.toFixed(4) : c.toFixed(3)}</span>`, sMc));
+const costTot = el("div", "costtot", '<span>Run total</span><b>$0.00</b>', sMc);
+const COST_TOTAL = COSTS.reduce((a, r) => a + r[3], 0);
+const sMcap = el("div", "caption", "<b>The strongest model only where it matters.</b> <span>Cost per step, per run and per model.</span>", sM);
+
+css(sMk, { left: 0, right: 0, top: "60px", textAlign: "center" });
+css(sMh, { left: 0, right: 0, top: "130px", textAlign: "center", fontSize: "60px", fontWeight: 700, letterSpacing: "-.035em" });
+css(sMt, { left: "100px", top: "290px", width: "800px" });
+css(sMup, { left: "130px", top: "640px" });
+css(sMc, { left: "960px", top: "260px", width: "860px", height: "auto", paddingBottom: "4px" });
+
+/* =========================================================================
+   S5 — three steps (28.6 – 33.4)
    ========================================================================= */
 const s5 = el("div", "scene");
 const s5k = el("div", "abs", '<span class="kicker">Getting started</span>', s5); css(s5k, { left: 0, right: 0, top: "90px", textAlign: "center" });
@@ -310,7 +365,7 @@ const stepEls = STEP_CARDS.map((c, i) => {
 });
 
 /* =========================================================================
-   S6 — integrations (28.8 – 31.8)
+   S6 — integrations (33.4 – 36.4)
    ========================================================================= */
 const s6 = el("div", "scene");
 const s6h = el("div", "abs", "Plugs into the tools your team already ships with.", s6);
@@ -329,7 +384,7 @@ const intEls = INTS.map(([name, mark, color, ring], i) => {
 });
 
 /* =========================================================================
-   S7 — call to action (31.8 – 35)
+   S7 — call to action (36.4 – 39.6)
    ========================================================================= */
 const s7 = el("div", "scene");
 const s7m = el("div", "abs", markSVG(110) + '<span style="font-size:60px;font-weight:700;margin-left:26px">Conduit <span style="color:var(--muted);font-weight:500">Agent</span></span>', s7);
@@ -346,7 +401,7 @@ css(s7s, { left: 0, right: 0, top: "790px", textAlign: "center", fontSize: "30px
 /* =========================================================================
    render(t)
    ========================================================================= */
-const SC = { s1: [0, 4.4], s2: [4.4, 8.6], s3: [8.6, 18.0], s4: [18.0, 24.0], s5: [24.0, 28.8], s6: [28.8, 31.8], s7: [31.8, 35.0] };
+const SC = { s1: [0, 4.4], s2: [4.4, 8.6], s3: [8.6, 18.0], s4: [18.0, 24.0], sM: [24.0, 28.6], s5: [28.6, 33.4], s6: [33.4, 36.4], s7: [36.4, 39.6] };
 window.DURATION = DURATION;
 window.render = function render(t) {
   // backdrop drift
@@ -432,6 +487,20 @@ window.render = function render(t) {
     if (dot) { const ok = l > 3.0 + i * .45; dot.style.background = ok ? "#34D399" : "#22D3EE"; dot.style.boxShadow = ok ? "0 0 10px #34D399" : "none"; }
   });
   rise(s4cap, prog(l, .6, .6), 20);
+
+  /* SM */
+  l = vis(sM, "sM", .4, .45);
+  rise(sMk, prog(l, 0, .5)); rise(sMh, prog(l, .15, .6));
+  tierEls.forEach((e, i) => rise(e, prog(l, .4 + i * .18, .6), 30));
+  const up = easeOut(prog(l, 1.5, .5));
+  css(sMup, { opacity: up, transform: `translateY(${(1 - up) * 14}px)` });
+  tierEls[2].style.borderColor = l > 1.6 ? "rgba(251,191,36,.6)" : "var(--line2)";
+  rise(sMc, prog(l, .5, .6));
+  costEls.forEach((e, i) => css(e, { opacity: easeOut(prog(l, .8 + i * .2, .3)) }));
+  const tp = easeOut(prog(l, .8 + COSTS.length * .2, .5));
+  costTot.querySelector("b").textContent = "$" + (COST_TOTAL * tp).toFixed(2);
+  costTot.style.opacity = prog(l, .7 + COSTS.length * .2, .3);
+  rise(sMcap, prog(l, .6, .6), 20);
 
   /* S5 */
   l = vis(s5, "s5", .4, .45);

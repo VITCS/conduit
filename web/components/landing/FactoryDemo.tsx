@@ -330,6 +330,7 @@ export function FactoryDemo() {
                     <dl>
                       <dt>type</dt><dd>{focused.sub}</dd>
                       <dt>out</dt><dd>{focused.output}</dd>
+                      {focused.model && <><dt>model</dt><dd>{focused.model}</dd></>}
                     </dl>
                   </div>
                   {outcome ? (

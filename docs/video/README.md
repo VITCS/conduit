@@ -1,6 +1,6 @@
 # Conduit Agent intro video
 
-Two cuts of the same 35-second, 30 fps intro. Each opens on its thumbnail (0.6 s, then a
+Two cuts of the same 40-second, 30 fps intro. Each opens on its thumbnail (0.6 s, then a
 0.5 s cross-fade into the video), so the frame a feed shows before play is the thumbnail. Neither has audio, so both read correctly
 when they autoplay muted.
 
@@ -18,11 +18,14 @@ when they autoplay muted.
 | 4–9 s | Brand: "Tickets in. Reviewed pull requests out." |
 | 9–18 s | A sample AI Factory run around the hub: ticket → triage → approve the plan → approve the files → review the diff → branch → CI → PR |
 | 18–24 s | The diff review: the actual code before it is pushed, Approve & push, then CI checks and the PR |
-| 24–29 s | Getting started in three steps |
-| 29–32 s | Built-in integrations |
-| 32–35 s | Call to action: open source, self-hosted, MIT, `github.com/VITCS/conduit` |
+| 24–29 s | Models and cost: fast / standard / best model tiers, a step-up to the best model on a CI retry, and a sample run's cost per step and total |
+| 29–33 s | Getting started in three steps |
+| 33–36 s | Built-in integrations |
+| 36–40 s | Call to action: open source, self-hosted, MIT, `github.com/VITCS/conduit` |
 
-The ticket, run number and confidence score are sample data and are labelled "sample" on screen.
+The ticket, run numbers, confidence score and the per-step token counts are sample data and are
+labelled "sample" on screen. The costs in the models scene are those token counts at the Claude
+API list prices shown in the same scene.
 
 ## Editing and re-rendering
 

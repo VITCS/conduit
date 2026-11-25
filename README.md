@@ -7,7 +7,7 @@
   </a>
 </p>
 <p align="center">
-  ▶ <a href="docs/video/conduit-intro.mp4"><b>Watch the 35-second intro</b></a>
+  ▶ <a href="docs/video/conduit-intro.mp4"><b>Watch the 40-second intro</b></a>
   &nbsp;·&nbsp; <a href="docs/video/conduit-intro-vertical.mp4">vertical 9:16 cut</a>
 </p>
 

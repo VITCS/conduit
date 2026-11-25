@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight, Bot, CalendarClock, Check, ClipboardCheck, Code2, Gauge, GitPullRequest, KeyRound, ListChecks,
-  Lock, MousePointer2, PenLine, RefreshCw, SkipForward, Sparkles, UserCheck, Workflow, X,
+  Lock, MousePointer2, PenLine, RefreshCw, SkipForward, Sparkles, UserCheck, Workflow, X, ArrowUp, Coins,
 } from "lucide-react";
 import { AGENTS, CATALOG_URL, INTEGRATIONS } from "./data";
 import { EASE, Reveal, SectionHead } from "./ui";
@@ -30,7 +30,7 @@ export function HowItWorks() {
           </motion.div>
           <span className="cv-step-n">01</span>
           <h3>Connect a repo and a model</h3>
-          <p>Add your GitHub repository and token, and a model API key, as project settings. Secrets are stored encrypted.</p>
+          <p>Add your GitHub repository and token, and a model API key or Claude subscription, as project settings. Secrets are stored encrypted. Optionally pick a fast, a standard and a best model.</p>
         </Reveal>
 
         <Reveal className="cv-step" delay={0.1}>
@@ -334,6 +334,24 @@ export function Capabilities() {
             <motion.div variants={item}><KeyRound size={13} /><span>github_token</span><em>••••••••••••</em><Lock size={12} /></motion.div>
             <motion.div variants={item}><KeyRound size={13} /><span>llm_key</span><em>••••••••••••</em><Lock size={12} /></motion.div>
             <motion.code variants={item}>{"token: ${secret:github_token}"}</motion.code>
+          </div>
+        </Cap>
+
+        <Cap i={12} wide title="The right model for each step" body="Set a fast, a standard and a best model. Triage and checks use the fast one, planning and code the standard one. A step moves up only when it needs to — a low-confidence ticket, a large change, a CI retry or a send-back — and the run log says why.">
+          <div className="cv-m-tiers">
+            {[["fast", "haiku-5-5", "triage · review check"], ["standard", "sonnet-5-5", "plan · code · PR review"], ["best", "opus-5-5", "step-ups only"]].map(([t, m, u]) => (
+              <motion.div key={t} variants={item} className={`row t-${t}`}><b>{t}</b><code>{m}</code><span>{u}</span></motion.div>
+            ))}
+            <motion.div variants={item} className="up"><ArrowUp size={12} /> Apply changes → best · retry after failing CI</motion.div>
+          </div>
+        </Cap>
+
+        <Cap i={13} wide title="Cost on every step and run" body="Each step records its model, input and output tokens and cost. Runs show their total, retries included; Metrics shows spend per run and per model. Subscription work is shown as its API-price equivalent.">
+          <div className="cv-m-cost">
+            {[["Triage", "haiku", "2.1k", "$0.0003"], ["Apply changes", "sonnet", "19.2k", "$0.072"], ["Apply · retry", "opus ↑", "30.9k", "$0.224"], ["3 more steps", "", "26.3k", "$0.058"]].map(([s, m, k, c]) => (
+              <motion.div key={s} variants={item} className="row"><span>{s}</span><code className={m.includes("↑") ? "up" : ""}>{m}</code><em>{k}</em><b>{c}</b></motion.div>
+            ))}
+            <motion.div variants={item} className="tot"><Coins size={13} /> Run total <b>$0.35</b><small>sample</small></motion.div>
           </div>
         </Cap>
       </div>

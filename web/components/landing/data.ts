@@ -61,6 +61,8 @@ export type DemoNodeId =
 export interface DemoNodeDef {
   id: DemoNodeId; label: string; sub: string; kind: "trigger" | "ai" | "action" | "gate";
   x: number; y: number; ms: number; desc: string; output: string;
+  /** The model tier this step uses with tiers set (Settings → Models & cost). */
+  model?: string;
 }
 
 const COL2 = 292, ROW = 88;
@@ -71,21 +73,21 @@ export const DEMO_NODES: DemoNodeDef[] = [
   { id: "src", label: "Fetch ticket", sub: "jira", kind: "action", x: 0, y: ROW, ms: 520,
     desc: "Loads the ticket's summary and description into run memory. A board task brings its own ticket, so no fetch is needed.", output: "ticket_key, ticket_summary" },
   { id: "triage", label: "Triage · confidence", sub: "triage", kind: "ai", x: 0, y: ROW * 2, ms: 900,
-    desc: "Scores how ready the ticket is to automate: scope, context, a checkable outcome. Below the threshold it goes to a person instead of an agent.", output: "confidence, confidence_score" },
+    desc: "Scores how ready the ticket is to automate: scope, context, a checkable outcome. Below the threshold it goes to a person instead of an agent.", output: "confidence, confidence_score", model: "fast · claude-haiku-5-5" },
   { id: "plan", label: "Refine & plan", sub: "agent", kind: "ai", x: 0, y: ROW * 3, ms: 1000,
-    desc: "An agent turns the ticket into a concrete plan and stores it for the next steps.", output: "plan" },
+    desc: "An agent turns the ticket into a concrete plan and stores it for the next steps.", output: "plan", model: "standard · claude-sonnet-5-5" },
   { id: "impl", label: "Draft implementation", sub: "agent", kind: "ai", x: 0, y: ROW * 4, ms: 900,
-    desc: "An agent drafts how the plan would be implemented.", output: "implementation" },
+    desc: "An agent drafts how the plan would be implemented.", output: "implementation", model: "standard · claude-sonnet-5-5" },
   { id: "review", label: "Review confidence", sub: "agent", kind: "ai", x: 0, y: ROW * 5, ms: 800,
-    desc: "A second agent pass reviews the draft and states how confident it is.", output: "review" },
+    desc: "A second agent pass reviews the draft and states how confident it is.", output: "review", model: "fast · claude-haiku-5-5" },
   { id: "appr", label: "Human approval", sub: "approval · gate 1", kind: "gate", x: 0, y: ROW * 6, ms: 0,
     desc: "The run pauses. The reviewer sees the ticket, the plan and the review, then approves or rejects.", output: "approved | rejected" },
   { id: "cplan", label: "Plan changes", sub: "coding_plan", kind: "ai", x: COL2, y: 0, ms: 900,
-    desc: "Produces the exact file-level change plan: which files to create or modify, and why. Nothing is written yet.", output: "change_plan" },
+    desc: "Produces the exact file-level change plan: which files to create or modify, and why. Nothing is written yet.", output: "change_plan", model: "standard · best when the plan is large" },
   { id: "appr2", label: "Approve changes", sub: "approval · gate 2", kind: "gate", x: COL2, y: ROW, ms: 0,
     desc: "The run pauses again. The reviewer approves the exact list of files before any code is written.", output: "approved | rejected" },
   { id: "apply", label: "Apply changes", sub: "coding_apply", kind: "ai", x: COL2, y: ROW * 2, ms: 1200,
-    desc: "Writes the approved files — with Claude Code in a real checkout, or one model call per file. Nothing is pushed yet: the change and its diff wait for review.", output: "change set, diff" },
+    desc: "Writes the approved files — with Claude Code in a real checkout, or one model call per file. Nothing is pushed yet: the change and its diff wait for review.", output: "change set, diff", model: "standard · best on a CI retry or send-back" },
   { id: "rdiff", label: "Review diff", sub: "approval · gate 3", kind: "gate", x: COL2, y: ROW * 3, ms: 0,
     desc: "The run pauses a third time. The reviewer reads the actual code, file by file, and approves it, sends it back with a note, or rejects it.", output: "approved | sent back | rejected" },
   { id: "push", label: "Push branch", sub: "coding_push", kind: "action", x: COL2, y: ROW * 4, ms: 700,
@@ -214,7 +216,7 @@ export const WORKFLOWS = [
 export const KPIS = [
   { label: "Tasks", value: 48, suffix: "", decimals: 0, tone: "violet" },
   { label: "Done", value: 31, suffix: "", decimals: 0, tone: "ok" },
-  { label: "Blocked", value: 4, suffix: "", decimals: 0, tone: "bad" },
+  { label: "Model spend / run", value: 0.31, prefix: "$", suffix: "", decimals: 2, tone: "violet" },
   { label: "Avg lead time", value: 42, suffix: " min", decimals: 0, tone: "slate" },
   { label: "CI retry rate", value: 12, suffix: "%", decimals: 0, tone: "cyan" },
   { label: "Needed a human", value: 8, suffix: "%", decimals: 0, tone: "slate" },
@@ -245,7 +247,9 @@ export const FAQ = [
   { q: "Where do tickets come from?",
     a: "Jira and Notion (fetched by the workflow), GitHub issues and Jira tickets posted to the intake webhook, any webhook, or a task you add on the board by hand." },
   { q: "Which AI models does it use?",
-    a: "Whichever you configure: Anthropic, OpenAI, or your own gateway. You supply the API key as an encrypted project secret and pick the model per project." },
+    a: "Whichever you configure: Anthropic, OpenAI, or your own gateway, or Claude Code signed in with your Claude subscription. You supply the key as an encrypted project secret. You can set a fast, a standard and a best model: triage and checks use the fast one, planning and coding the standard one, and a step moves up to the best one only when it needs to — a low-confidence ticket, a large change, a retry after failing CI, or a step you sent back." },
+  { q: "How much does a run cost?",
+    a: "Conduit shows you. Every step records the model it used and its input and output tokens, with the cost at the provider's list prices; each run shows its total, retries included, and Metrics shows spend per run and per model. Claude prices are built in, and you can add prices for other models. Work done under a Claude subscription is shown as what it would have cost through the API, not as a charge." },
   { q: "What happens when CI fails?",
     a: "The Verify step reads the commit's check-runs. If they fail, the run loops back to the coding agent with the failing checks as feedback, up to two times. If it still fails, the run stops and the task is marked Blocked for a person." },
   { q: "What if a step fails or I don't need one?",
