@@ -183,6 +183,31 @@ func run() error {
 	}
 	worker.New(st, eng, workers).Start(bgCtx)
 
+	// Stuck-step watchdog: nudge a step after CONDUIT_STUCK_NUDGE_MINUTES (default
+	// 5) without progress, flag it in "Needs you" after CONDUIT_STUCK_AFTER_MINUTES
+	// (default 10).
+	minutes := func(key string) time.Duration {
+		f, err := strconv.ParseFloat(os.Getenv(key), 64)
+		if err != nil || f <= 0 {
+			return 0
+		}
+		return time.Duration(f * float64(time.Minute))
+	}
+	if d := minutes("CONDUIT_STUCK_NUDGE_MINUTES"); d > 0 {
+		eng.StallNudge = d
+	}
+	if d := minutes("CONDUIT_STUCK_AFTER_MINUTES"); d > 0 {
+		eng.StallStuck = d
+	}
+	if eng.StallStuck <= eng.StallNudge {
+		eng.StallStuck = eng.StallNudge * 2
+	}
+	// Check once a minute, or more often for short (e.g. test) thresholds.
+	if q := eng.StallNudge / 4; q < eng.WatchInterval {
+		eng.WatchInterval = q
+	}
+	go eng.Watch(bgCtx)
+
 	// Start the cron scheduler.
 	sched := scheduler.New(st, eng)
 	sched.Start(bgCtx)

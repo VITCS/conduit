@@ -31,6 +31,9 @@ export default defineConfig({
           CONDUIT_ADDR: ":8080",
           CONDUIT_ALLOW_PRIVATE_EGRESS: "true",
           CONDUIT_ALLOW_SIGNUP: "true",
+          // Short stuck-step thresholds (3 s nudge, 6 s stuck) for the watchdog test.
+          CONDUIT_STUCK_NUDGE_MINUTES: "0.05",
+          CONDUIT_STUCK_AFTER_MINUTES: "0.1",
         },
       },
 });

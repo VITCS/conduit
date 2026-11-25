@@ -128,6 +128,15 @@ export function Inspector(props: {
                 </dd>
               </>
             )}
+            {typeof output?.stall === "string" && status === "running" && (
+              <>
+                <dt>Progress</dt>
+                <dd>
+                  <span className={`badge stall ${output.stall}`}>{output.stall === "stuck" ? "stuck" : "slow"}</span>
+                  {" "}no progress since {typeof output.stall_since === "string" ? new Date(output.stall_since as string).toLocaleTimeString() : "a while"}
+                </dd>
+              </>
+            )}
             {typeof output?.tokens_in === "number" && (
               <>
                 <dt>Usage</dt>
@@ -232,7 +241,7 @@ export function Inspector(props: {
 }
 
 // USAGE_KEYS are shown in the Model / Usage rows instead of the generic list.
-const USAGE_KEYS = new Set(["model", "model_tier", "model_reason", "tokens_in", "tokens_out", "cost_usd", "cost_usd_equivalent"]);
+const USAGE_KEYS = new Set(["model", "model_tier", "model_reason", "tokens_in", "tokens_out", "cost_usd", "cost_usd_equivalent", "stall", "stall_since"]);
 
 function fmtUSD(n: number): string {
   if (n === 0) return "$0";

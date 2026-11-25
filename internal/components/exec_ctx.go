@@ -21,7 +21,7 @@ var ctxRegistry = map[string]CtxExecutor{
 // Exec runs a node's executor, passing ctx to executors that accept one.
 // It also collects the token usage of every model call the step makes.
 func Exec(ctx context.Context, typ string, n model.Node, run *model.Run) Result {
-	acc := beginUsage(run)
+	acc := beginUsage(ctx, run)
 	defer endUsage(run)
 	var res Result
 	if e, ok := ctxRegistry[typ]; ok {

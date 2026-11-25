@@ -394,6 +394,14 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       // A step that asked a question runs again once it is answered (from anywhere).
       if (d.node_id && d.status === "running") setWaitingNode((w) => (w === d.node_id ? null : w));
     });
+    // The stuck-step watchdog nudged or flagged a step that made no progress.
+    es.addEventListener("step.stalled", (ev) => {
+      const d: SSEvent = JSON.parse((ev as MessageEvent).data);
+      if (d.node_id && d.step?.output) setOutputs((o) => ({ ...o, [d.node_id!]: d.step!.output! }));
+      showToast(d.detail === "stuck" ? "A step looks stuck — it is in Needs you" : "A step has made no progress for a while");
+      notifyApproval(d.message || "A step has made no progress for a while.");
+      loadAttention();
+    });
     es.addEventListener("log", (ev) => {
       const d: SSEvent = JSON.parse((ev as MessageEvent).data);
       addLog(d.level || "info", d.message || "");
@@ -873,6 +881,30 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     [runId, waitingNode, showToast, loadAttention],
   );
 
+  // Cancel a stuck run from "Needs you" (any project).
+  const cancelAttention = useCallback(
+    async (it: AttentionItem) => {
+      if (!it.run_id) return;
+      const ok = await confirm({ title: "Cancel this run?", message: `${it.title}${it.step ? ` — ${it.step}` : ""} will stop. You can start it again later.`, confirmLabel: "Cancel run", danger: true });
+      if (!ok) return;
+      try {
+        await api.cancelRun(it.run_id, it.project_id);
+        showToast("Run canceled");
+      } catch (e) {
+        showToast("Cancel failed: " + (e as Error).message);
+      }
+      loadAttention();
+    },
+    [confirm, showToast, loadAttention],
+  );
+
+  // Running steps the watchdog marked slow or stuck (from their live output).
+  const stalls = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const [id, o] of Object.entries(outputs)) if (typeof o?.stall === "string") m[id] = o.stall as string;
+    return m;
+  }, [outputs]);
+
   // Keep "Needs you" current: on load, every 10 s, and when the tab regains focus.
   useEffect(() => {
     if (!user) return;
@@ -924,7 +956,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           onDeleteProject={deleteProject}
         />
         <NeedsYou data={attention} open={needsOpen} onToggle={() => setNeedsOpen((v) => !v)}
-          currentProject={currentProject} onOpen={openAttention} onAnswer={answerAttention} />
+          currentProject={currentProject} onOpen={openAttention} onAnswer={answerAttention} onCancelRun={cancelAttention} />
         {waitingNode && gateQuestion && (
           <div className="approval-banner question" role="alert" data-testid="question-banner">
             <div className="ab-row">
@@ -1033,6 +1065,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
             runLabel={runLabel}
             runMeta={runMeta}
             usage={runUsage}
+            stalls={stalls}
             showHistory={showHistory}
             onToggleHistory={toggleHistory}
             runs={runs}

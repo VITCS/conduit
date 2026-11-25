@@ -187,6 +187,9 @@ It is now a real pipeline that opens real pull requests:
   step that made it with the reviewer's note (bounded to 3 per gate).
 - **Agent questions**: planning and coding-plan steps can pause to ask a question
   with suggested answers; the answer goes back to the step (at most 2 per step).
+- **Stuck-step detection**: a watchdog nudges a running step after 5 minutes
+  without progress and lists it as stuck in Needs you after 10, along with runs
+  that were queued and never started; canceling stops a hung model call at once.
 - **Needs you**: one strip, a bell count, project badges and board markers for
   everything waiting on a person across projects: questions, approvals, stuck tasks
   and PR reviews.

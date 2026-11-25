@@ -10,6 +10,9 @@ const KIND: Record<AttentionItem["kind"], { label: string; Icon: typeof Hand; cl
   review: { label: "PR review", Icon: GitPullRequest, cls: "r" },
 };
 
+const STUCK_LABEL: Record<string, string> = { stalled: "Stuck · no progress", not_started: "Not started", blocked: "Blocked" };
+const label = (it: AttentionItem) => (it.kind === "stuck" && it.reason ? STUCK_LABEL[it.reason] : KIND[it.kind].label);
+
 export function itemKey(it: AttentionItem) {
   return [it.kind, it.project_id, it.run_id, it.node_id, it.task_id, it.review_id].join("|");
 }
@@ -34,6 +37,7 @@ export function NeedsYou(props: {
   currentProject: string;
   onOpen: (it: AttentionItem) => void;
   onAnswer: (it: AttentionItem, answer: string) => Promise<void>;
+  onCancelRun?: (it: AttentionItem) => void;
 }) {
   const items = props.data?.items ?? [];
   if (items.length === 0) return null;
@@ -73,12 +77,15 @@ export function NeedsYou(props: {
             return (
               <li key={itemKey(it)} className={`ny-item k-${K.cls}`} data-testid={`needs-item-${it.kind}`}>
                 <div className="ny-head">
-                  <span className={`ny-badge k-${K.cls}`}><K.Icon size={12} /> {K.label}</span>
+                  <span className={`ny-badge k-${K.cls}`}><K.Icon size={12} /> {label(it)}</span>
                   <span className="ny-what">
                     <b>{it.step || it.title}</b>
                     {it.step && <span> · {it.title}</span>}
                   </span>
                   <span className="ny-meta">{it.project_name} · {ago(it.since)}</span>
+                  {it.kind === "stuck" && it.reason !== "blocked" && it.run_id && props.onCancelRun && (
+                    <button className="btn ghost danger-text" onClick={() => props.onCancelRun!(it)} data-testid="needs-cancel">Cancel run</button>
+                  )}
                   <button className="btn ghost" onClick={() => props.onOpen(it)}>
                     {it.kind === "review" ? "Open inbox" : it.run_id ? "Open run" : "Open board"} <ArrowRight size={13} />
                   </button>

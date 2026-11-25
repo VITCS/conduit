@@ -153,8 +153,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ node_id: nodeId, decision, feedback }),
     }),
-  cancelRun: (runId: string) =>
-    req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
+  cancelRun: (runId: string, project?: string) =>
+    req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/cancel`, {
+      method: "POST", headers: project ? { "X-Conduit-Project": project } : undefined,
+    }),
   rerun: (runId: string, nodeId: string) =>
     req<Run>(`/api/runs/${encodeURIComponent(runId)}/rerun`, {
       method: "POST",

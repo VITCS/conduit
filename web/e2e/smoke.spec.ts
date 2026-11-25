@@ -1,3 +1,5 @@
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { test, expect, Page } from "@playwright/test";
 
 // These smoke tests drive the real UI against the real server, guarding the
@@ -369,5 +371,59 @@ test("an agent asks a question: it shows in the run and in Needs you, and answer
     await expect(page.getByText("Postgres 16, please").first()).toBeVisible();
   } finally {
     await api("PUT", "/api/workflows/wf_preview_envs", orig);
+  }
+});
+
+test("a step that stops making progress is nudged, then shows as stuck in Needs you and can be canceled", async ({ page }) => {
+  // A model endpoint that never answers, so the agent step hangs.
+  const sockets = new Set<import("node:net").Socket>();
+  const hang = http.createServer(() => { /* never respond */ });
+  hang.on("connection", (s) => sockets.add(s));
+  await new Promise<void>((r) => hang.listen(0, "127.0.0.1", r));
+  const port = (hang.address() as AddressInfo).port;
+
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+  const api = async (method: string, path: string, body?: unknown) =>
+    page.evaluate(async ({ method, path, body }) => {
+      const r = await fetch(path, {
+        method,
+        headers: { Authorization: "Bearer " + localStorage.getItem("conduit_token"), "X-Conduit-Project": "default", "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: r.status, json: await r.json().catch(() => null) };
+    }, { method, path, body });
+  const orig = (await api("GET", "/api/workflows/wf_preview_envs")).json;
+  const edited = {
+    ...orig,
+    nodes: orig.nodes.map((n: { id: string }) =>
+      n.id === "c1" ? { ...n, type: "agent", title: "Apply changes", config: [
+        { key: "live", icon: "agent", value: "true" },
+        { key: "provider", icon: "agent", value: "custom" },
+        { key: "base_url", icon: "globe", value: `http://127.0.0.1:${port}/` },
+        { key: "ask", icon: "agent", value: "false" },
+        { key: "prompt", icon: "file", value: "Write the files" },
+      ] } : n),
+  };
+  expect((await api("PUT", "/api/workflows/wf_preview_envs", edited)).status).toBeLessThan(300);
+  try {
+    await page.reload();
+    await page.getByTestId("run-btn").click();
+    // Nudged after 3 s without progress, stuck after 6 s.
+    await expect(page.getByTestId("step-stall")).toHaveText("slow", { timeout: 20_000 });
+    await expect(page.getByTestId("step-stall")).toHaveText("stuck", { timeout: 20_000 });
+    const needs = page.getByTestId("needs-you");
+    await expect(needs).toContainText("1 stuck", { timeout: 15_000 });
+    await page.getByTestId("needs-you-toggle").click();
+    const item = page.getByTestId("needs-item-stuck");
+    await expect(item).toContainText("Stuck · no progress");
+    await expect(item).toContainText("Apply changes");
+    await item.getByTestId("needs-cancel").click();
+    await page.getByTestId("dialog-confirm").click();
+    await expect(page.getByTestId("run-btn")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("needs-item-stuck")).toHaveCount(0, { timeout: 15_000 });
+  } finally {
+    await api("PUT", "/api/workflows/wf_preview_envs", orig);
+    for (const s of sockets) s.destroy();
+    hang.close();
   }
 });

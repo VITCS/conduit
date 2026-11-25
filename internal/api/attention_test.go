@@ -1,11 +1,16 @@
 package api_test
 
 import (
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"conduit/internal/api"
+	"conduit/internal/engine"
 	"conduit/internal/model"
+	"conduit/internal/store"
 )
 
 func TestNeedsYouListsQuestionsAndApprovalsAndAnswers(t *testing.T) {
@@ -68,5 +73,45 @@ func TestNeedsYouListsQuestionsAndApprovalsAndAnswers(t *testing.T) {
 	}
 	if att.Total != 1 || att.Items[0].Kind != "approval" {
 		t.Fatalf("after answering, attention = %+v", att)
+	}
+}
+
+func TestNeedsYouListsStalledAndNotStartedRuns(t *testing.T) {
+	st := store.NewMem()
+	eng := engine.New(st)
+	srv := &api.Server{Store: st, Engine: eng, Web: fstest.MapFS{}}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+	wf := model.Workflow{ID: "wf_s", ProjectID: model.DefaultProjectID, Name: "S",
+		Nodes: []model.Node{{ID: "apply", Type: "noop", Kind: model.KindStep, Title: "Apply changes"}}}
+	_ = st.PutWorkflow(wf)
+	since := time.Now().Add(-12 * time.Minute).UTC()
+	_, _ = st.CreateRun(&model.Run{ID: "r_stalled", WorkflowID: "wf_s", ProjectID: model.DefaultProjectID, Title: "ENG-9",
+		Status: model.StatusRunning, CreatedAt: since,
+		Steps: map[string]*model.StepRun{"apply": {NodeID: "apply", Status: model.StatusRunning,
+			Output: map[string]any{"stall": "stuck", "stall_since": since.Format(time.RFC3339)}}}})
+	_, _ = st.CreateRun(&model.Run{ID: "r_slow", WorkflowID: "wf_s", ProjectID: model.DefaultProjectID, Title: "ENG-10",
+		Status: model.StatusRunning, CreatedAt: since,
+		Steps: map[string]*model.StepRun{"apply": {NodeID: "apply", Status: model.StatusRunning, Output: map[string]any{"stall": "slow"}}}})
+	_, _ = st.CreateRun(&model.Run{ID: "r_queued", WorkflowID: "wf_s", ProjectID: model.DefaultProjectID, Title: "ENG-11",
+		Status: model.StatusQueued, CreatedAt: since, Steps: map[string]*model.StepRun{}})
+	_, _ = st.CreateRun(&model.Run{ID: "r_fresh", WorkflowID: "wf_s", ProjectID: model.DefaultProjectID, Title: "ENG-12",
+		Status: model.StatusQueued, CreatedAt: time.Now(), Steps: map[string]*model.StepRun{}})
+
+	var att api.Attention
+	getJSON(t, ts.URL+"/api/attention", &att)
+	got := map[string]api.AttentionItem{}
+	for _, it := range att.Items {
+		got[it.RunID] = it
+	}
+	if att.Total != 2 {
+		t.Fatalf("only the stuck step and the old queued run belong in Needs you: %+v", att.Items)
+	}
+	if s := got["r_stalled"]; s.Kind != "stuck" || s.Reason != "stalled" || s.Step != "Apply changes" || s.NodeID != "apply" ||
+		!strings.Contains(s.Text, "no progress for 12 min") {
+		t.Errorf("stalled item = %+v", s)
+	}
+	if q := got["r_queued"]; q.Kind != "stuck" || q.Reason != "not_started" {
+		t.Errorf("queued item = %+v", q)
 	}
 }

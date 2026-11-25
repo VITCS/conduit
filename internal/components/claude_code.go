@@ -896,7 +896,7 @@ func execCodingApplyCtx(ctx context.Context, n model.Node, run *model.Run) Resul
 	if codingEngine(n, runProject(run)) == engineClaudeCode {
 		return claudeApply(ctx, n, run)
 	}
-	return execCodingApply(n, run)
+	return codingApply(n, run, func(m string) { progress(ctx, m) })
 }
 
 // --- connection check ------------------------------------------------------------

@@ -19,6 +19,7 @@ package components
 // extend with the model_prices variable).
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -347,6 +348,17 @@ type usageAcc struct {
 	project string
 	u       model.Usage
 	pick    *modelPick
+	// ctx is the run's context: model calls made by the step stop when the run is
+	// canceled.
+	ctx context.Context
+}
+
+// context returns the step's context (Background when there is no collector).
+func (a *usageAcc) context() context.Context {
+	if a == nil || a.ctx == nil {
+		return context.Background()
+	}
+	return a.ctx
 }
 
 // setPick remembers the step's model choice, so Exec can report it.
@@ -441,11 +453,11 @@ func roundUSD(f float64) float64 { return math.Round(f*1e6) / 1e6 }
 // usageFor(run).
 var usageByRun sync.Map // *model.Run → *usageAcc
 
-func beginUsage(run *model.Run) *usageAcc {
+func beginUsage(ctx context.Context, run *model.Run) *usageAcc {
 	if run == nil {
 		return nil
 	}
-	a := &usageAcc{project: runProject(run)}
+	a := &usageAcc{project: runProject(run), ctx: ctx}
 	usageByRun.Store(run, a)
 	return a
 }

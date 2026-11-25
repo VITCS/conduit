@@ -191,6 +191,8 @@ holding the port, remove it once: `docker rm -f $(docker ps -aq --filter name=ap
 | `CONDUIT_GITHUB_CLIENT_ID` / `CONDUIT_GITHUB_CLIENT_SECRET` | — | enable **Sign in with GitHub**; redirect URI `…/api/auth/oauth/github/callback` |
 | `CONDUIT_RATE_LIMIT` | `20` | per-IP request/second limit on `/api` (0 disables) |
 | `CONDUIT_WORKERS` | `4` | run-executor workers per instance |
+| `CONDUIT_STUCK_NUDGE_MINUTES` | `5` | minutes without progress before a running step is nudged (warning + notification) |
+| `CONDUIT_STUCK_AFTER_MINUTES` | `10` | minutes without progress before a step is marked stuck in Needs you |
 | `CONDUIT_CLAUDE_BIN` | `claude` | path to the Claude Code CLI used by `coding_engine=claude_code` |
 | `CONDUIT_CLAUDE_SERVER_LOGIN` | `false` | let projects use this server's own logged-in Claude Code (`claude_auth=server_login`). Only for a single-user / trusted self-host. |
 | `CONDUIT_WORK_DIR` | system temp | where Claude Code checkouts are created (and removed afterwards) |
@@ -351,13 +353,25 @@ every project you can see:
 
 - **questions** from agents (answer them right in the list),
 - **approvals** at any gate,
-- **stuck** tasks (the board's Blocked column: low triage confidence, or CI still
-  failing after the retries),
+- **stuck** work: a running step that has made no progress (below), a run that was
+  queued 10 minutes ago and never started, or a task in the board's Blocked column
+  (low triage confidence, or CI still failing after the retries),
 - **pull requests** waiting in a project's review inbox.
 
-Each item opens its run (switching project if needed). The bell in the top bar
-shows the total, the project picker shows how many items wait in other projects,
-and board cards show "question for you" or "needs your approval".
+Each item opens its run (switching project if needed); a stuck run can also be
+canceled from the list. The bell in the top bar shows the total, the project picker
+shows how many items wait in other projects, and board cards show "question for
+you" or "needs your approval".
+
+**Stuck-step detection.** A watchdog checks running steps every minute. Progress
+means the step started, a Claude Code tool call, or (direct API) a file being
+written. With no progress for **5 minutes** the step is nudged once: a warning in
+the run log, a "slow" mark on the step and a notification. After **10 minutes** it
+is marked "stuck" and appears in Needs you. Progress clears both marks; steps
+waiting on a person are not watched. Change the times with
+`CONDUIT_STUCK_NUDGE_MINUTES` and `CONDUIT_STUCK_AFTER_MINUTES`. Conduit cannot
+send a message into a model call that is already running, so the nudge goes to
+people rather than to the agent; canceling the run stops the call immediately.
 
 ### Models and cost
 
@@ -543,7 +557,7 @@ cross-project reads are 404.
 | `GET`  | `/api/runs/{id}` | one run with steps + memory |
 | `POST` | `/api/runs/{id}/approve` | resolve an approval gate (`{node_id, decision}`) |
 | `POST` | `/api/runs/{id}/answer` | answer a step's question (`{node_id, answer}`) |
-| `GET`  | `/api/attention` | "Needs you": questions, approvals, stuck tasks and PR reviews across your projects |
+| `GET`  | `/api/attention` | "Needs you": questions, approvals, stuck runs and tasks, and PR reviews across your projects |
 | `POST` | `/api/runs/{id}/cancel` | cancel a running/waiting run (`409` if not active) |
 | `POST` | `/api/hooks/{workflowId}` | start a run from a webhook; JSON body becomes the trigger input |
 | `GET`  | `/api/schedules` | list active cron schedules |

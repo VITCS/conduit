@@ -1,6 +1,7 @@
 package components
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -126,14 +127,14 @@ func execAgent(n model.Node, run *model.Run) Result {
 
 // callLLM dispatches to a provider adapter and returns (text, statusCode, err).
 func callLLM(provider, baseURL, apiKey, modelName, prompt string, maxTokens int) (string, int, error) {
-	text, status, _, _, err := callLLMUsage(provider, baseURL, apiKey, modelName, prompt, maxTokens)
+	text, status, _, _, err := callLLMUsage(context.Background(), provider, baseURL, apiKey, modelName, prompt, maxTokens)
 	return text, status, err
 }
 
 // callLLMRec is callLLM that also records the call's token usage on acc (the
 // step's collector; nil records nothing).
 func callLLMRec(acc *usageAcc, provider, baseURL, apiKey, modelName, prompt string, maxTokens int) (string, int, error) {
-	text, status, u, used, err := callLLMUsage(provider, baseURL, apiKey, modelName, prompt, maxTokens)
+	text, status, u, used, err := callLLMUsage(acc.context(), provider, baseURL, apiKey, modelName, prompt, maxTokens)
 	if u != (llmUsage{}) {
 		acc.add(used, u)
 	}
@@ -141,18 +142,18 @@ func callLLMRec(acc *usageAcc, provider, baseURL, apiKey, modelName, prompt stri
 }
 
 // callLLMUsage is callLLM plus the reported token usage and the model that ran.
-func callLLMUsage(provider, baseURL, apiKey, modelName, prompt string, maxTokens int) (string, int, llmUsage, string, error) {
+func callLLMUsage(ctx context.Context, provider, baseURL, apiKey, modelName, prompt string, maxTokens int) (string, int, llmUsage, string, error) {
 	switch provider {
 	case "openai":
 		m := firstNonEmpty(modelName, "gpt-4o-mini")
-		text, status, u, err := callOpenAI(firstNonEmpty(baseURL, "https://api.openai.com"), apiKey, m, prompt)
+		text, status, u, err := callOpenAI(ctx, firstNonEmpty(baseURL, "https://api.openai.com"), apiKey, m, prompt)
 		return text, status, u, m, err
 	case "custom":
-		text, status, u, err := callCustom(baseURL, apiKey, modelName, prompt)
+		text, status, u, err := callCustom(ctx, baseURL, apiKey, modelName, prompt)
 		return text, status, u, modelName, err
 	default: // anthropic
 		m := firstNonEmpty(modelName, defaultAnthropicModel)
-		text, status, u, err := callAnthropic(firstNonEmpty(baseURL, "https://api.anthropic.com"), apiKey, m, prompt, maxTokens)
+		text, status, u, err := callAnthropic(ctx, firstNonEmpty(baseURL, "https://api.anthropic.com"), apiKey, m, prompt, maxTokens)
 		return text, status, u, m, err
 	}
 }
@@ -168,8 +169,13 @@ func postJSON(url string, headers map[string]string, body any) ([]byte, int, err
 // postJSONWith POSTs JSON using a caller-chosen client (LLM calls use the
 // long-timeout llmHTTPClient; completions can take tens of seconds).
 func postJSONWith(client *http.Client, url string, headers map[string]string, body any) ([]byte, int, error) {
+	return postJSONCtx(context.Background(), client, url, headers, body)
+}
+
+// postJSONCtx is postJSONWith that stops when ctx is canceled (a canceled run).
+func postJSONCtx(ctx context.Context, client *http.Client, url string, headers map[string]string, body any) ([]byte, int, error) {
 	b, _ := json.Marshal(body)
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(b)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(b)))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -186,12 +192,12 @@ func postJSONWith(client *http.Client, url string, headers map[string]string, bo
 	return out, resp.StatusCode, nil
 }
 
-func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (string, int, llmUsage, error) {
+func callAnthropic(ctx context.Context, base, apiKey, modelName, prompt string, maxTokens int) (string, int, llmUsage, error) {
 	body := map[string]any{
 		"model": modelName, "max_tokens": maxTokens,
 		"messages": []map[string]any{{"role": "user", "content": prompt}},
 	}
-	raw, status, err := postJSONWith(llmHTTPClient, strings.TrimRight(base, "/")+"/v1/messages", map[string]string{
+	raw, status, err := postJSONCtx(ctx, llmHTTPClient, strings.TrimRight(base, "/")+"/v1/messages", map[string]string{
 		"x-api-key": apiKey, "anthropic-version": "2023-06-01",
 	}, body)
 	if err != nil {
@@ -231,12 +237,12 @@ func callAnthropic(base, apiKey, modelName, prompt string, maxTokens int) (strin
 	return sb.String(), status, u, nil
 }
 
-func callOpenAI(base, apiKey, modelName, prompt string) (string, int, llmUsage, error) {
+func callOpenAI(ctx context.Context, base, apiKey, modelName, prompt string) (string, int, llmUsage, error) {
 	body := map[string]any{
 		"model":    modelName,
 		"messages": []map[string]any{{"role": "user", "content": prompt}},
 	}
-	raw, status, err := postJSONWith(llmHTTPClient, strings.TrimRight(base, "/")+"/v1/chat/completions", map[string]string{
+	raw, status, err := postJSONCtx(ctx, llmHTTPClient, strings.TrimRight(base, "/")+"/v1/chat/completions", map[string]string{
 		"Authorization": "Bearer " + apiKey,
 	}, body)
 	if err != nil {
@@ -270,12 +276,12 @@ func callOpenAI(base, apiKey, modelName, prompt string) (string, int, llmUsage, 
 
 // callCustom posts {prompt} and expects {text} — for self-hosted/gateway models.
 // An optional usage object ({input_tokens, output_tokens}) is recorded.
-func callCustom(base, apiKey, modelName, prompt string) (string, int, llmUsage, error) {
+func callCustom(ctx context.Context, base, apiKey, modelName, prompt string) (string, int, llmUsage, error) {
 	headers := map[string]string{}
 	if apiKey != "" {
 		headers["Authorization"] = "Bearer " + apiKey
 	}
-	raw, status, err := postJSONWith(llmHTTPClient, base, headers, map[string]any{"model": modelName, "prompt": prompt})
+	raw, status, err := postJSONCtx(ctx, llmHTTPClient, base, headers, map[string]any{"model": modelName, "prompt": prompt})
 	if err != nil {
 		return "", status, llmUsage{}, err
 	}

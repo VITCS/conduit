@@ -162,8 +162,11 @@ lands in **Backlog**; click **Start**.
   pauses with the question and suggested answers. Click one, or write your own, and
   the step continues with it.
 - Everything waiting on you, in any project, also collects in the **Needs you**
-  strip under the top bar: questions (answer them there), approvals, stuck tasks and
+  strip under the top bar: questions (answer them there), approvals, stuck work and
   PRs waiting for review. The bell shows the count.
+- If a step makes no progress for 5 minutes you get a notification and the step is
+  marked "slow"; after 10 minutes it shows as "stuck" in Needs you, where you can
+  open the run or cancel it.
 
 - At **Human Approval**, a banner appears with what the agents suggested: the plan
   and the review. **Approve** it, **Send back** with a note on what to change (the

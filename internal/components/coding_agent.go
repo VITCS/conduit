@@ -46,6 +46,9 @@ type codingCfg struct {
 	// asker, when set, turns a reply that asks the person a question into a
 	// question Result (planning only).
 	asker func(text string) (Result, bool)
+	// report, when set, streams progress ("writing app/x.ts (2/5)") to the run
+	// log; it also tells the stuck-step watchdog the step is still working.
+	report func(msg string)
 }
 
 // resolveCoding resolves the common config for a coding node. needToken fails the
@@ -139,6 +142,9 @@ func (c codingCfg) implementChanges(items []changeItem, task, feedback string) (
 	files := make([]fileChange, 0, len(items))
 	old := map[string]string{} // full current contents, for the review diff
 	for i := range items {
+		if c.report != nil {
+			c.report(fmt.Sprintf("writing %s (%d/%d)", items[i].Path, i+1, len(items)))
+		}
 		current := ""
 		if strings.EqualFold(items[i].Action, "modify") {
 			content, exists := c.gh.fileContent(items[i].Path, c.base)
@@ -304,11 +310,14 @@ func execCodingPlan(n model.Node, run *model.Run) Result {
 // it reads the structured change plan from memory (change_plan_json), pulls current
 // contents for modified files, has the model produce full file contents, and
 // commits them to a new branch. Config `changes` should be ${memory.change_plan_json}.
-func execCodingApply(n model.Node, run *model.Run) Result {
+func execCodingApply(n model.Node, run *model.Run) Result { return codingApply(n, run, nil) }
+
+func codingApply(n model.Node, run *model.Run, report func(string)) Result {
 	cfg, ex, fail := resolveCoding(n, run, true)
 	if fail != nil {
 		return *fail
 	}
+	cfg.report = report
 	changesJSON := firstNonEmpty(ex("changes"), ex("change_plan_json"))
 	if strings.TrimSpace(changesJSON) == "" || strings.Contains(changesJSON, "${memory.") {
 		return failCode("no approved change plan (set changes to ${memory.change_plan_json} from a coding_plan node)")

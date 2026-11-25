@@ -199,6 +199,8 @@ export interface AttentionItem {
   step?: string;
   text?: string;
   options?: string[];
+  /** For a stuck item: stalled (no progress), not_started (queued, never picked up) or blocked (a blocked task). */
+  reason?: "stalled" | "not_started" | "blocked";
   url?: string;
   since: string;
 }

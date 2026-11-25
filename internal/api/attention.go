@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -16,19 +17,22 @@ import (
 type AttentionItem struct {
 	// Kind: question (an agent asked something), approval (a gate is waiting),
 	// stuck (a task is blocked), review (a pull request waits for review).
-	Kind        string    `json:"kind"`
-	ProjectID   string    `json:"project_id"`
-	ProjectName string    `json:"project_name"`
-	RunID       string    `json:"run_id,omitempty"`
-	NodeID      string    `json:"node_id,omitempty"`
-	TaskID      string    `json:"task_id,omitempty"`
-	ReviewID    string    `json:"review_id,omitempty"`
-	Title       string    `json:"title"`          // run, task or PR title
-	Step        string    `json:"step,omitempty"` // the step that is waiting
-	Text        string    `json:"text,omitempty"` // the question, the gate's summary, or why it is stuck
-	Options     []string  `json:"options,omitempty"`
-	URL         string    `json:"url,omitempty"`
-	Since       time.Time `json:"since"`
+	Kind        string   `json:"kind"`
+	ProjectID   string   `json:"project_id"`
+	ProjectName string   `json:"project_name"`
+	RunID       string   `json:"run_id,omitempty"`
+	NodeID      string   `json:"node_id,omitempty"`
+	TaskID      string   `json:"task_id,omitempty"`
+	ReviewID    string   `json:"review_id,omitempty"`
+	Title       string   `json:"title"`          // run, task or PR title
+	Step        string   `json:"step,omitempty"` // the step that is waiting
+	Text        string   `json:"text,omitempty"` // the question, the gate's summary, or why it is stuck
+	Options     []string `json:"options,omitempty"`
+	// Reason, for a stuck item: stalled (a running step made no progress),
+	// not_started (a queued run was never picked up), or blocked (a blocked task).
+	Reason string    `json:"reason,omitempty"`
+	URL    string    `json:"url,omitempty"`
+	Since  time.Time `json:"since"`
 }
 
 // Attention is the "Needs you" list for the caller, across their projects.
@@ -99,7 +103,37 @@ func (s *Server) projectAttention(proj model.Project) []AttentionItem {
 		}
 		return nodeID
 	}
+	stuckAfter := 10 * time.Minute
+	if s.Engine != nil && s.Engine.StallStuck > 0 {
+		stuckAfter = s.Engine.StallStuck
+	}
+	now := time.Now()
 	for _, run := range runs {
+		// A queued run nobody picked up (no worker free, or none running).
+		if run.Status == model.StatusQueued && now.Sub(run.CreatedAt) >= stuckAfter {
+			items = append(items, AttentionItem{Kind: "stuck", Reason: "not_started", ProjectID: proj.ID, ProjectName: proj.Name,
+				RunID: run.ID, TaskID: run.TaskID, Title: run.Title, Since: run.CreatedAt,
+				Text: fmt.Sprintf("Queued %s ago and not started. Check that the server's workers are running.", ago(now.Sub(run.CreatedAt)))})
+			continue
+		}
+		// A running step the watchdog flagged as stuck (no progress for a while).
+		if run.Status == model.StatusRunning {
+			for id, st := range run.Steps {
+				if st == nil || st.Status != model.StatusRunning || st.Output["stall"] != "stuck" {
+					continue
+				}
+				since := run.CreatedAt
+				if v, _ := st.Output["stall_since"].(string); v != "" {
+					if t, err := time.Parse(time.RFC3339, v); err == nil {
+						since = t
+					}
+				}
+				items = append(items, AttentionItem{Kind: "stuck", Reason: "stalled", ProjectID: proj.ID, ProjectName: proj.Name,
+					RunID: run.ID, NodeID: id, TaskID: run.TaskID, Title: run.Title, Step: stepTitle(run.WorkflowID, id), Since: since,
+					Text: fmt.Sprintf("Still running, but no progress for %s. Open the run to look at its log, or cancel it.", ago(now.Sub(since)))})
+			}
+			continue
+		}
 		if run.Status != model.StatusWaiting {
 			continue
 		}
@@ -139,7 +173,7 @@ func (s *Server) projectAttention(proj model.Project) []AttentionItem {
 		if t.Stage != model.StageBlocked {
 			continue
 		}
-		it := AttentionItem{Kind: "stuck", ProjectID: proj.ID, ProjectName: proj.Name,
+		it := AttentionItem{Kind: "stuck", Reason: "blocked", ProjectID: proj.ID, ProjectName: proj.Name,
 			TaskID: t.ID, RunID: t.CurrentRunID, Title: t.Title, Since: t.StageChangedAt}
 		if n := len(t.Notes); n > 0 {
 			it.Text = t.Notes[n-1].Text
@@ -197,4 +231,16 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ago formats a duration for people: "under a minute", "12 min", "3 h 5 min".
+func ago(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "under a minute"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%d h %d min", int(d.Hours()), int(d.Minutes())%60)
+	}
 }

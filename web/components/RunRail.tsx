@@ -35,6 +35,8 @@ export function RunRail(props: {
   runLabel: string;
   runMeta: string;
   usage?: Usage | null;
+  /** node id → "slow" | "stuck" for running steps with no recent progress. */
+  stalls?: Record<string, string>;
   // history
   showHistory: boolean;
   onToggleHistory: () => void;
@@ -97,6 +99,7 @@ export function RunRail(props: {
           <div className="steps">
             {props.nodes.map((n) => {
               const meta = STATUS_META[props.statuses[n.id] ?? "pending"];
+              const stall = props.statuses[n.id] === "running" ? props.stalls?.[n.id] : undefined;
               return (
                 <button
                   key={n.id}
@@ -107,7 +110,11 @@ export function RunRail(props: {
                     <Icon name={n.icon} size={17} />
                   </span>
                   <span className="s-name">{n.title}</span>
-                  <span className={`badge ${meta.cls}`}>{meta.label}</span>
+                  {stall ? (
+                    <span className={`badge stall ${stall}`} title="No progress for a while" data-testid="step-stall">{stall === "stuck" ? "stuck" : "slow"}</span>
+                  ) : (
+                    <span className={`badge ${meta.cls}`}>{meta.label}</span>
+                  )}
                 </button>
               );
             })}

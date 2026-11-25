@@ -34,6 +34,14 @@ type Engine struct {
 	// pacing between steps; exported-ish knobs kept small for a responsive demo.
 	StepDelay    time.Duration
 	TriggerDelay time.Duration
+
+	// Stuck-step watchdog (see watchdog.go): a running step with no progress for
+	// StallNudge is nudged once; for StallStuck it is flagged in "Needs you".
+	// Watch checks every WatchInterval.
+	active        map[string]*activity // runID|nodeID -> running step
+	StallNudge    time.Duration
+	StallStuck    time.Duration
+	WatchInterval time.Duration
 }
 
 // New builds an engine bound to a store.
@@ -45,6 +53,11 @@ func New(s store.Store) *Engine {
 		canceledIDs:  map[string]bool{},
 		StepDelay:    650 * time.Millisecond,
 		TriggerDelay: 300 * time.Millisecond,
+
+		active:        map[string]*activity{},
+		StallNudge:    5 * time.Minute,
+		StallStuck:    10 * time.Minute,
+		WatchInterval: time.Minute,
 	}
 }
 
@@ -818,7 +831,9 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 	var logs []string
 	// A step may stop to ask the person a question (components.OutcomeQuestion).
 	// The run then waits for the answer and the step runs again with it.
+	defer e.untrack(runID, node.ID)
 	for asked := 0; ; asked++ {
+		e.track(runID, node)
 		for attempt := 1; attempt <= attempts; attempt++ {
 			if !sleepCtx(ctx, e.stepPacing(node)) {
 				return e.finishCanceled(runID, node)
@@ -830,11 +845,15 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 			// Long-running executors (Claude Code sessions) get the run's context, so
 			// Cancel stops them, and stream what they are doing to the run log.
 			pctx := components.WithProgress(ctx, func(msg string) {
+				e.touch(runID, node.ID) // progress resets the stuck-step watchdog
 				e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
 					Message: fmt.Sprintf("%s · %s", node.Title, msg)})
 			})
 			res = components.Exec(pctx, node.Type, node, &snap)
 			logs = res.Logs
+			if ctx.Err() != nil { // canceled while the step was working
+				return e.finishCanceled(runID, node)
+			}
 			if res.Outcome != model.StatusFailed || attempt == attempts {
 				break
 			}
@@ -862,6 +881,7 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 			u := res.Usage
 			e.store.MutateRun(runID, func(r *model.Run) { r.Usage = components.AddUsage(r.Usage, u) }) //nolint:errcheck
 		}
+		e.untrack(runID, node.ID) // waiting on a person, not stuck
 		if st, ok := e.waitAnswer(ctx, runID, node, res); !ok {
 			return st
 		}
