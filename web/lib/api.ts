@@ -1,4 +1,4 @@
-import type { Run, Workflow, Task, BoardMetrics, ReviewRequest } from "./types";
+import type { Run, Workflow, Task, BoardMetrics, ReviewRequest, Attention } from "./types";
 
 // Same-origin by default (the Go server serves both UI and API). For `next dev`
 // against a separately-running server, set NEXT_PUBLIC_API_BASE.
@@ -48,7 +48,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   const tok = getToken();
   if (tok) headers.set("Authorization", "Bearer " + tok);
-  headers.set("X-Conduit-Project", getProject());
+  if (!headers.has("X-Conduit-Project")) headers.set("X-Conduit-Project", getProject());
   const r = await fetch(BASE + path, { ...init, headers });
   if (r.status === 401) {
     setToken("");
@@ -138,6 +138,15 @@ export const api = {
     }),
   listRuns: () => req<Run[]>("/api/runs"),
   getRun: (id: string) => req<Run>(`/api/runs/${encodeURIComponent(id)}`),
+  /** Answer a step's question. project defaults to the current one. */
+  answer: (runId: string, nodeId: string, answer: string, project?: string) =>
+    req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(project ? { "X-Conduit-Project": project } : {}) },
+      body: JSON.stringify({ node_id: nodeId, answer }),
+    }),
+  /** Everything waiting on the caller, across their projects ("Needs you"). */
+  attention: () => req<Attention>("/api/attention"),
   approve: (runId: string, nodeId: string, decision: Decision, feedback?: string) =>
     req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/approve`, {
       method: "POST",

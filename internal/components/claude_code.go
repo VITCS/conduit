@@ -594,13 +594,18 @@ Reply with:
    <change_plan>[{"path":"relative/path.ext","action":"create"|"modify","details":"what changes and why"}]</change_plan>
 Use "create" only for files that do not exist yet. Paths are relative to the repository root.`,
 		task, firstNonEmpty(ex("implementation"), "(none)"), cfg.maxFiles)
-	prompt += reviewerFeedback(run, n.ID, "change_plan")
+	prompt += reviewerFeedback(run, n.ID, "change_plan") + askBlock(n, run, "the change plan")
 	system := contextBlock(cfg.project) + "You are a senior engineer planning a change for a human to approve. You may only read the repository."
 	o, err := runClaude(ctx, cfg.session(co.dir, co.home, prompt, system,
 		readOnlyTools, append([]string{"Edit", "Write", "NotebookEdit", "Bash"}, neverTools...)))
 	cfg.recordClaude(o)
 	if err != nil {
 		return claudeFail("plan", err, o)
+	}
+	if !planTagRe.MatchString(o.result) {
+		if q, ok := maybeQuestion(n, run, o.result); ok {
+			return q
+		}
 	}
 	planText := o.result
 	if m := planTagRe.FindStringSubmatch(o.result); m != nil {

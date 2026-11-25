@@ -185,3 +185,26 @@ export interface EdgeData {
   maxAttempts?: number; // mirrors WFEdge.max_attempts for a retry back-edge
   [key: string]: unknown;
 }
+
+/** One thing waiting on a person ("Needs you"). */
+export interface AttentionItem {
+  kind: "question" | "approval" | "stuck" | "review";
+  project_id: string;
+  project_name: string;
+  run_id?: string;
+  node_id?: string;
+  task_id?: string;
+  review_id?: string;
+  title: string;
+  step?: string;
+  text?: string;
+  options?: string[];
+  url?: string;
+  since: string;
+}
+
+export interface Attention {
+  items: AttentionItem[];
+  by_project: Record<string, number>;
+  total: number;
+}

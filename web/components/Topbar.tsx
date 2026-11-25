@@ -1,5 +1,5 @@
 "use client";
-import { PanelLeft, Play, Square, Save, Pencil, Sun, Moon, LogOut, Users, Sliders, Trash2, ChevronsUpDown, FolderKanban } from "lucide-react";
+import { PanelLeft, Play, Square, Save, Pencil, Sun, Moon, LogOut, Users, Sliders, Trash2, ChevronsUpDown, FolderKanban, BellRing } from "lucide-react";
 import { useEffect, useState } from "react";
 
 function Logo() {
@@ -40,7 +40,13 @@ export function Topbar(props: {
   onSwitchProject: (id: string) => void;
   onNewProject: () => void;
   onDeleteProject: (id: string) => void;
+  /** How many items need the person in each project, and in total. */
+  attentionByProject?: Record<string, number>;
+  attentionTotal?: number;
+  onOpenNeeds?: () => void;
 }) {
+  const waitingElsewhere = Object.entries(props.attentionByProject ?? {})
+    .filter(([id]) => id !== props.currentProject).reduce((n, [, c]) => n + c, 0);
   const BUILTIN_PROJECTS = new Set(["default", "ai-factory", "github"]);
   const canDeleteProject = !BUILTIN_PROJECTS.has(props.currentProject);
   const [dark, setDark] = useState(true);
@@ -83,12 +89,15 @@ export function Topbar(props: {
       >
           {props.projects.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name}
+              {p.name}{p.id !== props.currentProject && props.attentionByProject?.[p.id] ? ` — ${props.attentionByProject[p.id]} need${props.attentionByProject[p.id] === 1 ? "s" : ""} you` : ""}
             </option>
           ))}
           <option value="__new__">+ New project…</option>
         </select>
         <ChevronsUpDown size={13} className="pp-chev" />
+        {waitingElsewhere > 0 && (
+          <span className="pp-badge" title={`${waitingElsewhere} waiting on you in other projects`} data-testid="project-badge">{waitingElsewhere}</span>
+        )}
       </span>
       {canDeleteProject && (
         <button
@@ -123,6 +132,11 @@ export function Topbar(props: {
           <Pencil size={15} /> Edit
         </button>
         <span className="tb-sep" aria-hidden />
+        <button className={`iconbtn ny-bell${props.attentionTotal ? " on" : ""}`} onClick={props.onOpenNeeds}
+          title={props.attentionTotal ? `${props.attentionTotal} waiting on you` : "Nothing waiting on you"} aria-label="Needs you" data-testid="needs-bell">
+          <BellRing size={16} />
+          {props.attentionTotal ? <span className="ny-bell-n">{props.attentionTotal}</span> : null}
+        </button>
         <button className="iconbtn" onClick={props.onOpenMembers} title="Members" aria-label="Members">
           <Users size={16} />
         </button>

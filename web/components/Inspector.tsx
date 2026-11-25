@@ -249,7 +249,7 @@ function usageText(o: Record<string, unknown>): string {
 }
 
 // INTERNAL_OUTPUT_KEYS are step-output fields the engine sets for the UI's own use.
-const INTERNAL_OUTPUT_KEYS = new Set(["send_back", "send_backs_left"]);
+const INTERNAL_OUTPUT_KEYS = new Set(["send_back", "send_backs_left", "kind"]);
 
 function visibleOutput(o: Record<string, unknown>): Record<string, unknown> | undefined {
   const out = Object.fromEntries(Object.entries(o).filter(([k]) => !INTERNAL_OUTPUT_KEYS.has(k)));

@@ -331,6 +331,34 @@ Changes (both engines) and the PR review agent. With the direct-API engine the
 repository's own `CLAUDE.md` / `AGENTS.md` is also passed to the coding steps;
 Claude Code reads those files itself.
 
+### Agent questions and "Needs you"
+
+**Agents can ask.** Refine & Plan, Draft Implementation and Plan Changes (with
+either coding engine) may stop and ask you a question instead of guessing, for
+example when a requirement is ambiguous or there is a real choice to make. The
+run pauses and shows the question with two to four suggested answers as buttons
+and a box for your own answer. Your answer goes back to the step, which continues;
+every answer is kept with the run (memory `answers_for_<step>`) and given back to
+the step if it runs again, so it does not ask the same thing twice. **Stop run**
+ends the run instead.
+
+A step asks at most twice per run (`max_questions` on the node); `ask=false` turns
+it off for a step (the factory's Review Confidence step ships with it off), and the
+project variable `agent_questions=off` turns it off for the whole project.
+
+**Needs you** is one strip under the top bar listing everything waiting on you in
+every project you can see:
+
+- **questions** from agents (answer them right in the list),
+- **approvals** at any gate,
+- **stuck** tasks (the board's Blocked column: low triage confidence, or CI still
+  failing after the retries),
+- **pull requests** waiting in a project's review inbox.
+
+Each item opens its run (switching project if needed). The bell in the top bar
+shows the total, the project picker shows how many items wait in other projects,
+and board cards show "question for you" or "needs your approval".
+
 ### Models and cost
 
 **Settings → Models & cost** sets three model tiers, stored as project variables:
@@ -514,6 +542,8 @@ cross-project reads are 404.
 | `GET`  | `/api/runs` | list runs (newest first) |
 | `GET`  | `/api/runs/{id}` | one run with steps + memory |
 | `POST` | `/api/runs/{id}/approve` | resolve an approval gate (`{node_id, decision}`) |
+| `POST` | `/api/runs/{id}/answer` | answer a step's question (`{node_id, answer}`) |
+| `GET`  | `/api/attention` | "Needs you": questions, approvals, stuck tasks and PR reviews across your projects |
 | `POST` | `/api/runs/{id}/cancel` | cancel a running/waiting run (`409` if not active) |
 | `POST` | `/api/hooks/{workflowId}` | start a run from a webhook; JSON body becomes the trigger input |
 | `GET`  | `/api/schedules` | list active cron schedules |

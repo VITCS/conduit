@@ -107,6 +107,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/runs", s.createRun)
 	mux.HandleFunc("GET /api/runs/{id}", s.getRun)
 	mux.HandleFunc("POST /api/runs/{id}/approve", s.approve)
+	mux.HandleFunc("POST /api/runs/{id}/answer", s.answer)
+	mux.HandleFunc("GET /api/attention", s.attention)
 	mux.HandleFunc("POST /api/runs/{id}/cancel", s.cancel)
 	mux.HandleFunc("POST /api/runs/{id}/rerun", s.rerun)
 	mux.HandleFunc("GET /api/tasks", s.listTasks)

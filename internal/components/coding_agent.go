@@ -43,6 +43,9 @@ type codingCfg struct {
 	// pick is the model tier choice; usage collects the step's token usage.
 	pick  modelPick
 	usage *usageAcc
+	// asker, when set, turns a reply that asks the person a question into a
+	// question Result (planning only).
+	asker func(text string) (Result, bool)
 }
 
 // resolveCoding resolves the common config for a coding node. needToken fails the
@@ -112,6 +115,11 @@ NOTES:
 	if err != nil || status < 200 || status >= 300 {
 		r := llmFail("plan", err, status)
 		return nil, &r
+	}
+	if c.asker != nil {
+		if q, ok := c.asker(text); ok {
+			return nil, &q
+		}
 	}
 	items, perr := parseChangePlan(text, c.maxFiles)
 	if perr != "" {
@@ -276,7 +284,8 @@ func execCodingPlan(n model.Node, run *model.Run) Result {
 		return failCode("no plan to work from (set plan, e.g. ${memory.plan})")
 	}
 	cfg.guidance = contextBlock(runProject(run)) + cfg.repoGuidance(cfg.base)
-	items, r := cfg.planChanges(task, ex("implementation")+reviewerFeedback(run, n.ID, "change_plan"))
+	cfg.asker = func(text string) (Result, bool) { return maybeQuestion(n, run, text) }
+	items, r := cfg.planChanges(task, ex("implementation")+reviewerFeedback(run, n.ID, "change_plan")+askBlock(n, run, "the JSON array"))
 	if r != nil {
 		return *r
 	}

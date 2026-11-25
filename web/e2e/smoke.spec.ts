@@ -316,3 +316,58 @@ test("diff review: the gate shows the code change, and approving from the viewer
     await api("PUT", "/api/workflows/wf_preview_envs", orig);
   }
 });
+
+test("an agent asks a question: it shows in the run and in Needs you, and answering continues the run", async ({ page }) => {
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+  const api = async (method: string, path: string, body?: unknown) =>
+    page.evaluate(async ({ method, path, body }) => {
+      const r = await fetch(path, {
+        method,
+        headers: { Authorization: "Bearer " + localStorage.getItem("conduit_token"), "X-Conduit-Project": "default", "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: r.status, json: await r.json().catch(() => null) };
+    }, { method, path, body });
+  const orig = (await api("GET", "/api/workflows/wf_preview_envs")).json;
+  // Turn "Configure App" into a (simulated) agent that asks before it continues.
+  const edited = {
+    ...orig,
+    nodes: orig.nodes.map((n: { id: string; title: string }) =>
+      n.id === "c1" ? { ...n, type: "agent", title: "Plan the setup", config: [
+        { key: "prompt", icon: "file", value: "Plan the server setup" },
+        { key: "question", icon: "agent", value: "Which database should the preview use?" },
+        { key: "question_options", icon: "agent", value: "Postgres | SQLite" },
+      ] } : n),
+  };
+  expect((await api("PUT", "/api/workflows/wf_preview_envs", edited)).status).toBeLessThan(300);
+  try {
+    await page.reload();
+    await page.getByTestId("run-btn").click();
+    const banner = page.getByTestId("question-banner");
+    await expect(banner).toContainText("Which database should the preview use?", { timeout: 30_000 });
+    await expect(banner).toContainText("Plan the setup");
+    await expect(banner.getByTestId("question-option")).toHaveText(["Postgres", "SQLite"]);
+    await expect(page.getByTestId("approval-banner")).toBeHidden();
+
+    // The same question is in Needs you, and can be answered there.
+    const needs = page.getByTestId("needs-you");
+    await expect(needs).toContainText("1 question", { timeout: 15_000 });
+    await expect(page.getByTestId("needs-bell")).toContainText(/\d/);
+    await page.getByTestId("needs-you-toggle").click();
+    const item = page.getByTestId("needs-item-question");
+    await expect(item).toContainText("Plan the setup");
+    await item.getByTestId("question-input").fill("Postgres 16, please");
+    await item.getByTestId("question-send").click();
+
+    // The step continues and the run reaches its approval gate.
+    await expect(banner).toBeHidden({ timeout: 30_000 });
+    await expect(page.getByTestId("approval-banner")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("needs-item-approval").first()).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("approve-btn").click();
+    await expect(page.getByTestId("run-btn")).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("tab", { name: "Memory" }).click();
+    await expect(page.getByText("Postgres 16, please").first()).toBeVisible();
+  } finally {
+    await api("PUT", "/api/workflows/wf_preview_envs", orig);
+  }
+});

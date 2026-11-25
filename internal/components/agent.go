@@ -32,6 +32,9 @@ func execAgent(n model.Node, run *model.Run) Result {
 	// Every agent gets the project context, and a step sent back by a reviewer
 	// gets the feedback plus its previous answer.
 	prompt = contextBlock(project) + prompt + reviewerFeedback(run, n.ID, "text")
+	// A planning agent may stop and ask the person for a decision instead of
+	// guessing (see questions.go); answers given so far are included.
+	prompt += askBlock(n, run, "your answer")
 
 	// An optional `output` field names a memory key to store the agent's text in,
 	// so steps chain: Refine -> ${memory.plan} -> Implement, etc.
@@ -44,6 +47,18 @@ func execAgent(n model.Node, run *model.Run) Result {
 	}
 
 	if !strings.EqualFold(n.Field("live"), "true") {
+		// A simulated agent can ask a scripted question (fields `question` and
+		// `question_options`, separated by |) so the question flow can be tried
+		// without a model.
+		if q := strings.TrimSpace(n.Field("question")); q != "" && len(Answers(run, n.ID)) == 0 && questionsLeft(n, run) > 0 {
+			var opts []string
+			for _, o := range strings.Split(n.Field("question_options"), "|") {
+				if o = strings.TrimSpace(o); o != "" {
+					opts = append(opts, o)
+				}
+			}
+			return questionResult(n, run, q, opts)
+		}
 		// Simulated agent — deterministic structured response.
 		conf := firstNonEmpty(n.Field("confidence"), "high")
 		text := fmt.Sprintf("[simulated %s agent] %s", provider, summarize(prompt))
@@ -77,6 +92,11 @@ func execAgent(n model.Node, run *model.Run) Result {
 		maxTokens = v
 	}
 	text, status, err := callLLMRec(usageFor(run), provider, baseURL, apiKey, modelName, prompt, maxTokens)
+	if err == nil {
+		if q, ok := maybeQuestion(n, run, text); ok {
+			return q
+		}
+	}
 	logs := []string{}
 	if l := pick.logLine(); l != "" {
 		logs = append(logs, l)

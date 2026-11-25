@@ -158,6 +158,13 @@ lands in **Backlog**; click **Start**.
 **3. Watch and approve.** The run opens on the canvas and each node moves from
 *yet to start* to *in progress* to *done* live.
 
+- If an agent needs a decision (say the ticket is ambiguous), it asks: the run
+  pauses with the question and suggested answers. Click one, or write your own, and
+  the step continues with it.
+- Everything waiting on you, in any project, also collects in the **Needs you**
+  strip under the top bar: questions (answer them there), approvals, stuck tasks and
+  PRs waiting for review. The bell shows the count.
+
 - At **Human Approval**, a banner appears with what the agents suggested: the plan
   and the review. **Approve** it, **Send back** with a note on what to change (the
   plan is redone with your note and you review it again), or **Reject** to stop the run.

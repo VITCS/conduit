@@ -2,8 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Plus, Play, ExternalLink, Trash2, GitBranch, Gauge, AlertTriangle, X, Search, Inbox, Hammer, ShieldCheck,
-  CircleCheckBig, OctagonAlert, GitPullRequest, Activity, type LucideIcon,
-} from "lucide-react";
+  CircleCheckBig, OctagonAlert, GitPullRequest, Activity, type LucideIcon, BellRing } from "lucide-react";
 import { api } from "@/lib/api";
 import { useDialogs } from "@/components/Dialogs";
 import type { Task, TaskStage, SSEvent, Run } from "@/lib/types";
@@ -21,7 +20,11 @@ function confBand(n: number): "hi" | "mid" | "lo" {
   return n >= 75 ? "hi" : n >= 50 ? "mid" : "lo";
 }
 
-export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => void; onToast: (m: string) => void }) {
+export function Board({ onOpenRun, onToast, needs }: {
+  onOpenRun: (runId: string) => void; onToast: (m: string) => void;
+  /** Task id → what it waits on ("question", "approval"), from "Needs you". */
+  needs?: Record<string, string>;
+}) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -147,7 +150,7 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
                 </div>
                 <div className="col-cards">
                   {items.map((t) => (
-                    <TaskCard key={t.id} t={t} onOpen={() => setOpen(t)} onStart={start} onOpenRun={onOpenRun} />
+                    <TaskCard key={t.id} t={t} need={needs?.[t.id]} onOpen={() => setOpen(t)} onStart={start} onOpenRun={onOpenRun} />
                   ))}
                   {items.length === 0 && <div className="col-empty">{query || sourceFilter ? "No matching tasks." : col.empty}</div>}
                 </div>
@@ -172,8 +175,8 @@ export function Board({ onOpenRun, onToast }: { onOpenRun: (runId: string) => vo
   );
 }
 
-function TaskCard({ t, onOpen, onStart, onOpenRun }: {
-  t: Task; onOpen: () => void; onStart: (t: Task) => void; onOpenRun: (id: string) => void;
+function TaskCard({ t, need, onOpen, onStart, onOpenRun }: {
+  t: Task; need?: string; onOpen: () => void; onStart: (t: Task) => void; onOpenRun: (id: string) => void;
 }) {
   const conf = typeof t.confidence === "number" && t.confidence > 0 ? t.confidence : 0;
   const hasActions = t.stage === "backlog" || !!t.current_run_id || !!t.pr_url;
@@ -183,7 +186,11 @@ function TaskCard({ t, onOpen, onStart, onOpenRun }: {
       <div className="tcard-top">
         <span className={`tsrc ${t.source || "manual"}`}>{t.source || "manual"}</span>
         {t.source_ref && <span className="tref">{t.source_ref}</span>}
-        {t.stage === "implement" && <span className="tlive" title="A run is working on this task"><Activity size={11} /> running</span>}
+        {need ? (
+          <span className={`tneed ${need}`} title="Waiting on you" data-testid="task-needs-you">
+            <BellRing size={11} /> {need === "question" ? "question for you" : "needs your approval"}
+          </span>
+        ) : t.stage === "implement" && <span className="tlive" title="A run is working on this task"><Activity size={11} /> running</span>}
       </div>
       <div className="tcard-title">{t.title}</div>
       {conf > 0 && (

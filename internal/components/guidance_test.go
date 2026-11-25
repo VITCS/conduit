@@ -70,7 +70,7 @@ func TestAgentPromptUnchangedWithoutContextOrFeedback(t *testing.T) {
 	withProjectVars(t, map[string]string{})
 	n := model.Node{ID: "plan", Type: "agent", Config: []model.Field{
 		{Key: "live", Value: "true"}, {Key: "provider", Value: "custom"},
-		{Key: "base_url", Value: srv.URL}, {Key: "prompt", Value: "Plan ticket ENG-9"}}}
+		{Key: "base_url", Value: srv.URL}, {Key: "prompt", Value: "Plan ticket ENG-9"}, {Key: "ask", Value: "false"}}}
 	execAgent(n, &model.Run{ProjectID: "p"})
 	if got := (*prompts)[0]; got != "Plan ticket ENG-9" {
 		t.Fatalf("prompt changed with nothing to add: %q", got)

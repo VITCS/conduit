@@ -19,7 +19,7 @@ import {
   type NodeTypes,
   type EdgeTypes,
 } from "@xyflow/react";
-import { Sparkles, GitPullRequest, Workflow as WorkflowIcon, KanbanSquare, BarChart3, Hand, SquareTerminal, Database, FileText } from "lucide-react";
+import { Sparkles, GitPullRequest, Workflow as WorkflowIcon, KanbanSquare, BarChart3, Hand, SquareTerminal, Database, FileText, MessageCircleQuestion } from "lucide-react";
 
 import { ConduitNode } from "@/components/ConduitNode";
 import { ConduitEdge } from "@/components/ConduitEdge";
@@ -34,12 +34,14 @@ import { SendBackDialog } from "@/components/SendBackDialog";
 import { DiffReview } from "@/components/DiffReview";
 import { Metrics } from "@/components/Metrics";
 import { MembersPanel } from "@/components/MembersPanel";
+import { NeedsYou } from "@/components/NeedsYou";
+import { QuestionCard } from "@/components/QuestionCard";
 import { Landing } from "@/components/Landing";
 import { Auth } from "@/components/Auth";
 import { EditorContext } from "@/lib/editorContext";
 import { api, getToken, setToken, setOnUnauthorized, getProject, setProject } from "@/lib/api";
 import { type CatalogItem } from "@/lib/catalog";
-import type { EdgeData, NodeData, Run, SSEvent, Status, Usage, Workflow, WFNode, WFEdge, ReviewRequest } from "@/lib/types";
+import type { Attention, AttentionItem, EdgeData, NodeData, Run, SSEvent, Status, Usage, Workflow, WFNode, WFEdge, ReviewRequest } from "@/lib/types";
 
 const nodeTypes: NodeTypes = { conduit: ConduitNode };
 const edgeTypes: EdgeTypes = { conduit: ConduitEdge };
@@ -186,6 +188,25 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       setReviewRequests(await api.listReviewRequests());
     } catch {
       setReviewRequests([]);
+    }
+  }, []);
+
+  // "Needs you": everything waiting on this person across their projects.
+  const [attention, setAttention] = useState<Attention | null>(null);
+  const boardNeeds = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const it of attention?.items ?? []) {
+      if (it.task_id && (it.kind === "question" || it.kind === "approval") && m[it.task_id] !== "question") m[it.task_id] = it.kind;
+    }
+    return m;
+  }, [attention]);
+  const [needsOpen, setNeedsOpen] = useState(false);
+  const loadAttention = useCallback(async () => {
+    if (!getToken()) return;
+    try {
+      setAttention(await api.attention());
+    } catch {
+      /* keep the last list */
     }
   }, []);
 
@@ -370,6 +391,8 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       const d: SSEvent = JSON.parse((ev as MessageEvent).data);
       if (d.node_id && d.status) setStatuses((s) => ({ ...s, [d.node_id!]: d.status! }));
       if (d.node_id && d.step?.output) setOutputs((o) => ({ ...o, [d.node_id!]: d.step!.output! }));
+      // A step that asked a question runs again once it is answered (from anywhere).
+      if (d.node_id && d.status === "running") setWaitingNode((w) => (w === d.node_id ? null : w));
     });
     es.addEventListener("log", (ev) => {
       const d: SSEvent = JSON.parse((ev as MessageEvent).data);
@@ -390,7 +413,8 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       }
       setApprovalDetail(d.detail || "");
       addLog("info", d.message || "awaiting approval");
-      showToast("Approval required");
+      showToast(d.message?.endsWith("has a question") ? "An agent has a question" : "Approval required");
+      loadAttention();
       notifyApproval(
         d.detail
           ? `${d.message || "Approval required"}\n\n${d.detail.slice(0, 300)}${d.detail.length > 300 ? "…" : ""}`
@@ -416,7 +440,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
       reconcileRun(runId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showToast, notifyApproval, loadReviewRequests]);
+  }, [showToast, notifyApproval, loadReviewRequests, loadAttention]);
 
   function applyRun(full: Run) {
     const st: Record<string, Status> = {};
@@ -492,15 +516,34 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         showToast(decision === "approved" ? "Approved" : "Rejected");
         setWaitingNode(null);
         setApprovalDetail("");
+        loadAttention();
       } catch (e) {
         showToast("Approve failed: " + (e as Error).message);
       }
     },
-    [runId, waitingNode, showToast],
+    [runId, waitingNode, showToast, loadAttention],
   );
 
   // The waiting gate's own output says whether it can send back, and how often.
   const gateOut = waitingNode ? outputs[waitingNode] : undefined;
+  // A step that stopped to ask a question (rather than an approval gate).
+  const gateQuestion = gateOut?.kind === "question" ? String(gateOut.question ?? "") : "";
+  const gateOptions = Array.isArray(gateOut?.options) ? (gateOut!.options as string[]) : [];
+  const answerQuestion = useCallback(
+    async (answer: string) => {
+      if (!runId || !waitingNode) return;
+      try {
+        await api.answer(runId, waitingNode, answer);
+        showToast("Answered — the step continues");
+        setWaitingNode(null);
+        setApprovalDetail("");
+        loadAttention();
+      } catch (e) {
+        showToast("Answer failed: " + (e as Error).message);
+      }
+    },
+    [runId, waitingNode, showToast, loadAttention],
+  );
   const canSendBack = gateOut?.send_back === true;
   // A diff-review gate carries the prepared code change for the reviewer.
   const gateDiff = typeof gateOut?.diff === "string" ? (gateOut.diff as string) : "";
@@ -796,6 +839,50 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     [showToast],
   );
 
+  // Open a "Needs you" item: switch to its project, then show the run (or the
+  // board for a stuck task without a run, or the review inbox for a PR).
+  const openAttention = useCallback(
+    (it: AttentionItem) => {
+      if (it.project_id !== currentProject) switchProject(it.project_id);
+      setNeedsOpen(false);
+      if (it.kind === "review") { setAppView("editor"); return; }
+      if (it.run_id) {
+        setAppView("editor");
+        pickRun(it.run_id).then(() => { if (it.node_id) setSelected(it.node_id); });
+      } else {
+        setAppView("board");
+      }
+    },
+    [currentProject, switchProject, pickRun],
+  );
+
+  // Answer a question straight from the "Needs you" list (any project).
+  const answerAttention = useCallback(
+    async (it: AttentionItem, answer: string) => {
+      if (!it.run_id || !it.node_id) return;
+      try {
+        await api.answer(it.run_id, it.node_id, answer, it.project_id);
+        showToast(`Answered — ${it.step || "the step"} continues`);
+        if (it.run_id === runId && it.node_id === waitingNode) { setWaitingNode(null); setApprovalDetail(""); }
+        loadAttention();
+      } catch (e) {
+        showToast("Answer failed: " + (e as Error).message);
+        loadAttention();
+      }
+    },
+    [runId, waitingNode, showToast, loadAttention],
+  );
+
+  // Keep "Needs you" current: on load, every 10 s, and when the tab regains focus.
+  useEffect(() => {
+    if (!user) return;
+    loadAttention();
+    const id = window.setInterval(loadAttention, 10_000);
+    const onFocus = () => loadAttention();
+    window.addEventListener("focus", onFocus);
+    return () => { window.clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [user, loadAttention]);
+
   const stepRel = useCallback(
     (delta: number) => {
       if (!selected) return;
@@ -829,11 +916,29 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           onSignOut={onSignOut}
           projects={projects}
           currentProject={currentProject}
+          attentionByProject={attention?.by_project}
+          attentionTotal={attention?.total ?? 0}
+          onOpenNeeds={() => setNeedsOpen((v) => !v)}
           onSwitchProject={switchProject}
           onNewProject={newProject}
           onDeleteProject={deleteProject}
         />
-        {waitingNode && (
+        <NeedsYou data={attention} open={needsOpen} onToggle={() => setNeedsOpen((v) => !v)}
+          currentProject={currentProject} onOpen={openAttention} onAnswer={answerAttention} />
+        {waitingNode && gateQuestion && (
+          <div className="approval-banner question" role="alert" data-testid="question-banner">
+            <div className="ab-row">
+              <span className="ab-ico"><MessageCircleQuestion size={16} /></span>
+              <span className="ab-text">
+                <b>{(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "A step"}</b> has a question before it continues.
+              </span>
+              <button className="btn ghost" onClick={() => focusNode(waitingNode)}>View step</button>
+            </div>
+            <QuestionCard question={gateQuestion} options={gateOptions} onAnswer={answerQuestion}
+              onStop={() => { focusNode(waitingNode); approve("rejected"); }} />
+          </div>
+        )}
+        {waitingNode && !gateQuestion && (
           <div className="approval-banner" role="alert" data-testid="approval-banner">
             <div className="ab-row">
               <span className="ab-ico"><Hand size={16} /></span>
@@ -914,7 +1019,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
           )}
         </div>
         {appView === "board" ? (
-          <Board onOpenRun={(id) => { setAppView("editor"); pickRun(id); }} onToast={showToast} />
+          <Board onOpenRun={(id) => { setAppView("editor"); pickRun(id); }} onToast={showToast} needs={boardNeeds} />
         ) : appView === "metrics" ? (
           <Metrics onToast={showToast} />
         ) : (
@@ -1017,7 +1122,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
                 output={outputs[selected!]}
                 status={statuses[selected!] ?? "pending"}
                 editMode={editMode}
-                isApprovalWaiting={selected === waitingNode && statuses[selected!] === "waiting"}
+                isApprovalWaiting={selected === waitingNode && statuses[selected!] === "waiting" && !gateQuestion}
                 onChange={(patch) => patchNode(selected!, patch)}
                 onDelete={() => deleteNode(selected!)}
                 onApprove={approve}

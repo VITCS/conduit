@@ -185,6 +185,11 @@ It is now a real pipeline that opens real pull requests:
   exactly what was approved. Works with both coding engines.
 - **Send back with feedback** at every approval gate: the proposal goes back to the
   step that made it with the reviewer's note (bounded to 3 per gate).
+- **Agent questions**: planning and coding-plan steps can pause to ask a question
+  with suggested answers; the answer goes back to the step (at most 2 per step).
+- **Needs you**: one strip, a bell count, project badges and board markers for
+  everything waiting on a person across projects: questions, approvals, stuck tasks
+  and PR reviews.
 - **Project context**: a per-project brief (stack, commands, conventions,
   off-limits) added to every agent's instructions, plus the repo's CLAUDE.md /
   AGENTS.md for the direct-API coding engine.

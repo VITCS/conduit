@@ -816,33 +816,54 @@ func (e *Engine) runNode(ctx context.Context, runID string, node model.Node) mod
 	attempts, backoff := retryConfig(node)
 	var res components.Result
 	var logs []string
-	for attempt := 1; attempt <= attempts; attempt++ {
-		if !sleepCtx(ctx, e.stepPacing(node)) {
-			return e.finishCanceled(runID, node)
-		}
-		// Run the executor on a read-only snapshot WITHOUT holding the store lock,
-		// so a connector doing network I/O never blocks the store (or deadlocks by
-		// calling back into it). Memory changes come back via res.MemoryWrites.
-		snap, _, _ := e.store.GetRun(runID)
-		// Long-running executors (Claude Code sessions) get the run's context, so
-		// Cancel stops them, and stream what they are doing to the run log.
-		pctx := components.WithProgress(ctx, func(msg string) {
+	// A step may stop to ask the person a question (components.OutcomeQuestion).
+	// The run then waits for the answer and the step runs again with it.
+	for asked := 0; ; asked++ {
+		for attempt := 1; attempt <= attempts; attempt++ {
+			if !sleepCtx(ctx, e.stepPacing(node)) {
+				return e.finishCanceled(runID, node)
+			}
+			// Run the executor on a read-only snapshot WITHOUT holding the store lock,
+			// so a connector doing network I/O never blocks the store (or deadlocks by
+			// calling back into it). Memory changes come back via res.MemoryWrites.
+			snap, _, _ := e.store.GetRun(runID)
+			// Long-running executors (Claude Code sessions) get the run's context, so
+			// Cancel stops them, and stream what they are doing to the run log.
+			pctx := components.WithProgress(ctx, func(msg string) {
+				e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
+					Message: fmt.Sprintf("%s · %s", node.Title, msg)})
+			})
+			res = components.Exec(pctx, node.Type, node, &snap)
+			logs = res.Logs
+			if res.Outcome != model.StatusFailed || attempt == attempts {
+				break
+			}
+			if res.Usage != nil { // a failed attempt still cost tokens
+				u := res.Usage
+				e.store.MutateRun(runID, func(r *model.Run) { r.Usage = components.AddUsage(r.Usage, u) }) //nolint:errcheck
+			}
 			e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
-				Message: fmt.Sprintf("%s · %s", node.Title, msg)})
-		})
-		res = components.Exec(pctx, node.Type, node, &snap)
-		logs = res.Logs
-		if res.Outcome != model.StatusFailed || attempt == attempts {
+				Message: fmt.Sprintf("%s · attempt %d failed, retrying", node.Title, attempt)})
+			if !sleepCtx(ctx, backoff*time.Duration(attempt)) {
+				return e.finishCanceled(runID, node)
+			}
+		}
+		if res.Outcome != components.OutcomeQuestion {
 			break
 		}
-		if res.Usage != nil { // a failed attempt still cost tokens
+		if asked >= maxQuestionsPerStep {
+			res = components.Result{Outcome: model.StatusFailed,
+				Output: map[string]any{"error": "the step kept asking questions"},
+				Logs:   append(res.Logs, "stopped: too many questions")}
+			logs = res.Logs
+			break
+		}
+		if res.Usage != nil { // the asking call still cost tokens
 			u := res.Usage
 			e.store.MutateRun(runID, func(r *model.Run) { r.Usage = components.AddUsage(r.Usage, u) }) //nolint:errcheck
 		}
-		e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
-			Message: fmt.Sprintf("%s · attempt %d failed, retrying", node.Title, attempt)})
-		if !sleepCtx(ctx, backoff*time.Duration(attempt)) {
-			return e.finishCanceled(runID, node)
+		if st, ok := e.waitAnswer(ctx, runID, node, res); !ok {
+			return st
 		}
 	}
 
@@ -1064,6 +1085,79 @@ func (e *Engine) runApproval(ctx context.Context, runID string, node model.Node)
 	})
 	e.publishStep(runID, node.ID, model.StatusFailed, node.Title+" · rejected")
 	return model.StatusFailed
+}
+
+// maxQuestionsPerStep is a hard limit on questions one step execution may ask,
+// on top of the step's own max_questions.
+const maxQuestionsPerStep = 5
+
+// DecisionAnswered delivers the person's answer to a step that asked a question.
+const DecisionAnswered = "answered"
+
+// waitAnswer pauses the run on a step's question until the person answers (or
+// stops the run). The answer is added to the step's answers_for_<node> memory,
+// so the step can run again with it. It returns ok=false with the step's final
+// status when the run should not continue (canceled, or stopped).
+func (e *Engine) waitAnswer(ctx context.Context, runID string, node model.Node, res components.Result) (model.Status, bool) {
+	ch := make(chan Decision, 1)
+	e.mu.Lock()
+	e.approvals[key(runID, node.ID)] = ch
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(e.approvals, key(runID, node.ID))
+		e.mu.Unlock()
+	}()
+
+	q, _ := res.Output["question"].(string)
+	snap, _, _ := e.store.MutateRun(runID, func(r *model.Run) { r.Status = model.StatusWaiting })
+	e.setStep(runID, node.ID, model.StatusWaiting, func(s *model.StepRun) {
+		s.Output = map[string]any{"kind": "question"}
+		for k, v := range res.Output {
+			s.Output[k] = v
+		}
+		s.Logs = res.Logs
+	})
+	e.publish(model.Event{Type: "run.waiting", RunID: runID, NodeID: node.ID,
+		Status: model.StatusWaiting, Level: "info",
+		Message: fmt.Sprintf("%s · has a question", node.Title),
+		Detail:  q, Run: &snap})
+
+	var d Decision
+	select {
+	case d = <-ch:
+	case <-ctx.Done():
+		return e.finishCanceled(runID, node), false
+	}
+	e.store.MutateRun(runID, func(r *model.Run) { r.Status = model.StatusRunning }) //nolint:errcheck
+	if d.Decision == "rejected" {
+		end := time.Now()
+		e.setStep(runID, node.ID, model.StatusFailed, func(s *model.StepRun) {
+			s.EndedAt = &end
+			s.Output = map[string]any{"question": q, "decision": "stopped"}
+			s.Logs = append(res.Logs, "stopped by a person instead of answering")
+		})
+		e.publishStep(runID, node.ID, model.StatusFailed, node.Title+" · stopped instead of answering")
+		return model.StatusFailed, false
+	}
+	answer := strings.TrimSpace(d.Feedback)
+	if answer == "" {
+		answer = "No preference. Use your best judgment and say what you chose."
+	}
+	e.store.MutateRun(runID, func(r *model.Run) { //nolint:errcheck
+		if r.Memory == nil {
+			r.Memory = map[string]any{}
+		}
+		prev, _ := r.Memory["answers_for_"+node.ID].([]any)
+		r.Memory["answers_for_"+node.ID] = append(append([]any{}, prev...), map[string]any{"question": q, "answer": answer})
+	})
+	e.setStep(runID, node.ID, model.StatusRunning, func(s *model.StepRun) {
+		s.Output = map[string]any{"question": q, "answer": answer}
+	})
+	e.publish(model.Event{Type: "step.updated", RunID: runID, NodeID: node.ID,
+		Status: model.StatusRunning, Level: "run", Step: e.stepSnap(runID, node.ID),
+		Message: fmt.Sprintf("%s · answered: %s", node.Title, answer)})
+	return model.StatusRunning, true
 }
 
 // --- helpers ---

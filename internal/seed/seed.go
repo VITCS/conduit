@@ -183,7 +183,7 @@ func FactoryWorkflow() model.Workflow {
 		// Rev 4 reviews the code before it is pushed: Apply Changes prepares the change
 		// (push: false), a Review Diff gate shows it, and Push Branch commits exactly
 		// what was approved. Rev 3 added "send back with feedback" at the gates.
-		Rev: 5,
+		Rev: 6,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "webhook", Kind: model.KindTrigger, Title: "Ticket Event", X: 40, Y: 300,
 				Config: []model.Field{f("on", "webhook", "jira / notion / manual run"), f("hook", "webhook", "POST /api/hooks/wf_factory?token=…")}},
@@ -229,6 +229,7 @@ func FactoryWorkflow() model.Workflow {
 					f("provider", "agent", "${var:llm_provider}"),
 					f("model", "agent", "${var:llm_model}"),
 					f("tier", "gauge", "fast"),
+					f("ask", "agent", "false"),
 					f("api_key", "key", "${secret:llm_key}"),
 					f("output", "db", "review"),
 					f("prompt", "file", "Review this plan and implementation for correctness and risk. State a merge-confidence (high/medium/low) and any blockers.\n\nPLAN:\n${memory.plan}\n\nIMPLEMENTATION:\n${memory.implementation}"),
