@@ -16,8 +16,8 @@ when they autoplay muted.
 |---|---|
 | 0–4 s | Hook: a backlog of tickets, and the question "what if each became a reviewed PR?" |
 | 4–9 s | Brand: "Tickets in. Reviewed pull requests out." |
-| 9–18 s | A sample AI Factory run around the hub: ticket → triage → two approvals → branch → CI → PR |
-| 18–24 s | The approval gate: approving the exact file changes, then CI checks and the PR |
+| 9–18 s | A sample AI Factory run around the hub: ticket → triage → approve the plan → approve the files → review the diff → branch → CI → PR |
+| 18–24 s | The diff review: the actual code before it is pushed, Approve & push, then CI checks and the PR |
 | 24–29 s | Getting started in three steps |
 | 29–32 s | Built-in integrations |
 | 32–35 s | Call to action: open source, self-hosted, MIT, `github.com/VITCS/conduit` |

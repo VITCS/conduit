@@ -75,6 +75,12 @@
     border: 1px solid rgba(251,191,36,.6); background: linear-gradient(180deg, rgba(251,191,36,.08), rgba(15,21,34,.95)); box-shadow: 0 40px 100px rgba(0,0,0,.6); }
   .gate h3 { display: flex; align-items: center; gap: 14px; font-size: 34px; font-weight: 650; color: var(--warn); }
   .gate .t { margin-top: 14px; font-size: 24px; color: var(--muted); } .gate .t b { font-family: var(--mono); color: var(--fg); font-size: 21px; margin-right: 10px; }
+  .dl { margin-top: 22px; padding: 12px 12px; border-radius: 16px; border: 1px solid var(--line2); background: rgba(8,11,18,.75);
+    font-family: var(--mono); font-size: 17px; line-height: 1.6; }
+  .dl div { white-space: pre; overflow: hidden; text-overflow: ellipsis; color: var(--muted); padding: 0 8px; border-radius: 6px; }
+  .dl .f { color: var(--fg); font-weight: 600; margin-top: 6px; } .dl .f:first-child { margin-top: 0; }
+  .dl .f em { font-style: normal; font-size: 13px; color: var(--ok); border: 1px solid rgba(52,211,153,.45); border-radius: 999px; padding: 1px 8px; margin-left: 8px; }
+  .dl .a { color: #7eecc4; background: rgba(52,211,153,.10); }
   .files { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; }
   .files div { display: flex; align-items: baseline; gap: 16px; font-size: 22px; }
   .files em { font-style: normal; font-family: var(--mono); font-size: 16px; padding: 3px 10px; border-radius: 8px; color: var(--cyan); border: 1px solid rgba(34,211,238,.45); }
@@ -206,7 +212,7 @@ const NODES = [
   { id: "jira", label: "Jira", sub: "ticket source", x: 205, y: 790, tone: "#60A5FA", icon: "ticket" },
   { id: "issues", label: "GitHub Issues", sub: "ticket source", x: 260, y: 525, tone: "#94A3B8", icon: "issue" },
   { id: "model", label: "AI model", sub: "plan · code · review", x: 540, y: 440, tone: "#A78BFA", icon: "bot" },
-  { id: "you", label: "You", sub: "2 approval gates", x: 840, y: 525, tone: "#FBBF24", icon: "user" },
+  { id: "you", label: "You", sub: "3 approval gates", x: 840, y: 525, tone: "#FBBF24", icon: "user" },
   { id: "repo", label: "Git branch", sub: "pushed via API", x: 870, y: 790, tone: "#22D3EE", icon: "branch" },
   { id: "ci", label: "CI checks", sub: "verified", x: 840, y: 1055, tone: "#34D399", icon: "shield" },
   { id: "pr", label: "Pull request", sub: "opened", x: 540, y: 1140, tone: "#34D399", icon: "pr" },
@@ -246,17 +252,19 @@ const STEPS = [
   { node: "jira", dir: "in", tag: "intake", text: "ENG-482 from Jira", color: "#22D3EE" },
   { node: "model", tag: "triage", text: "confidence 86", color: "#8B5CF6", bubble: "Triage + planning…" },
   { node: "you", tag: "gate 1", text: "plan approved", color: "#FBBF24", bubble: "Waiting for your approval…" },
-  { node: "model", tag: "code", text: "plan · 4 files", color: "#8B5CF6", bubble: "Coding agent writing files…" },
+  { node: "model", tag: "code", text: "plan · 4 files", color: "#8B5CF6", bubble: "Planning the file changes…" },
   { node: "you", tag: "gate 2", text: "files approved", color: "#FBBF24", bubble: "Waiting for your approval…" },
-  { node: "repo", tag: "apply", text: "branch pushed", color: "#22D3EE" },
+  { node: "model", tag: "write", text: "diff ready", color: "#8B5CF6", bubble: "Coding agent writing files…" },
+  { node: "you", tag: "gate 3", text: "diff approved", color: "#FBBF24", bubble: "Waiting for your code review…" },
+  { node: "repo", tag: "push", text: "branch pushed", color: "#22D3EE" },
   { node: "ci", tag: "verify", text: "CI checks passed", color: "#34D399" },
   { node: "pr", tag: "ship", text: "PR #129 opened", color: "#34D399" },
 ];
-const logOrder = [0, 4, 1, 5, 2, 6, 3, 7];
+const logOrder = [0, 5, 1, 6, 2, 7, 3, 8, 4, 9];
 const logLines = logOrder.map((i) => STEPS[i]).map((s) => { const l = el("div", "l", `<i>${s.tag}</i><span>${s.text}</span>`, log); if (s.tag === "ship") l.style.color = "#34D399"; return l; });
 const toast = el("div", "toast", `<span style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:rgba(52,211,153,.18);color:#34D399">${ICON.checkG}</span>Pull request ready for review`, s3);
 css(toast, { left: "76px", top: "1578px", width: "928px", fontSize: "28px", padding: "18px 26px" });
-const s3cap = el("div", "caption", "<b>Agents triage, plan and code.</b><span>You approve twice.</span>", s3);
+const s3cap = el("div", "caption", "<b>Agents triage, plan and code.</b><span>You approve plan, files and diff.</span>", s3);
 
 /* =========================================================================
    S4 — the approval gate (18.0 – 24.0)
@@ -264,21 +272,26 @@ const s3cap = el("div", "caption", "<b>Agents triage, plan and code.</b><span>Yo
 const s4 = el("div", "scene");
 const s4k = el("div", "abs", '<span class="kicker">Human in the loop</span>', s4); css(s4k, { left: 0, right: 0, top: "430px", textAlign: "center" });
 const gate = el("div", "gate", `
-  <h3>${ICON.hand} Approve these file changes?</h3>
-  <p class="t"><b>ENG-482</b>Add SEO metadata, sitemap and robots.txt</p>
-  <div class="files">
-    <div><em>modify</em><code>app/layout.tsx</code><span>export site metadata</span></div>
-    <div><em class="c">create</em><code>app/sitemap.ts</code><span>generate sitemap.xml</span></div>
-    <div><em class="c">create</em><code>app/robots.ts</code><span>generate robots.txt</span></div>
-    <div><em class="c">create</em><code>lib/site.ts</code><span>shared SEO constants</span></div>
+  <h3>${ICON.hand} Review the code before it's pushed</h3>
+  <p class="t"><b>ENG-482</b>4 files · <span style="color:var(--ok)">+31</span> <span style="color:var(--bad)">−2</span> · not pushed yet</p>
+  <div class="dl">
+    <div class="f">app/layout.tsx</div>
+    <div class="a">+ import type { Metadata } from "next";</div>
+    <div>&nbsp; import "./globals.css";</div>
+    <div class="a">+ import { site } from "@/lib/site";</div>
+    <div class="a">+ export const metadata: Metadata = { title: site.name, … };</div>
+    <div class="f">app/sitemap.ts <em>new</em></div>
+    <div class="a">+ export default function sitemap() {</div>
+    <div class="a">+   return routes.map((p) => ({ url: site.url + p }));</div>
+    <div class="a">+ }</div>
   </div>
-  <div class="gb"><button class="ap">✓ Approve</button><button>✕ Reject</button></div>
-  <div class="res">${ICON.checkG} Approved — branch conduit/ENG-482 pushed</div>`, s4);
+  <div class="gb"><button class="ap">✓ Approve &amp; push</button><button>↩ Send back</button><button>✕ Reject</button></div>
+  <div class="res">${ICON.checkG} Approved — pushed exactly this change to conduit/ENG-482</div>`, s4);
 const gateBtn = gate.querySelector(".ap"), gateBtns = gate.querySelector(".gb"), gateRes = gate.querySelector(".res");
 const checks = el("div", "checks", ["build", "test", "lint"].map((c) => `<div class="chk"><i></i>${c}</div>`).join("") + `<div class="chk" style="color:var(--ok);border-color:rgba(52,211,153,.5)">→ PR #129 opened</div>`, s4);
 const chkEls = [...checks.children];
 const cursor = el("div", "cursor", `<svg viewBox="0 0 24 24" width="44" height="44"><path d="M4 2l16 9-7 2-3 7z" fill="#fff" stroke="#080b12" stroke-width="1.5" stroke-linejoin="round"/></svg>`, s4);
-const s4cap = el("div", "caption", "<b>Nothing reaches your repo until you approve it.</b><span>CI must pass.</span>", s4);
+const s4cap = el("div", "caption", "<b>Nothing reaches your repo until you approve the code.</b><span>CI must pass.</span>", s4);
 
 /* =========================================================================
    S5 — three steps (24.0 – 28.8)
@@ -292,8 +305,8 @@ const STEP_CARDS = [
     art: `<div class="row">${ICON.key}github_token<em>••••••</em></div><div class="row">${ICON.key}llm_key<em>••••••</em></div><div class="row" style="color:var(--muted)">repo: your-org/your-repo</div>` },
   { n: "02", h: "Give it a ticket", p: "A board task, or tickets from Jira, Notion or GitHub issues.",
     art: `<div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${["Board task", "Jira", "Notion", "GitHub issue"].map((x) => `<span class="pill">${ICON.checkG.replace('width="26" height="26"', 'width="18" height="18"')}${x}</span>`).join("")}</div>` },
-  { n: "03", h: "Approve, then review the PR", p: "You approve the plan and the exact files. CI verifies it.",
-    art: ["Plan approved", "File changes approved", "CI checks passed"].map((x) => `<div class="okrow"><i>${ICON.check.replace("<svg", '<svg width="15" height="15"')}</i>${x}</div>`).join("") },
+  { n: "03", h: "Approve, then review the PR", p: "You approve the plan, the files and the final diff. CI verifies it.",
+    art: ["Plan approved", "Files approved", "Diff approved", "CI checks passed"].map((x) => `<div class="okrow"><i>${ICON.check.replace("<svg", '<svg width="15" height="15"')}</i>${x}</div>`).join("") },
 ];
 const stepEls = STEP_CARDS.map((c, i) => {
   const e = el("div", "step", `<div class="art">${c.art}</div><div><div class="n">${c.n}</div><h3>${c.h}</h3><p>${c.p}</p></div>`, s5);
@@ -366,7 +379,7 @@ window.render = function render(t) {
   l = vis(s3, "s3", .5, .45);
   const sIn = easeOut(prog(l, 0, .7));
   css(s3p, { opacity: sIn, transform: `scale(${lerp(.97, 1, sIn)})` });
-  const T0 = .9, STEP = .98;
+  const T0 = .9, STEP = .78;
   const k = Math.floor((l - T0) / STEP);           // current step index
   const within = (l - T0) / STEP - k;              // 0..1 inside it
   const done = l >= T0 + STEPS.length * STEP;
@@ -392,7 +405,7 @@ window.render = function render(t) {
   const shown = done ? STEPS.length : clamp(k + (within > .55 ? 1 : 0), 0, STEPS.length);
   logLines.forEach((ln, j) => css(ln, { opacity: logOrder[j] < shown ? 1 : 0 }));
   const gatesDone = STEPS.slice(0, shown).filter((s) => s.node === "you").length;
-  cGates.querySelector("b").textContent = `${gatesDone} of 2 approvals`;
+  cGates.querySelector("b").textContent = `${gatesDone} of 3 approvals`;
   cTicket.querySelector("small").textContent = shown >= 2 ? "confidence 86" : "sample ticket";
   rise(cTicket, prog(l, .4, .6)); rise(cGates, prog(l, .55, .6)); rise(log, prog(l, .5, .6));
   const td = prog(l, T0 + STEPS.length * STEP + .05, .5);

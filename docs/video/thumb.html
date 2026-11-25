@@ -47,7 +47,7 @@ const t = document.getElementById("t");
 t.style.width = W + "px"; t.style.height = H + "px";
 const mark = (s) => `<svg width="${s}" height="${s}" viewBox="0 0 32 32" fill="none"><defs><linearGradient id="g" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop stop-color="#8B5CF6"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="9" fill="url(#g)" opacity=".16"/><rect x="1" y="1" width="30" height="30" rx="9" stroke="url(#g)" stroke-width="1.4"/><path d="M8 16h5.5c3.6 0 3.6-6.5 7.2-6.5M13.5 16c3.6 0 3.6 6.5 7.2 6.5" stroke="url(#g)" stroke-width="2.3" stroke-linecap="round"/><circle cx="22.6" cy="9.5" r="2.3" fill="#22D3EE"/><circle cx="22.6" cy="22.5" r="2.3" fill="#8B5CF6"/></svg>`;
 const tick = (s) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="#04130d" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
-const chips = (fs, ic) => ["2 human approvals", "CI must pass", "Open source · MIT"]
+const chips = (fs, ic) => ["3 human approvals", "CI must pass", "Open source · MIT"]
   .map((c) => `<span class="chip" style="font-size:${fs}px;padding:${fs * .55}px ${fs * .9}px ${fs * .55}px ${fs * .6}px"><i style="width:${ic}px;height:${ic}px">${tick(ic * .62)}</i>${c}</span>`).join("");
 
 window.build = function (runImg) {
