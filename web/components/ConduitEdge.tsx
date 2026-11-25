@@ -16,7 +16,8 @@ export function ConduitEdge(props: EdgeProps) {
   const ed = data as EdgeData | undefined;
   const label = (ed?.label ?? "").toString();
   const retry = typeof ed?.maxAttempts === "number" && ed.maxAttempts > 0 ? ed.maxAttempts : 0;
-  const display = retry ? `retry ×${retry}` : label;
+  const sentBack = label === "sent_back";
+  const display = sentBack ? `send back ×${retry || 1}` : retry ? `retry ×${retry}` : label;
 
   const [path, labelX, labelY] = getBezierPath({
     sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
@@ -50,7 +51,7 @@ export function ConduitEdge(props: EdgeProps) {
               </button>
             </div>
           ) : display ? (
-            <span className={`elabel ${retry ? "retry" : labelClass(label)}`}>{display}</span>
+            <span className={`elabel ${sentBack ? "back" : retry ? "retry" : labelClass(label)}`}>{display}</span>
           ) : editMode ? (
             <span className="elabel none">any</span>
           ) : null}

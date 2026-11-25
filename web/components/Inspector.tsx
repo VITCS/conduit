@@ -23,6 +23,8 @@ export function Inspector(props: {
   onChange: (patch: Partial<NodeData>) => void;
   onDelete: () => void;
   onApprove: (decision: "approved" | "rejected") => void;
+  /** Present when this gate can send the proposal back with feedback. */
+  onSendBack?: () => void;
   onRerun?: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -78,6 +80,7 @@ export function Inspector(props: {
               This run is held for approval from {data.config.find((f) => f.key === "approvers")?.value || "reviewers"}.
             </span>
             <button className="btn ok" onClick={() => props.onApprove("approved")}>Approve</button>
+            {props.onSendBack && <button className="btn" onClick={props.onSendBack}>Send back</button>}
             <button className="btn" onClick={() => props.onApprove("rejected")}>Reject</button>
           </div>
         )}

@@ -987,7 +987,8 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		NodeID   string `json:"node_id"`
-		Decision string `json:"decision"` // approved | rejected
+		Decision string `json:"decision"` // approved | rejected | sent_back
+		Feedback string `json:"feedback"` // required for sent_back: what should change
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -996,7 +997,22 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 	if body.Decision == "" {
 		body.Decision = "approved"
 	}
-	if !s.Engine.Resolve(r.PathValue("id"), body.NodeID, body.Decision) {
+	switch body.Decision {
+	case "approved", "rejected":
+	case engine.DecisionSentBack:
+		if strings.TrimSpace(body.Feedback) == "" {
+			writeErr(w, http.StatusBadRequest, "say what should change when sending back")
+			return
+		}
+		if len(body.Feedback) > 8000 {
+			writeErr(w, http.StatusBadRequest, "feedback is too long (8000 characters max)")
+			return
+		}
+	default:
+		writeErr(w, http.StatusBadRequest, "decision must be approved, rejected or sent_back")
+		return
+	}
+	if !s.Engine.ResolveWith(r.PathValue("id"), body.NodeID, engine.Decision{Decision: body.Decision, Feedback: body.Feedback}) {
 		writeErr(w, http.StatusConflict, "no step is awaiting approval")
 		return
 	}

@@ -917,3 +917,15 @@ input, select, textarea { font-family: inherit; }
 .ca-warn svg, .ca-result svg { flex: 0 0 auto; margin-top: 2px; }
 .spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 640px) { .ca .ca-choice { grid-template-columns: 1fr; } }
+
+/* send back */
+.approval-banner .ab-last { font-size: 12.5px; color: var(--muted); padding-left: 42px; overflow-wrap: anywhere; }
+.approval-banner .ab-last b { color: var(--wait-ink); font-weight: 600; }
+.dlg.sb { max-width: 520px; }
+.react-flow__edge.sent_back .react-flow__edge-path { stroke-dasharray: 5 6; }
+.elabel.back { color: var(--wait-ink); background: color-mix(in srgb, var(--wait) 14%, var(--surface)); border-color: color-mix(in srgb, var(--wait) 35%, transparent); border-style: dashed; }
+
+/* settings: project context + long variable values */
+.pc-area { min-height: 260px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; }
+.secret-row .sval { min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-tabs { flex-wrap: wrap; }

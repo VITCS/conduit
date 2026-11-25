@@ -125,6 +125,10 @@ Ticket (board task / Jira / Notion / webhook)
 | Secret | `github_token` | a token with **contents: write** and **pull requests: write** |
 | Secret | `llm_key` | your model provider's API key |
 
+Next, **Settings → Project context**: describe the stack, the build and test
+commands, conventions and anything off-limits. Every agent reads it, so plans and
+code follow your project instead of generic defaults.
+
 Then open **Settings → Coding agent** and choose how the code gets written:
 **Claude Code** (recommended — it reads your whole repository, edits files in a real
 checkout and can run your tests; signs in with your **Claude subscription** token from
@@ -146,7 +150,8 @@ lands in **Backlog**; click **Start**.
 *yet to start* to *in progress* to *done* live.
 
 - At **Human Approval**, a banner appears with what the agents suggested: the plan
-  and the review. Approve it, or reject to stop the run.
+  and the review. **Approve** it, **Send back** with a note on what to change (the
+  plan is redone with your note and you review it again), or **Reject** to stop the run.
 - At **Approve Changes**, you see the exact files the coding agent will create or
   modify. Nothing is written to your repository before you approve this.
 - **Apply Changes** pushes a branch; **Verify Checks** waits for your repository's
@@ -172,10 +177,14 @@ confidence threshold (README, *Run it — two ways*).
 
 ## 5. Run control: approve, skip, re-run, cancel
 
-- **Approve / Reject.** When a run reaches an approval gate, a **persistent banner**
-  appears across the top of the app with *Approve / Reject / View step* and what the
-  agent suggested, plus a best-effort desktop notification, so a held run is hard
-  to miss. (Allow notifications when your browser asks.)
+- **Approve / Send back / Reject.** When a run reaches an approval gate, a
+  **persistent banner** appears across the top of the app with what the agent
+  suggested, plus a best-effort desktop notification, so a held run is hard to miss.
+  (Allow notifications when your browser asks.) **Send back** asks what should
+  change; the step that made the proposal redoes it with your note and its previous
+  answer, and the banner returns with *Your last feedback* so you can check it was
+  addressed. Each gate allows 3 send-backs; after that, sending back counts as a
+  rejection.
 - **Skip a step.** Each node has a **skip** switch. A skipped step is bypassed on
   the next run — handy for *Verify Checks (CI)* on a repository without CI, or for
   a token that cannot read check-runs. The change saves immediately.

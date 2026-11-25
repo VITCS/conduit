@@ -140,7 +140,8 @@ func execGitHubReview(n model.Node, run *model.Run) Result {
 		}
 	}
 
-	prompt := buildReviewPrompt(owner+"/"+repo, meta.Title, meta.User.Login, meta.Additions, meta.Deletions, meta.ChangedFiles, diff, truncated)
+	prompt := contextBlock(project) + buildReviewPrompt(owner+"/"+repo, meta.Title, meta.User.Login, meta.Additions, meta.Deletions, meta.ChangedFiles, diff, truncated) +
+		reviewerFeedback(run, n.ID, "review")
 	maxTokens := 4096
 	if v, e := strconv.Atoi(n.Field("max_tokens")); e == nil && v > 0 {
 		maxTokens = v

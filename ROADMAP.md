@@ -180,6 +180,11 @@ It is now a real pipeline that opens real pull requests:
   allowed commands such as the tests), signed in with the user's Claude subscription
   token or an Anthropic API key. Conduit pushes only after verifying that just the
   approved files changed. The direct-API engine remains the default.
+- **Send back with feedback** at every approval gate: the proposal goes back to the
+  step that made it with the reviewer's note (bounded to 3 per gate).
+- **Project context**: a per-project brief (stack, commands, conventions,
+  off-limits) added to every agent's instructions, plus the repo's CLAUDE.md /
+  AGENTS.md for the direct-API coding engine.
 - **Run control**: skip any step with a checkbox on its node, re-run a failed run
   from the stage that failed, cancel at any point, and watch status live.
 - **Per-user workspaces**: everyone who signs in gets their own copy of the

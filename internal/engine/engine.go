@@ -27,7 +27,7 @@ type Engine struct {
 	store store.Store
 
 	mu          sync.Mutex
-	approvals   map[string]chan string        // runID|nodeID -> decision channel
+	approvals   map[string]chan Decision      // runID|nodeID -> decision channel
 	cancels     map[string]context.CancelFunc // runID -> cancel (active runs only)
 	canceledIDs map[string]bool               // runID -> canceled before/at claim time
 
@@ -40,7 +40,7 @@ type Engine struct {
 func New(s store.Store) *Engine {
 	return &Engine{
 		store:        s,
-		approvals:    map[string]chan string{},
+		approvals:    map[string]chan Decision{},
 		cancels:      map[string]context.CancelFunc{},
 		canceledIDs:  map[string]bool{},
 		StepDelay:    650 * time.Millisecond,
@@ -333,9 +333,30 @@ func descendants(wf model.Workflow, start string) map[string]bool {
 	return seen
 }
 
+// Decision is a person's answer at an approval gate.
+type Decision struct {
+	// Decision is "approved", "rejected" or "sent_back".
+	Decision string
+	// Feedback is what should change (required for "sent_back").
+	Feedback string
+}
+
+// DecisionSentBack sends the proposal back to the step that produced it, with
+// feedback, along the gate's bounded "sent_back" edge.
+const DecisionSentBack = "sent_back"
+
+// statusSentBack is the internal outcome of a gate whose proposal was sent back.
+// It never reaches a step record or edge matching: the scheduler loops instead.
+const statusSentBack model.Status = "sent_back"
+
 // Resolve delivers a human decision ("approved"/"rejected") to a waiting
 // approval node. Returns false if nothing is waiting on that node.
 func (e *Engine) Resolve(runID, nodeID, decision string) bool {
+	return e.ResolveWith(runID, nodeID, Decision{Decision: decision})
+}
+
+// ResolveWith delivers a decision (optionally with feedback) to a waiting gate.
+func (e *Engine) ResolveWith(runID, nodeID string, d Decision) bool {
 	e.mu.Lock()
 	ch, ok := e.approvals[key(runID, nodeID)]
 	e.mu.Unlock()
@@ -343,11 +364,26 @@ func (e *Engine) Resolve(runID, nodeID, decision string) bool {
 		return false
 	}
 	select {
-	case ch <- decision:
+	case ch <- d:
 		return true
 	default:
 		return false
 	}
+}
+
+// sendBackEdge returns the gate's bounded "sent_back" edge in the run's workflow
+// and how many send-backs remain on it, or ok=false if the gate has none.
+func (e *Engine) sendBackEdge(run model.Run, nodeID string) (model.Edge, int, bool) {
+	wf, ok, _ := e.store.GetWorkflow(run.WorkflowID)
+	if !ok {
+		return model.Edge{}, 0, false
+	}
+	for _, ed := range wf.Edges {
+		if ed.From == nodeID && ed.Label == DecisionSentBack && ed.MaxAttempts > 0 {
+			return ed, ed.MaxAttempts - run.Loops[ed.From+"\x00"+ed.To], true
+		}
+	}
+	return model.Edge{}, 0, false
 }
 
 func key(runID, nodeID string) string { return runID + "|" + nodeID }
@@ -442,6 +478,14 @@ func (e *Engine) execute(ctx context.Context, runID string, wf model.Workflow) {
 			// memory) instead of being treated as a terminal failure.
 			if outcome == model.StatusFailed && e.tryRetry(runID, node, out[id], loopBodies, &mu, started, activate) {
 				return
+			}
+			// Sent back at an approval gate: loop to the step that made the proposal,
+			// carrying the reviewer's feedback. Out of send-backs, it counts as rejected.
+			if outcome == statusSentBack {
+				if e.trySendBack(runID, node, out[id], loopBodies, &mu, started, activate) {
+					return
+				}
+				outcome = e.sendBackExhausted(runID, node)
 			}
 			if outcome == model.StatusFailed {
 				mu.Lock()
@@ -618,6 +662,83 @@ func (e *Engine) tryRetry(runID string, node model.Node, edges []model.Edge, loo
 		return true
 	}
 	return false
+}
+
+// trySendBack loops a sent-back gate to its "sent_back" edge target: it records
+// the reviewer's feedback in run memory (feedback_for_<target>, review_feedback,
+// feedback_history), spends one send-back from the edge's budget, resets the loop
+// body and re-activates the target. Returns false with no edge or no budget left.
+func (e *Engine) trySendBack(runID string, node model.Node, edges []model.Edge, loopBodies map[string][]string, mu *sync.Mutex, started map[string]bool, activate func(string)) bool {
+	for _, ed := range edges {
+		if ed.Label != DecisionSentBack || ed.MaxAttempts <= 0 {
+			continue
+		}
+		k := ed.From + "\x00" + ed.To
+		attempts := -1
+		e.store.MutateRun(runID, func(r *model.Run) {
+			if r.Loops == nil {
+				r.Loops = map[string]int{}
+			}
+			if r.Loops[k] >= ed.MaxAttempts {
+				return
+			}
+			r.Loops[k]++
+			attempts = r.Loops[k]
+			fb := ""
+			if st := r.Steps[node.ID]; st != nil {
+				fb, _ = st.Output["feedback"].(string)
+			}
+			if r.Memory == nil {
+				r.Memory = map[string]any{}
+			}
+			r.Memory["feedback_for_"+ed.To] = fb
+			r.Memory["review_feedback"] = fb
+			hist, _ := r.Memory["feedback_history"].([]any)
+			r.Memory["feedback_history"] = append(hist, map[string]any{
+				"gate": node.Title, "to": ed.To, "feedback": fb, "attempt": attempts,
+				"at": time.Now().UTC().Format(time.RFC3339)})
+		}) //nolint:errcheck
+		if attempts < 0 {
+			continue
+		}
+		body := loopBodies[k]
+		mu.Lock()
+		for _, nid := range body {
+			started[nid] = false
+		}
+		mu.Unlock()
+		e.store.MutateRun(runID, func(r *model.Run) {
+			for _, nid := range body {
+				if st := r.Steps[nid]; st != nil {
+					st.Status = model.StatusPending
+					st.StartedAt = nil
+					st.EndedAt = nil
+				}
+			}
+		}) //nolint:errcheck
+		e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "run",
+			Message: fmt.Sprintf("%s · sent back %d/%d — re-running from %q with the feedback", node.Title, attempts, ed.MaxAttempts, ed.To)})
+		activate(ed.To)
+		return true
+	}
+	return false
+}
+
+// sendBackExhausted turns a send-back with no budget left into a rejection, so
+// the run follows the gate's failure path instead of looping forever.
+func (e *Engine) sendBackExhausted(runID string, node model.Node) model.Status {
+	end := time.Now()
+	e.setStep(runID, node.ID, model.StatusFailed, func(s *model.StepRun) {
+		s.EndedAt = &end
+		if s.Output == nil {
+			s.Output = map[string]any{}
+		}
+		s.Output["decision"] = "rejected"
+		s.Output["reason"] = "send-back limit reached"
+		s.Logs = append(s.Logs, "send-back limit reached — treated as rejected")
+	})
+	e.publishStep(runID, node.ID, model.StatusFailed, node.Title+" · send-back limit reached — rejected")
+	return model.StatusFailed
 }
 
 // computeLoopBodies maps each retry back-edge ("from\x00to") to the nodes on a
@@ -848,7 +969,7 @@ func (e *Engine) finishCanceled(runID string, node model.Node) model.Status {
 }
 
 func (e *Engine) runApproval(ctx context.Context, runID string, node model.Node) model.Status {
-	ch := make(chan string, 1)
+	ch := make(chan Decision, 1)
 	e.mu.Lock()
 	e.approvals[key(runID, node.ID)] = ch
 	e.mu.Unlock()
@@ -866,10 +987,16 @@ func (e *Engine) runApproval(ctx context.Context, runID string, node model.Node)
 		summaryTmpl = node.Field("message")
 	}
 	detail := strings.TrimSpace(components.Render(&snap, summaryTmpl))
+	_, left, canSendBack := e.sendBackEdge(snap, node.ID)
 	e.setStep(runID, node.ID, model.StatusWaiting, func(s *model.StepRun) {
 		s.Output = map[string]any{"approvers": node.Field("approvers")}
 		if detail != "" {
 			s.Output["summary"] = detail
+		}
+		// Tell the UI whether "Send back" is available here, and how often.
+		if canSendBack && left > 0 {
+			s.Output["send_back"] = true
+			s.Output["send_backs_left"] = left
 		}
 	})
 	e.publish(model.Event{Type: "run.waiting", RunID: runID, NodeID: node.ID,
@@ -878,16 +1005,28 @@ func (e *Engine) runApproval(ctx context.Context, runID string, node model.Node)
 		Detail:  detail,
 		Run:     &snap})
 
-	var decision string
+	var d Decision
 	select {
-	case decision = <-ch:
+	case d = <-ch:
 	case <-ctx.Done():
 		return e.finishCanceled(runID, node)
 	}
+	decision := d.Decision
 
 	e.store.MutateRun(runID, func(r *model.Run) { r.Status = model.StatusRunning }) //nolint:errcheck
 
 	end := time.Now()
+	if decision == DecisionSentBack {
+		fb := strings.TrimSpace(d.Feedback)
+		e.setStep(runID, node.ID, model.StatusSuccess, func(s *model.StepRun) {
+			s.EndedAt = &end
+			s.Output = map[string]any{"decision": DecisionSentBack, "feedback": fb, "approvers": node.Field("approvers")}
+			s.Logs = []string{"sent back: " + fb}
+		})
+		e.publish(model.Event{Type: "log", RunID: runID, NodeID: node.ID, Level: "info",
+			Message: fmt.Sprintf("%s · sent back with feedback: %s", node.Title, fb)})
+		return statusSentBack
+	}
 	if decision == "approved" {
 		e.setStep(runID, node.ID, model.StatusSuccess, func(s *model.StepRun) {
 			s.EndedAt = &end

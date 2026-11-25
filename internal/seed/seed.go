@@ -73,7 +73,8 @@ func GitHubWorkflow() model.Workflow {
 		// Rev 3 makes review/merge steps read PR identity from the Agent Review's
 		// run memory and shows the review text at the human approval gate.
 		// Rev 2 raised the Agent Review output cap from the old 1024-token default.
-		Rev: 3,
+		// Rev 4 adds "send back with feedback" at the Human Approval gate.
+		Rev: 4,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "github", Kind: model.KindTrigger, Title: "GitHub Event", X: 40, Y: 340,
 				Config: []model.Field{f("on", "github", "pull_request / manual open"), f("hook", "webhook", "POST /api/hooks/wf_github?token=…")}},
@@ -151,6 +152,8 @@ func GitHubWorkflow() model.Workflow {
 			{From: "scan", To: "sf", Label: "failed"},
 			{From: "appr", To: "cmt", Label: "approved"},
 			{From: "appr", To: "sf", Label: "failed"},
+			// Send the agent's review back with feedback (e.g. "focus on the auth change").
+			{From: "appr", To: "rev", Label: "sent_back", MaxAttempts: 3},
 			{From: "cmt", To: "merge", Label: "success"},
 		},
 	}
@@ -177,7 +180,8 @@ func FactoryWorkflow() model.Workflow {
 		// github_checks → github_pr pipeline. Rev 1 (and the pre-versioning legacy
 		// "Issue → Reviewed PR" demo) was fully simulated — see SyncBuiltins, which
 		// upgrades an un-edited legacy copy to this definition on startup.
-		Rev: 2,
+		// Rev 3 adds "send back with feedback" at both approval gates.
+		Rev: 3,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "webhook", Kind: model.KindTrigger, Title: "Ticket Event", X: 40, Y: 300,
 				Config: []model.Field{f("on", "webhook", "jira / notion / manual run"), f("hook", "webhook", "POST /api/hooks/wf_factory?token=…")}},
@@ -314,10 +318,14 @@ func FactoryWorkflow() model.Workflow {
 			{From: "review", To: "appr", Label: "success"},
 			{From: "appr", To: "cplan", Label: "approved"},
 			{From: "appr", To: "fail", Label: "failed"},
+			// Send back with feedback: the plan is redone (and re-drafted, re-reviewed)
+			// with the reviewer's note, at most 3 times before it counts as rejected.
+			{From: "appr", To: "plan", Label: "sent_back", MaxAttempts: 3},
 			{From: "cplan", To: "appr2", Label: "success"},
 			{From: "cplan", To: "fail", Label: "failed"},
 			{From: "appr2", To: "apply", Label: "approved"},
 			{From: "appr2", To: "fail", Label: "failed"},
+			{From: "appr2", To: "cplan", Label: "sent_back", MaxAttempts: 3},
 			{From: "apply", To: "vchk", Label: "success"},
 			{From: "apply", To: "fail", Label: "failed"},
 			// Verify the pushed commit's CI before opening the PR. On failure, loop

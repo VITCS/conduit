@@ -19,7 +19,7 @@ var validKinds = map[string]bool{
 	model.KindStatus:  true,
 }
 
-var validLabels = map[string]bool{"": true, "success": true, "failed": true, "approved": true}
+var validLabels = map[string]bool{"": true, "success": true, "failed": true, "approved": true, "sent_back": true}
 
 // Workflow returns a list of human-readable problems. An empty slice means valid.
 func Workflow(wf model.Workflow) []string {
@@ -31,6 +31,7 @@ func Workflow(wf model.Workflow) []string {
 
 	// Nodes: unique non-empty IDs, valid kind, known component type.
 	ids := make(map[string]bool, len(wf.Nodes))
+	types := make(map[string]string, len(wf.Nodes))
 	for i, n := range wf.Nodes {
 		if strings.TrimSpace(n.ID) == "" {
 			errs = append(errs, fmt.Sprintf("node #%d has an empty id", i+1))
@@ -41,6 +42,7 @@ func Workflow(wf model.Workflow) []string {
 			continue
 		}
 		ids[n.ID] = true
+		types[n.ID] = n.Type
 		if !validKinds[n.Kind] {
 			errs = append(errs, fmt.Sprintf("node %q has invalid kind %q", n.ID, n.Kind))
 		}
@@ -57,6 +59,9 @@ func Workflow(wf model.Workflow) []string {
 		}
 		if !ids[e.To] {
 			errs = append(errs, fmt.Sprintf("edge to unknown node %q", e.To))
+		}
+		if e.Label == "sent_back" && e.MaxAttempts == 0 {
+			errs = append(errs, fmt.Sprintf("send-back edge %s→%s needs max_attempts (how many times it may be sent back)", e.From, e.To))
 		}
 		if e.From == e.To {
 			errs = append(errs, fmt.Sprintf("edge from %q loops to itself", e.From))
@@ -83,8 +88,11 @@ func Workflow(wf model.Workflow) []string {
 		if e.MaxAttempts == 0 || !ids[e.From] || !ids[e.To] {
 			continue
 		}
-		if e.Label != "failed" {
-			errs = append(errs, fmt.Sprintf("retry edge %s→%s must have label \"failed\"", e.From, e.To))
+		if e.Label != "failed" && e.Label != "sent_back" {
+			errs = append(errs, fmt.Sprintf("retry edge %s→%s must have label \"failed\" or \"sent_back\"", e.From, e.To))
+		}
+		if e.Label == "sent_back" && types[e.From] != "approval" {
+			errs = append(errs, fmt.Sprintf("send-back edge %s→%s must start at an approval step", e.From, e.To))
 		}
 		if e.MaxAttempts < 1 || e.MaxAttempts > 10 {
 			errs = append(errs, fmt.Sprintf("retry edge %s→%s has max_attempts %d (must be 1–10)", e.From, e.To, e.MaxAttempts))

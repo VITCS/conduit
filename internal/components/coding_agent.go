@@ -35,6 +35,9 @@ type codingCfg struct {
 	ticket, ticketSummary, branchPrefix string
 	gh                                  ghClient
 	hasToken                            bool
+	// guidance is prepended to every coding prompt: the project context plus the
+	// repository's own CLAUDE.md / AGENTS.md (direct-API engine).
+	guidance string
 }
 
 // resolveCoding resolves the common config for a coding node. needToken fails the
@@ -85,7 +88,7 @@ func resolveCoding(n model.Node, run *model.Run, needToken bool) (codingCfg, fun
 
 // planChanges asks the model which files to create vs. modify, with details.
 func (c codingCfg) planChanges(task, notes string) ([]changeItem, *Result) {
-	prompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
+	prompt := c.guidance + fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
 Produce a CHANGE PLAN for the work below: the exact set of files to touch.
 Respond with ONLY a JSON array (no prose, no fences) of objects:
 [{"path":"relative/path.ext","action":"create"|"modify","details":"what changes and why"}]
@@ -157,7 +160,7 @@ func (c codingCfg) implementOneFile(item changeItem, current, task, feedback str
 	if details == "" {
 		details = "implement the change described by the task"
 	}
-	prompt := fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
+	prompt := c.guidance + fmt.Sprintf(`You are a senior software engineer in the repo %s/%s.
 %s the file %q.
 WHAT TO CHANGE: %s
 
@@ -262,7 +265,8 @@ func execCodingPlan(n model.Node, run *model.Run) Result {
 	if strings.TrimSpace(task) == "" || strings.Contains(task, "${memory.") {
 		return failCode("no plan to work from (set plan, e.g. ${memory.plan})")
 	}
-	items, r := cfg.planChanges(task, ex("implementation"))
+	cfg.guidance = contextBlock(runProject(run)) + cfg.repoGuidance(cfg.base)
+	items, r := cfg.planChanges(task, ex("implementation")+reviewerFeedback(run, n.ID, "change_plan"))
 	if r != nil {
 		return *r
 	}
@@ -294,6 +298,7 @@ func execCodingApply(n model.Node, run *model.Run) Result {
 	if perr != "" {
 		return failCode("could not read approved change plan: " + perr)
 	}
+	cfg.guidance = contextBlock(runProject(run)) + cfg.repoGuidance(cfg.base)
 	// On a recovery-loop retry, prior CI feedback (e.g. ${memory.checks_summary})
 	// is passed in via the `feedback` field so the re-run fixes what failed.
 	files, r := cfg.implementChanges(items, ex("plan"), ex("feedback"))

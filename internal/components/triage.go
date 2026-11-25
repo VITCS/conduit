@@ -74,6 +74,7 @@ TICKET:
 
 %s`, summary, desc)
 
+	prompt = contextBlock(project) + prompt
 	text, status, err := callLLM(provider, ex("base_url"), apiKey, ex("model"), prompt, 400)
 	if err != nil || status < 200 || status >= 300 {
 		s, l, r, m := heuristicScore(summary, desc)

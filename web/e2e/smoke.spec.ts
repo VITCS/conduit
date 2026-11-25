@@ -167,3 +167,67 @@ test("Settings → Coding agent switches the project to Claude Code and keeps th
   await page.locator(".set-tab", { hasText: "Variables" }).click();
   await expect(page.locator(".secret-list")).toContainText(/coding_engine\s*api/);
 });
+
+test("send back with feedback loops the run to the earlier step, then approve finishes it", async ({ page }) => {
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+  // Give the built-in Preview Environments gate a send-back edge to Health Check
+  // (restored afterwards so other tests see the shipped workflow).
+  const api = async (method: string, path: string, body?: unknown) =>
+    page.evaluate(async ({ method, path, body }) => {
+      const r = await fetch(path, {
+        method,
+        headers: { Authorization: "Bearer " + localStorage.getItem("conduit_token"), "X-Conduit-Project": "default", "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: r.status, json: await r.json().catch(() => null) };
+    }, { method, path, body });
+  const orig = (await api("GET", "/api/workflows/wf_preview_envs")).json;
+  const edited = { ...orig, edges: [...orig.edges, { from: "a1", to: "h1", label: "sent_back", max_attempts: 2 }] };
+  const put = await api("PUT", "/api/workflows/wf_preview_envs", edited);
+  expect(put.status, JSON.stringify(put.json)).toBeLessThan(300);
+  try {
+    await page.reload();
+    await expect(page.getByTestId("run-btn")).toBeVisible();
+    await page.getByTestId("run-btn").click();
+    await expect(page.getByTestId("approval-banner")).toBeVisible({ timeout: 30_000 });
+
+    await page.getByTestId("send-back-btn").click();
+    await expect(page.getByTestId("send-back-dialog")).toContainText("2 send-backs left");
+    await expect(page.getByTestId("send-back-confirm")).toBeDisabled(); // feedback is required
+    await page.getByTestId("send-back-text").fill("Use the staging region instead");
+    await page.getByTestId("send-back-confirm").click();
+
+    // The run loops back, re-runs Health Check, and waits at the gate again —
+    // now showing the note and one send-back left.
+    await expect(page.getByTestId("approval-banner")).toContainText("Your last feedback: Use the staging region instead", { timeout: 30_000 });
+    await page.getByTestId("send-back-btn").click();
+    await expect(page.getByTestId("send-back-dialog")).toContainText("last send-back");
+    await page.keyboard.press("Escape");
+
+    await page.getByTestId("approve-btn").click();
+    await expect(page.getByTestId("approval-banner")).toBeHidden({ timeout: 30_000 });
+    await expect(page.getByTestId("run-btn")).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await api("PUT", "/api/workflows/wf_preview_envs", orig);
+  }
+});
+
+test("Settings → Project context is saved for the project", async ({ page }) => {
+  const email = `e2e_pc_${Date.now()}@example.com`;
+  await page.goto("/");
+  await page.getByTestId("nav-getstarted").click();
+  await page.locator("#name").fill("PC User");
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill("password123");
+  await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("run-btn")).toBeVisible();
+  await page.getByLabel("Settings").click();
+  await page.getByTestId("tab-context").click();
+  await page.getByTestId("project-context").fill("Stack: Go 1.24 + Next.js.\nTests: make test.\nOff-limits: billing/.");
+  await page.getByTestId("project-context-save").click();
+  await expect(page.getByText("Project context saved")).toBeVisible();
+  await page.locator(".set-tab", { hasText: "Variables" }).click();
+  await expect(page.locator(".secret-list")).toContainText("project_context");
+  await page.getByTestId("tab-context").click();
+  await expect(page.getByTestId("project-context")).toHaveValue(/Off-limits: billing\//);
+});

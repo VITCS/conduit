@@ -30,6 +30,7 @@ import { Palette } from "@/components/Palette";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { Board } from "@/components/Board";
 import { useDialogs } from "@/components/Dialogs";
+import { SendBackDialog } from "@/components/SendBackDialog";
 import { Metrics } from "@/components/Metrics";
 import { MembersPanel } from "@/components/MembersPanel";
 import { Landing } from "@/components/Landing";
@@ -135,6 +136,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
   const [toast, setToast] = useState("");
   const { confirm, prompt, dialog } = useDialogs();
+  const [sendBackOpen, setSendBackOpen] = useState(false);
 
   // Project config (vars + secret names) used to show resolved values on nodes.
   const loadProjectConfig = useCallback(async () => {
@@ -491,6 +493,34 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
     [runId, waitingNode, showToast],
   );
 
+  // The waiting gate's own output says whether it can send back, and how often.
+  const gateOut = waitingNode ? outputs[waitingNode] : undefined;
+  const canSendBack = gateOut?.send_back === true;
+  const sendBacksLeft = typeof gateOut?.send_backs_left === "number" ? (gateOut.send_backs_left as number) : undefined;
+  // The note last sent back from *this* gate (shown so the reviewer can check it was addressed).
+  const lastFeedback = (() => {
+    const hist = Array.isArray(memory.feedback_history) ? (memory.feedback_history as { gate?: string; feedback?: string }[]) : [];
+    const title = (nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title;
+    for (let i = hist.length - 1; i >= 0; i--) if (hist[i]?.gate === title) return hist[i]?.feedback || "";
+    return "";
+  })();
+
+  const sendBack = useCallback(
+    async (feedback: string) => {
+      if (!runId || !waitingNode) return;
+      try {
+        await api.approve(runId, waitingNode, "sent_back", feedback);
+        showToast("Sent back — the agent is revising with your feedback");
+        setSendBackOpen(false);
+        setWaitingNode(null);
+        setApprovalDetail("");
+      } catch (e) {
+        showToast("Send back failed: " + (e as Error).message);
+      }
+    },
+    [runId, waitingNode, showToast],
+  );
+
   const rerunFrom = useCallback(
     async (nodeId: string) => {
       if (!runId) return;
@@ -806,9 +836,18 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
                 <button className="btn ghost" onClick={() => setTab("memory")}>View in memory</button>
               )}
               <button className="btn ok" data-testid="approve-btn" onClick={() => { focusNode(waitingNode); approve("approved"); }}>Approve</button>
+              {canSendBack && (
+                <button className="btn" data-testid="send-back-btn" onClick={() => setSendBackOpen(true)}
+                  title={sendBacksLeft !== undefined ? `${sendBacksLeft} send-back${sendBacksLeft === 1 ? "" : "s"} left` : undefined}>
+                  Send back
+                </button>
+              )}
               <button className="btn danger" data-testid="reject-btn" onClick={() => { focusNode(waitingNode); approve("rejected"); }}>Reject</button>
               <button className="btn ghost" onClick={() => focusNode(waitingNode)}>View step</button>
             </div>
+            {lastFeedback && (
+              <div className="ab-last"><b>Your last feedback:</b> {lastFeedback}</div>
+            )}
             {approvalDetail && (
               <details className="ab-detail" open>
                 <summary>What the agent suggested</summary>
@@ -969,6 +1008,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
                 onChange={(patch) => patchNode(selected!, patch)}
                 onDelete={() => deleteNode(selected!)}
                 onApprove={approve}
+                onSendBack={selected === waitingNode && canSendBack ? () => setSendBackOpen(true) : undefined}
                 onRerun={() => rerunFrom(selected!)}
                 onPrev={() => stepRel(-1)}
                 onNext={() => stepRel(1)}
@@ -983,6 +1023,14 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         {showSettings && <SettingsPanel onClose={() => { setShowSettings(false); loadProjectConfig(); }} onToast={showToast} />}
         {showMembers && <MembersPanel projectId={currentProject} onClose={() => setShowMembers(false)} onToast={showToast} />}
         {dialog}
+        {sendBackOpen && waitingNode && (
+          <SendBackDialog
+            gateTitle={(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "this step"}
+            left={sendBacksLeft}
+            onSend={sendBack}
+            onClose={() => setSendBackOpen(false)}
+          />
+        )}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </EditorContext.Provider>

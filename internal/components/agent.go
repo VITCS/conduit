@@ -28,6 +28,9 @@ func execAgent(n model.Node, run *model.Run) Result {
 	provider := strings.ToLower(firstNonEmpty(ex("provider"), "anthropic"))
 	modelName := ex("model")
 	prompt := expandTemplate(run, secretExpand(project, firstNonEmpty(n.Field("prompt"), n.Field("instruction"))))
+	// Every agent gets the project context, and a step sent back by a reviewer
+	// gets the feedback plus its previous answer.
+	prompt = contextBlock(project) + prompt + reviewerFeedback(run, n.ID, "text")
 
 	// An optional `output` field names a memory key to store the agent's text in,
 	// so steps chain: Refine -> ${memory.plan} -> Implement, etc.

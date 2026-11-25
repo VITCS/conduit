@@ -33,8 +33,8 @@ func TestSyncInstallsAndStampsFreshWorkflows(t *testing.T) {
 	if !ok {
 		t.Fatal("wf_factory not installed")
 	}
-	if got.Rev != 2 {
-		t.Errorf("rev = %d, want 2", got.Rev)
+	if want := FactoryWorkflow().Rev; got.Rev != want {
+		t.Errorf("rev = %d, want %d", got.Rev, want)
 	}
 	if got.SeedHash == "" || got.SeedHash != Fingerprint(got) {
 		t.Errorf("seed hash not stamped correctly: %q", got.SeedHash)
@@ -85,7 +85,7 @@ func TestSyncRefreshesLegacySimulatedFactory(t *testing.T) {
 	if !hasNodeType(got, "coding_apply") {
 		t.Error("refreshed factory should push code via coding_apply")
 	}
-	if got.Rev != 2 || got.SeedHash == "" {
+	if got.Rev != FactoryWorkflow().Rev || got.SeedHash == "" {
 		t.Errorf("refreshed factory not stamped: rev=%d hash=%q", got.Rev, got.SeedHash)
 	}
 }
@@ -135,7 +135,7 @@ func TestSyncUpgradesStampedUneditedByRev(t *testing.T) {
 		t.Fatalf("sync: %v", err)
 	}
 	got, _, _ := st.GetWorkflow("wf_factory")
-	if got.Rev != 2 {
-		t.Errorf("stamped unedited built-in not upgraded: rev = %d, want 2", got.Rev)
+	if want := FactoryWorkflow().Rev; got.Rev != want {
+		t.Errorf("stamped unedited built-in not upgraded: rev = %d, want %d", got.Rev, want)
 	}
 }

@@ -138,11 +138,11 @@ export const api = {
     }),
   listRuns: () => req<Run[]>("/api/runs"),
   getRun: (id: string) => req<Run>(`/api/runs/${encodeURIComponent(id)}`),
-  approve: (runId: string, nodeId: string, decision: "approved" | "rejected") =>
+  approve: (runId: string, nodeId: string, decision: Decision, feedback?: string) =>
     req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ node_id: nodeId, decision }),
+      body: JSON.stringify({ node_id: nodeId, decision, feedback }),
     }),
   cancelRun: (runId: string) =>
     req<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
@@ -211,6 +211,9 @@ export const api = {
   deleteVar: (name: string) =>
     req<{ ok: boolean }>(`/api/vars/${encodeURIComponent(name)}`, { method: "DELETE" }),
 };
+
+/** A person's answer at an approval gate. sent_back needs feedback. */
+export type Decision = "approved" | "rejected" | "sent_back";
 
 export interface ClaudeStatus { installed: boolean; version?: string; server_login_allowed: boolean }
 export interface ClaudeCheck { ok: boolean; auth?: string; version?: string; reply?: string; error?: string; engine?: string }

@@ -585,7 +585,8 @@ Reply with:
    <change_plan>[{"path":"relative/path.ext","action":"create"|"modify","details":"what changes and why"}]</change_plan>
 Use "create" only for files that do not exist yet. Paths are relative to the repository root.`,
 		task, firstNonEmpty(ex("implementation"), "(none)"), cfg.maxFiles)
-	system := "You are a senior engineer planning a change for a human to approve. You may only read the repository."
+	prompt += reviewerFeedback(run, n.ID, "change_plan")
+	system := contextBlock(cfg.project) + "You are a senior engineer planning a change for a human to approve. You may only read the repository."
 	o, err := runClaude(ctx, cfg.session(co.dir, co.home, prompt, system,
 		readOnlyTools, append([]string{"Edit", "Write", "NotebookEdit", "Bash"}, neverTools...)))
 	if err != nil {
@@ -692,7 +693,7 @@ Do not commit, push or change git history — Conduit commits and pushes for you
 
 Finish with a short summary of what you changed and how you checked it.`,
 		ex("plan"), formatChangePlan(items), "- "+strings.Join(paths, "\n- "), verify, feedbackBlock(feedback))
-	system := "You are a senior engineer implementing a change a human has approved file by file."
+	system := contextBlock(cfg.project) + "You are a senior engineer implementing a change a human has approved file by file."
 	allowed := append(append([]string{}, readOnlyTools...), "Edit(./**)", "Write(./**)")
 	for _, c := range cfg.commands {
 		allowed = append(allowed, "Bash("+c+":*)")

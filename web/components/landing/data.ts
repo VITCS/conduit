@@ -220,7 +220,7 @@ export const FAQ = [
   { q: "What does Conduit actually do?",
     a: "It takes a ticket and produces a pull request. Agents triage the ticket, plan the change and write the code on a branch; you approve the plan and the exact file changes; CI has to pass; then the PR opens and is handed to a review workflow. Every step is a node on a graph you can watch live." },
   { q: "Can it push code or merge without me?",
-    a: "The Ticket → PR workflow has two approval gates: one on the plan, one on the exact list of files. Nothing is written to your repository before the second approval. In the review workflow a person approves before anything is merged. A rejection sends the run to a \"needs attention\" state." },
+    a: "The Ticket → PR workflow has two approval gates: one on the plan, one on the exact list of files. Nothing is written to your repository before the second approval. In the review workflow a person approves before anything is merged. At any gate you can also send the proposal back with a note on what to change; the agent revises it and you review it again. A rejection sends the run to a \"needs attention\" state." },
   { q: "Where do tickets come from?",
     a: "Jira and Notion (fetched by the workflow), GitHub issues and Jira tickets posted to the intake webhook, any webhook, or a task you add on the board by hand." },
   { q: "Which AI models does it use?",

@@ -318,6 +318,16 @@ open **Settings**, and set:
 > The branch base is `main` by default. For a GitHub‑only review/merge flow the
 > `github` project additionally uses `scan_token` (the security‑scan gate).
 
+### Project context
+
+**Settings → Project context** holds what every agent should know: the goal, the
+stack, the exact build and test commands, conventions, what is already decided and
+what is off-limits. It is stored as the `project_context` variable and added to the
+instructions of every agent — Refine & Plan, Draft, Review, Triage, Plan/Apply
+Changes (both engines) and the PR review agent. With the direct-API engine the
+repository's own `CLAUDE.md` / `AGENTS.md` is also passed to the coding steps;
+Claude Code reads those files itself.
+
 ### Choose how code is written: Claude Code or the direct API
 
 **Settings → Coding agent** picks the engine for *Plan changes* and *Apply changes*.
@@ -382,6 +392,13 @@ tickets are never turned into a confident‑looking wrong change.
   clarification** instead of implementing.
 - Three agents **refine → draft → review** the ticket; the first **Human
   Approval** shows the plan + review (and the confidence) right at the gate.
+- **Send back with feedback** at either gate (and at the GitHub workflow's review
+  gate): instead of approving or rejecting, tell the agent what to change. The run
+  loops back to the step that made the proposal — *Refine & Plan* for the plan,
+  *Plan Changes* for the file list, *Agent Review* for a PR review — which gets your
+  note and its previous proposal, and you review the revision at the same gate.
+  Each gate allows 3 send-backs; one more counts as a rejection (→ Needs attention).
+  Your notes are kept in run memory (`review_feedback`, `feedback_history`).
 - **Coding plan → Approve Changes → Apply:** the coding agent first proposes the
   exact files (create/modify), you approve that list, then it pulls the current
   contents, edits them, and **pushes a branch via the GitHub Git Data API** (no
