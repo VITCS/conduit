@@ -191,6 +191,14 @@ test("send back with feedback loops the run to the earlier step, then approve fi
     await page.getByTestId("run-btn").click();
     await expect(page.getByTestId("approval-banner")).toBeVisible({ timeout: 30_000 });
 
+    // The inspector shows a readable count, not the engine's internal fields.
+    const details = page.locator(".inspector .kv");
+    await expect(details).toContainText("Send backs left");
+    await expect(details).not.toContainText("send back");
+    await page.locator(".inspector .insp-tab", { hasText: "Payload" }).click();
+    await expect(page.locator(".inspector .code")).not.toContainText("send_back");
+    await page.locator(".inspector .insp-tab", { hasText: "Details" }).click();
+
     await page.getByTestId("send-back-btn").click();
     await expect(page.getByTestId("send-back-dialog")).toContainText("2 send-backs left");
     await expect(page.getByTestId("send-back-confirm")).toBeDisabled(); // feedback is required

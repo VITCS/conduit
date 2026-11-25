@@ -30,7 +30,12 @@ export function Inspector(props: {
   onNext: () => void;
   onClose: () => void;
 }) {
-  const { data, output, status, editMode } = props;
+  const { data, output: rawOutput, status, editMode } = props;
+  // Engine bookkeeping that drives the UI (e.g. whether a gate offers "Send back")
+  // is not step output a person needs to read, so it is kept out of both tabs.
+  const output = rawOutput && visibleOutput(rawOutput);
+  const sendBacksLeft = typeof rawOutput?.send_backs_left === "number" && status === "waiting"
+    ? (rawOutput.send_backs_left as number) : undefined;
   const [tab, setTab] = useState<Tab>("details");
   const meta = STATUS_META[status] ?? STATUS_META.pending;
   const { vars, secretNames } = useEditor();
@@ -103,6 +108,12 @@ export function Inspector(props: {
             <dd><span className={`badge ${meta.cls}`}>{meta.label}</span></dd>
             <dt>Component</dt>
             <dd>{data.typeName}</dd>
+            {sendBacksLeft !== undefined && (
+              <>
+                <dt>Send backs left</dt>
+                <dd>{sendBacksLeft}</dd>
+              </>
+            )}
             {output &&
               Object.entries(output)
                 .filter(([, v]) => typeof v !== "object")
@@ -198,4 +209,12 @@ export function Inspector(props: {
       </div>
     </div>
   );
+}
+
+// INTERNAL_OUTPUT_KEYS are step-output fields the engine sets for the UI's own use.
+const INTERNAL_OUTPUT_KEYS = new Set(["send_back", "send_backs_left"]);
+
+function visibleOutput(o: Record<string, unknown>): Record<string, unknown> | undefined {
+  const out = Object.fromEntries(Object.entries(o).filter(([k]) => !INTERNAL_OUTPUT_KEYS.has(k)));
+  return Object.keys(out).length ? out : undefined;
 }
