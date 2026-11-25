@@ -239,3 +239,49 @@ test("Settings → Project context is saved for the project", async ({ page }) =
   await page.getByTestId("tab-context").click();
   await expect(page.getByTestId("project-context")).toHaveValue(/Off-limits: billing\//);
 });
+
+test("diff review: the gate shows the code change, and approving from the viewer continues the run", async ({ page }) => {
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+  const api = async (method: string, path: string, body?: unknown) =>
+    page.evaluate(async ({ method, path, body }) => {
+      const r = await fetch(path, {
+        method,
+        headers: { Authorization: "Bearer " + localStorage.getItem("conduit_token"), "X-Conduit-Project": "default", "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: r.status, json: await r.json().catch(() => null) };
+    }, { method, path, body });
+  const diff = [
+    "diff --git a/app/config.ts b/app/config.ts", "--- a/app/config.ts", "+++ b/app/config.ts",
+    "@@ -1,3 +1,3 @@", " export const config = {", "-  region: \"nyc1\",", "+  region: \"fra1\",", " };",
+    "diff --git a/app/health.ts b/app/health.ts", "new file mode 100644", "--- /dev/null", "+++ b/app/health.ts",
+    "@@ -0,0 +1,2 @@", "+export const ok = true;", "+export default ok;", "",
+  ].join("\n");
+  const orig = (await api("GET", "/api/workflows/wf_preview_envs")).json;
+  const edited = {
+    ...orig,
+    nodes: orig.nodes.map((n: { id: string; config: { key: string; value: string }[] }) =>
+      n.id === "a1" ? { ...n, config: [...n.config, { key: "diff", icon: "file", value: diff }] } : n),
+  };
+  expect((await api("PUT", "/api/workflows/wf_preview_envs", edited)).status).toBeLessThan(300);
+  try {
+    await page.reload();
+    await page.getByTestId("run-btn").click();
+    await expect(page.getByTestId("approval-banner")).toContainText("review the code before it is pushed", { timeout: 30_000 });
+    await page.getByTestId("review-diff-btn").click();
+    const viewer = page.getByTestId("diff-review");
+    await expect(viewer).toContainText("2 files");
+    await expect(viewer).toContainText("+3");
+    await expect(viewer).toContainText("−1");
+    await expect(page.getByTestId("diff-file")).toHaveCount(2);
+    await expect(viewer.locator("tr.del")).toContainText('region: "nyc1"');
+    await expect(viewer.locator("tr.add").first()).toContainText('region: "fra1"');
+    await expect(viewer).toContainText("new");
+    await page.getByTestId("diff-approve").click();
+    await expect(viewer).toBeHidden();
+    await expect(page.getByTestId("approval-banner")).toBeHidden({ timeout: 30_000 });
+    await expect(page.getByTestId("run-btn")).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await api("PUT", "/api/workflows/wf_preview_envs", orig);
+  }
+});

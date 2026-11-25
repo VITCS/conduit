@@ -141,6 +141,7 @@ var registry = map[string]Executor{
 	"coding_agent":   execCodingAgent,
 	"coding_plan":    execCodingPlan,
 	"coding_apply":   execCodingApply,
+	"coding_push":    execCodingPush,
 	"agent":          execAgent,
 	"ssh":            execSSH,
 	"if":             execIf,

@@ -987,11 +987,20 @@ func (e *Engine) runApproval(ctx context.Context, runID string, node model.Node)
 		summaryTmpl = node.Field("message")
 	}
 	detail := strings.TrimSpace(components.Render(&snap, summaryTmpl))
+	// A diff-review gate also carries the code change itself (its `diff` field,
+	// e.g. ${memory._change_diff}), kept out of the short summary used for alerts.
+	diff := strings.TrimSpace(components.Render(&snap, node.Field("diff")))
+	if strings.Contains(diff, "${memory.") {
+		diff = ""
+	}
 	_, left, canSendBack := e.sendBackEdge(snap, node.ID)
 	e.setStep(runID, node.ID, model.StatusWaiting, func(s *model.StepRun) {
 		s.Output = map[string]any{"approvers": node.Field("approvers")}
 		if detail != "" {
 			s.Output["summary"] = detail
+		}
+		if diff != "" {
+			s.Output["diff"] = diff
 		}
 		// Tell the UI whether "Send back" is available here, and how often.
 		if canSendBack && left > 0 {

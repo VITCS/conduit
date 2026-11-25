@@ -116,12 +116,12 @@ export function Inspector(props: {
             )}
             {output &&
               Object.entries(output)
-                .filter(([, v]) => typeof v !== "object")
+                .filter(([k, v]) => typeof v !== "object" && k !== "diff")
                 .slice(0, 8)
                 .map(([k, v]) => (
                   <div key={k} style={{ display: "contents" }}>
                     <dt>{k.replace(/_/g, " ")}</dt>
-                    <dd>{String(v)}</dd>
+                    <dd>{shorten(String(v))}</dd>
                   </div>
                 ))}
           </dl>
@@ -217,4 +217,10 @@ const INTERNAL_OUTPUT_KEYS = new Set(["send_back", "send_backs_left"]);
 function visibleOutput(o: Record<string, unknown>): Record<string, unknown> | undefined {
   const out = Object.fromEntries(Object.entries(o).filter(([k]) => !INTERNAL_OUTPUT_KEYS.has(k)));
   return Object.keys(out).length ? out : undefined;
+}
+
+// shorten keeps long values (plans, summaries) to a readable line in Details;
+// the Payload tab still has the full output.
+function shorten(v: string): string {
+  return v.length > 240 ? v.slice(0, 240) + "…" : v;
 }

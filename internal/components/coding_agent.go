@@ -25,6 +25,8 @@ var branchSanitize = regexp.MustCompile(`[^A-Za-z0-9._/-]+`)
 type fileChange struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+	// Delete removes the file from the tree (reviewed change sets only).
+	Delete bool `json:"delete,omitempty"`
 }
 
 // codingCfg is the resolved configuration shared by the coding components.
@@ -119,8 +121,9 @@ NOTES:
 // means a large change never has to fit every file's contents in a single reply —
 // the old all-in-one JSON array truncated at the token cap ("unexpected end of
 // JSON input" / "response truncated at max_tokens").
-func (c codingCfg) implementChanges(items []changeItem, task, feedback string) ([]fileChange, *Result) {
+func (c codingCfg) implementChanges(items []changeItem, task, feedback string) ([]fileChange, map[string]string, *Result) {
 	files := make([]fileChange, 0, len(items))
+	old := map[string]string{} // full current contents, for the review diff
 	for i := range items {
 		current := ""
 		if strings.EqualFold(items[i].Action, "modify") {
@@ -128,6 +131,7 @@ func (c codingCfg) implementChanges(items []changeItem, task, feedback string) (
 			if !exists {
 				items[i].Action = "create"
 			} else {
+				old[items[i].Path] = content
 				if len(content) > 24000 {
 					content = content[:24000] + "\n… (truncated)"
 				}
@@ -136,15 +140,15 @@ func (c codingCfg) implementChanges(items []changeItem, task, feedback string) (
 		}
 		content, r := c.implementOneFile(items[i], current, task, feedback)
 		if r != nil {
-			return nil, r
+			return nil, nil, r
 		}
 		files = append(files, fileChange{Path: items[i].Path, Content: content})
 	}
 	if len(files) == 0 {
 		r := failCode("no files to implement")
-		return nil, &r
+		return nil, nil, &r
 	}
-	return files, nil
+	return files, old, nil
 }
 
 // implementOneFile asks the model for the complete new content of a single file,
@@ -301,9 +305,26 @@ func execCodingApply(n model.Node, run *model.Run) Result {
 	cfg.guidance = contextBlock(runProject(run)) + cfg.repoGuidance(cfg.base)
 	// On a recovery-loop retry, prior CI feedback (e.g. ${memory.checks_summary})
 	// is passed in via the `feedback` field so the re-run fixes what failed.
-	files, r := cfg.implementChanges(items, ex("plan"), ex("feedback"))
+	files, old, r := cfg.implementChanges(items, ex("plan"), ex("feedback")+reviewerFeedback(run, n.ID, "diff"))
 	if r != nil {
 		return *r
+	}
+	if pushAfterReview(n) {
+		baseSHA, _, cerr := cfg.gh.baseCommit(cfg.base)
+		if cerr != "" {
+			return failCode(cerr)
+		}
+		cs := changeSet{Repo: cfg.owner + "/" + cfg.repo, Base: cfg.base, BaseSHA: baseSHA,
+			Branch: branchName(cfg.branchPrefix, cfg.ticket), Plan: formatChangePlan(items),
+			Message: fmt.Sprintf("%s: %s", cfg.ticket, firstLine(firstNonEmpty(cfg.ticketSummary, "automated change")))}
+		for _, f := range files {
+			action := "modify"
+			if _, ok := old[f.Path]; !ok {
+				action = "create"
+			}
+			cs.Files = append(cs.Files, fileEdit{Path: f.Path, Action: action, Content: f.Content})
+		}
+		return prepared(cs, old, map[string]any{"engine": engineAPI, "repo": cs.Repo}, nil)
 	}
 	branch, commitSHA, r := cfg.commitBranch(files)
 	if r != nil {
@@ -329,7 +350,7 @@ func execCodingAgent(n model.Node, run *model.Run) Result {
 	if r != nil {
 		return *r
 	}
-	files, r := cfg.implementChanges(items, task, ex("feedback"))
+	files, _, r := cfg.implementChanges(items, task, ex("feedback"))
 	if r != nil {
 		return *r
 	}
@@ -570,6 +591,11 @@ func (g ghClient) diagnose404(branch string) string {
 func (g ghClient) makeTree(baseTree string, files []fileChange) (string, string) {
 	entries := make([]map[string]any, 0, len(files))
 	for _, f := range files {
+		if f.Delete {
+			// A null sha removes the path from the base tree.
+			entries = append(entries, map[string]any{"path": f.Path, "mode": "100644", "type": "blob", "sha": nil})
+			continue
+		}
 		blobRaw, status, err := postJSON(g.url("git/blobs"), g.headers, map[string]any{"content": f.Content, "encoding": "utf-8"})
 		if err != nil || status < 200 || status >= 300 {
 			return "", "failed to create blob for " + f.Path + ": " + ghErr(blobRaw, status, err)
@@ -580,6 +606,11 @@ func (g ghClient) makeTree(baseTree string, files []fileChange) (string, string)
 		_ = json.Unmarshal(blobRaw, &blob)
 		entries = append(entries, map[string]any{"path": f.Path, "mode": "100644", "type": "blob", "sha": blob.SHA})
 	}
+	return g.finishTree(baseTree, entries)
+}
+
+// finishTree creates the tree from entries on top of baseTree.
+func (g ghClient) finishTree(baseTree string, entries []map[string]any) (string, string) {
 	raw, status, err := postJSON(g.url("git/trees"), g.headers, map[string]any{"base_tree": baseTree, "tree": entries})
 	if err != nil || status < 200 || status >= 300 {
 		return "", "failed to create tree: " + ghErr(raw, status, err)

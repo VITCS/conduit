@@ -180,8 +180,10 @@ func FactoryWorkflow() model.Workflow {
 		// github_checks → github_pr pipeline. Rev 1 (and the pre-versioning legacy
 		// "Issue → Reviewed PR" demo) was fully simulated — see SyncBuiltins, which
 		// upgrades an un-edited legacy copy to this definition on startup.
-		// Rev 3 adds "send back with feedback" at both approval gates.
-		Rev: 3,
+		// Rev 4 reviews the code before it is pushed: Apply Changes prepares the change
+		// (push: false), a Review Diff gate shows it, and Push Branch commits exactly
+		// what was approved. Rev 3 added "send back with feedback" at the gates.
+		Rev: 4,
 		Nodes: []model.Node{
 			{ID: "t1", Type: "webhook", Icon: "webhook", Kind: model.KindTrigger, Title: "Ticket Event", X: 40, Y: 300,
 				Config: []model.Field{f("on", "webhook", "jira / notion / manual run"), f("hook", "webhook", "POST /api/hooks/wf_factory?token=…")}},
@@ -271,8 +273,24 @@ func FactoryWorkflow() model.Workflow {
 					f("branch_prefix", "branch", "conduit/"),
 					// On a recovery-loop retry, the prior CI failures are fed back in.
 					f("feedback", "file", "${memory.checks_summary}"),
+					// Don't push yet: the Review Diff gate shows the code first.
+					f("push", "approve", "after review"),
 				}},
-			{ID: "vchk", Type: "github_checks", Icon: "heart", Kind: model.KindStep, Title: "Verify Checks (CI)", X: 2720, Y: 300, Stage: "verify",
+			{ID: "rdiff", Type: "approval", Icon: "approve", Kind: model.KindStep, Title: "Review Diff", X: 2720, Y: 300, Stage: "implement",
+				Config: []model.Field{
+					f("approvers", "user", "maintainers"),
+					f("timeout", "clock", "24h"),
+					f("summary", "file", "Code for ${memory.ticket_key} — ${memory._change_stat}\n\n${memory.implementation_summary}"),
+					f("diff", "file", "${memory._change_diff}"),
+				}},
+			{ID: "push", Type: "coding_push", Icon: "github", Kind: model.KindStep, Title: "Push Branch", X: 3000, Y: 300, Stage: "implement",
+				Config: []model.Field{
+					f("owner", "github", "${var:owner}"),
+					f("repo", "github", "${var:repo}"),
+					f("token", "key", "${secret:github_token}"),
+					f("change_set", "file", "${memory._change_set}"),
+				}},
+			{ID: "vchk", Type: "github_checks", Icon: "heart", Kind: model.KindStep, Title: "Verify Checks (CI)", X: 3280, Y: 300, Stage: "verify",
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -281,7 +299,7 @@ func FactoryWorkflow() model.Workflow {
 					f("require_checks", "approve", "false"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 3000, Y: 300, Stage: "done",
+			{ID: "pr", Type: "github_pr", Icon: "github", Kind: model.KindStep, Title: "Open Pull Request", X: 3560, Y: 300, Stage: "done",
 				Config: []model.Field{
 					f("owner", "github", "${var:owner}"),
 					f("repo", "github", "${var:repo}"),
@@ -291,7 +309,7 @@ func FactoryWorkflow() model.Workflow {
 					f("body", "file", "Automated by the AI Factory for ${memory.ticket_key}.\n\n— Change plan —\n${memory.change_plan}\n\n— Plan —\n${memory.plan}\n\n— Review —\n${memory.review}"),
 					f("token", "key", "${secret:github_token}"),
 				}},
-			{ID: "post", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Post PR to Ticket", X: 3280, Y: 200,
+			{ID: "post", Type: "jira", Icon: "ticket", Kind: model.KindStep, Title: "Post PR to Ticket", X: 3840, Y: 200,
 				Config: []model.Field{
 					f("action", "agent", "comment"),
 					f("base_url", "globe", "${var:jira_base}"),
@@ -300,7 +318,7 @@ func FactoryWorkflow() model.Workflow {
 					f("api_token", "key", "${secret:jira_token}"),
 					f("body", "file", "🤖 AI Factory opened a PR: ${memory.last_pr_url}\n\nChecks: ${memory.checks_summary}\n\n— Plan —\n${memory.plan}"),
 				}},
-			{ID: "mem", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record Delivery", X: 3280, Y: 420,
+			{ID: "mem", Type: "memory", Icon: "db", Kind: model.KindStep, Title: "Record Delivery", X: 3840, Y: 420,
 				Config: []model.Field{f("store", "db", "deliveries"), f("key", "key", "ticket_key"), f("set", "file", "work_branch, last_pr_url, checks_summary")}},
 			{ID: "clar", Type: "status", Icon: "flag", Kind: model.KindStatus, Title: "Needs clarification", X: 600, Y: 540, Stage: "blocked",
 				Config: []model.Field{f("set", "github", "needs_clarification"), f("notify", "user", "author")}},
@@ -326,8 +344,14 @@ func FactoryWorkflow() model.Workflow {
 			{From: "appr2", To: "apply", Label: "approved"},
 			{From: "appr2", To: "fail", Label: "failed"},
 			{From: "appr2", To: "cplan", Label: "sent_back", MaxAttempts: 3},
-			{From: "apply", To: "vchk", Label: "success"},
+			// Review the actual code before anything is pushed.
+			{From: "apply", To: "rdiff", Label: "success"},
 			{From: "apply", To: "fail", Label: "failed"},
+			{From: "rdiff", To: "push", Label: "approved"},
+			{From: "rdiff", To: "fail", Label: "failed"},
+			{From: "rdiff", To: "apply", Label: "sent_back", MaxAttempts: 3},
+			{From: "push", To: "vchk", Label: "success"},
+			{From: "push", To: "fail", Label: "failed"},
 			// Verify the pushed commit's CI before opening the PR. On failure, loop
 			// back to the coding agent up to twice (carrying the failing checks as
 			// feedback); only after the budget is spent does it go to a human.

@@ -31,6 +31,7 @@ import { SettingsPanel } from "@/components/SettingsPanel";
 import { Board } from "@/components/Board";
 import { useDialogs } from "@/components/Dialogs";
 import { SendBackDialog } from "@/components/SendBackDialog";
+import { DiffReview } from "@/components/DiffReview";
 import { Metrics } from "@/components/Metrics";
 import { MembersPanel } from "@/components/MembersPanel";
 import { Landing } from "@/components/Landing";
@@ -137,6 +138,7 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   const [toast, setToast] = useState("");
   const { confirm, prompt, dialog } = useDialogs();
   const [sendBackOpen, setSendBackOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
 
   // Project config (vars + secret names) used to show resolved values on nodes.
   const loadProjectConfig = useCallback(async () => {
@@ -496,6 +498,8 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
   // The waiting gate's own output says whether it can send back, and how often.
   const gateOut = waitingNode ? outputs[waitingNode] : undefined;
   const canSendBack = gateOut?.send_back === true;
+  // A diff-review gate carries the prepared code change for the reviewer.
+  const gateDiff = typeof gateOut?.diff === "string" ? (gateOut.diff as string) : "";
   const sendBacksLeft = typeof gateOut?.send_backs_left === "number" ? (gateOut.send_backs_left as number) : undefined;
   // The note last sent back from *this* gate (shown so the reviewer can check it was addressed).
   const lastFeedback = (() => {
@@ -830,8 +834,11 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
               <span className="ab-ico"><Hand size={16} /></span>
               <span className="ab-text">
                 <b>Approval required</b> — “{(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "a step"}”
-                is waiting for your decision.
+                {gateDiff ? " — review the code before it is pushed." : " is waiting for your decision."}
               </span>
+              {gateDiff && (
+                <button className="btn primary" data-testid="review-diff-btn" onClick={() => setDiffOpen(true)}>Review changes</button>
+              )}
               {(memory.review != null || memory.plan != null) && (
                 <button className="btn ghost" onClick={() => setTab("memory")}>View in memory</button>
               )}
@@ -975,11 +982,11 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
               <div className="pane">
                 <h2>Memory</h2>
                 <p className="lead">Key–value state the workflow writes and reads across steps and runs.</p>
-                {Object.keys(memory).length === 0 ? (
+                {Object.keys(memory).filter((k) => !k.startsWith("_")).length === 0 ? (
                   <div className="empty">No memory written yet — run the workflow.</div>
                 ) : (
                   <div className="mem-grid">
-                    {Object.entries(memory).map(([k, v]) => (
+                    {Object.entries(memory).filter(([k]) => !k.startsWith("_")).map(([k, v]) => (
                       <div className="mem-card" key={k}>
                         <div className="mk">{k}</div>
                         <div className="mv">{typeof v === "object" ? JSON.stringify(v, null, 2) : String(v)}</div>
@@ -1023,6 +1030,18 @@ function FlowApp({ onSignOut }: { onSignOut: () => void }) {
         {showSettings && <SettingsPanel onClose={() => { setShowSettings(false); loadProjectConfig(); }} onToast={showToast} />}
         {showMembers && <MembersPanel projectId={currentProject} onClose={() => setShowMembers(false)} onToast={showToast} />}
         {dialog}
+        {diffOpen && waitingNode && gateDiff && (
+          <DiffReview
+            diff={gateDiff}
+            title={(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "Review changes"}
+            summary={typeof gateOut?.summary === "string" ? (gateOut.summary as string) : undefined}
+            sendBacksLeft={sendBacksLeft}
+            onApprove={() => { setDiffOpen(false); approve("approved"); }}
+            onSendBack={canSendBack ? () => { setDiffOpen(false); setSendBackOpen(true); } : undefined}
+            onReject={() => { setDiffOpen(false); approve("rejected"); }}
+            onClose={() => setDiffOpen(false)}
+          />
+        )}
         {sendBackOpen && waitingNode && (
           <SendBackDialog
             gateTitle={(nodes.find((n) => n.id === waitingNode)?.data as NodeData | undefined)?.title || "this step"}

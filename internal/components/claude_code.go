@@ -693,6 +693,7 @@ Do not commit, push or change git history — Conduit commits and pushes for you
 
 Finish with a short summary of what you changed and how you checked it.`,
 		ex("plan"), formatChangePlan(items), "- "+strings.Join(paths, "\n- "), verify, feedbackBlock(feedback))
+	prompt += reviewerFeedback(run, n.ID, "diff")
 	system := contextBlock(cfg.project) + "You are a senior engineer implementing a change a human has approved file by file."
 	allowed := append(append([]string{}, readOnlyTools...), "Edit(./**)", "Write(./**)")
 	for _, c := range cfg.commands {
@@ -722,12 +723,29 @@ Finish with a short summary of what you changed and how you checked it.`,
 		return r
 	}
 
-	if _, err := runGit(ctx, co.dir, co.gitEnv, append([]string{"add", "-A", "--"}, changed...)...); err != nil {
-		return claudeFail("commit", err, o)
-	}
 	msg := fmt.Sprintf("%s: %s", cfg.ticket, firstLine(firstNonEmpty(cfg.ticketSummary, "automated change")))
 	if retry {
 		msg += " (fix failing checks)"
+	}
+
+	// Review before push: hand the exact change to the Review Diff gate instead.
+	if pushAfterReview(n) {
+		cs, old, err := checkoutChangeSet(ctx, co, changed)
+		if err != nil {
+			return claudeFail("diff", err, o)
+		}
+		cs.Repo, cs.Base, cs.Branch, cs.Message, cs.Plan = cfg.owner+"/"+cfg.repo, start, branch, msg, formatChangePlan(items)
+		out := cfg.outputBase(o)
+		out["summary"] = strings.TrimSpace(o.result)
+		r := prepared(cs, old, out, []string{"claude_code: " + strings.TrimSpace(o.result)})
+		if r.MemoryWrites != nil {
+			r.MemoryWrites["implementation_summary"] = strings.TrimSpace(o.result)
+		}
+		return r
+	}
+
+	if _, err := runGit(ctx, co.dir, co.gitEnv, append([]string{"add", "-A", "--"}, changed...)...); err != nil {
+		return claudeFail("commit", err, o)
 	}
 	if _, err := runGit(ctx, co.dir, co.gitEnv, "-c", "user.name=Conduit Agent",
 		"-c", "user.email=conduit-agent@users.noreply.github.com", "commit", "-q", "-m", msg); err != nil {
@@ -760,6 +778,48 @@ Finish with a short summary of what you changed and how you checked it.`,
 	res.MemoryWrites["implementation_summary"] = strings.TrimSpace(o.result)
 	res.Logs = append(res.Logs, "claude_code: "+strings.TrimSpace(stat))
 	return res
+}
+
+// checkoutChangeSet reads the changed files from the checkout into a change set
+// (new content, create/modify/delete) on top of HEAD, with their HEAD contents
+// for the review diff. Binary files are refused: the review and the GitHub push
+// both work on text.
+func checkoutChangeSet(ctx context.Context, co *checkout, changed []string) (changeSet, map[string]string, error) {
+	var cs changeSet
+	old := map[string]string{}
+	head, err := runGit(ctx, co.dir, co.gitEnv, "rev-parse", "HEAD")
+	if err != nil {
+		return cs, nil, err
+	}
+	cs.BaseSHA = strings.TrimSpace(head)
+	for _, p := range changed {
+		prev, perr := runGit(ctx, co.dir, co.gitEnv, "show", "HEAD:"+p)
+		inHead := perr == nil
+		if inHead {
+			old[p] = prev
+		}
+		b, rerr := os.ReadFile(filepath.Join(co.dir, filepath.FromSlash(p)))
+		switch {
+		case errors.Is(rerr, os.ErrNotExist):
+			if inHead {
+				cs.Files = append(cs.Files, fileEdit{Path: p, Action: "delete"})
+			}
+			continue
+		case rerr != nil:
+			return cs, nil, rerr
+		case strings.IndexByte(string(b), 0) >= 0:
+			return cs, nil, fmt.Errorf("%s is a binary file; review before push supports text files only (skip the Review Diff step to push it directly)", p)
+		}
+		action := "modify"
+		if !inHead {
+			action = "create"
+		}
+		cs.Files = append(cs.Files, fileEdit{Path: p, Action: action, Content: string(b)})
+	}
+	if len(cs.Files) == 0 {
+		return cs, nil, errors.New("no file changes to review")
+	}
+	return cs, old, nil
 }
 
 // changedFiles lists the paths changed in the checkout's working tree, relative
